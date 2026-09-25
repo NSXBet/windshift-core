@@ -1685,6 +1685,14 @@ var Catalog = []Migration{
 		SQLite:        slaImportSchema,
 		Postgres:      slaImportSchemaPostgres,
 	},
+	{
+		Version:       "20260931_item_history_source",
+		Name:          "Record the acting surface on item history rows",
+		CheckSQLite:   sqliteColumnCheck("item_history", "source"),
+		CheckPostgres: pgColumnCheck("item_history", "source"),
+		SQLite:        "ALTER TABLE item_history ADD COLUMN source TEXT",
+		Postgres:      "ALTER TABLE item_history ADD COLUMN IF NOT EXISTS source TEXT",
+	},
 }
 
 func applySQLitePersonalLabelsPerUserUnique(db Database) (retErr error) {
