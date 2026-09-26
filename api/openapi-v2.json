@@ -2238,6 +2238,10 @@
                 "nullable": true,
                 "type": "number"
               },
+              "model": {
+                "description": "The model value.",
+                "type": "string"
+              },
               "prompt_tokens": {
                 "description": "The prompt tokens value.",
                 "type": "integer"
@@ -19077,11 +19081,6 @@
                   "format": "date-time",
                   "type": "string"
                 },
-                "cost_usd": {
-                  "description": "The cost usd value.",
-                  "nullable": true,
-                  "type": "number"
-                },
                 "field_name": {
                   "description": "The field name value.",
                   "type": "string"
@@ -19097,10 +19096,6 @@
                 "item_id": {
                   "description": "The item id value.",
                   "type": "integer"
-                },
-                "model": {
-                  "description": "The model value.",
-                  "type": "string"
                 },
                 "new_value": {
                   "description": "The new value value.",
@@ -19125,10 +19120,6 @@
                 "source": {
                   "description": "The source value.",
                   "type": "string"
-                },
-                "total_tokens": {
-                  "description": "The total tokens value.",
-                  "type": "integer"
                 },
                 "user_email": {
                   "description": "The user email value.",

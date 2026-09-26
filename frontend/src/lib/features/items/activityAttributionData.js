@@ -28,3 +28,28 @@ const ANNOTATED_HISTORY_SOURCES = new Set(['ai_chat']);
 export function isAIChatAttributed(entry) {
   return ANNOTATED_HISTORY_SOURCES.has(entry?.source);
 }
+
+/**
+ * Most agent turns a single history view will fetch telemetry for. Hover is
+ * lazy, so this is a fan-out ceiling rather than a prefetch budget: an item
+ * with hundreds of chat-written rows must not be able to turn a scroll into
+ * hundreds of usage requests. Newest runs win, matching the feed order.
+ */
+export const MAX_HISTORY_TELEMETRY_RUNS = 20;
+
+/**
+ * The run ids whose telemetry this history view may load, newest first, capped
+ * at max. Only AI-chat groups qualify: the other agent surfaces have no
+ * per-turn telemetry the history feed can attribute.
+ */
+export function historyTelemetryRunIDs(groups, max = MAX_HISTORY_TELEMETRY_RUNS) {
+  const ids = [];
+  for (const group of groups || []) {
+    const runId = group?.agent_run_id;
+    if (!runId || !isAIChatAttributed(group)) continue;
+    if (ids.includes(runId)) continue;
+    ids.push(runId);
+    if (ids.length >= max) break;
+  }
+  return ids;
+}

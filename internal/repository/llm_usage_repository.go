@@ -66,10 +66,12 @@ type RunUsageTotals = models.RunUsageTotals
 // the calls whose cost was known; it is nil when none were.
 func (r *LLMUsageRepository) TotalsForRun(ctx context.Context, runID int) (RunUsageTotals, error) {
 	var t RunUsageTotals
+	var model sql.NullString
 	var prompt, completion, total, cacheRead, cacheWrite, reasoning, calls sql.NullInt64
 	var cost sql.NullFloat64
 	err := r.db.QueryRowContext(ctx, `
 		SELECT
+			COALESCE(MIN(model), ''),
 			COALESCE(SUM(prompt_tokens), 0),
 			COALESCE(SUM(completion_tokens), 0),
 			COALESCE(SUM(total_tokens), 0),
@@ -79,10 +81,11 @@ func (r *LLMUsageRepository) TotalsForRun(ctx context.Context, runID int) (RunUs
 			SUM(cost_usd),
 			COUNT(*)
 		FROM llm_usage WHERE run_id = ?
-	`, runID).Scan(&prompt, &completion, &total, &cacheRead, &cacheWrite, &reasoning, &cost, &calls)
+	`, runID).Scan(&model, &prompt, &completion, &total, &cacheRead, &cacheWrite, &reasoning, &cost, &calls)
 	if err != nil {
 		return t, fmt.Errorf("aggregate llm_usage for run %d: %w", runID, err)
 	}
+	t.Model = model.String
 	t.PromptTokens = int(prompt.Int64)
 	t.CompletionTokens = int(completion.Int64)
 	t.TotalTokens = int(total.Int64)

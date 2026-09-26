@@ -164,14 +164,10 @@ type ItemHistory struct {
 	// typed from one the AI made for them under their name.
 	Source string `json:"source,omitempty"`
 	// AgentRunID links an agent-authored change back to the turn that caused
-	// it, which is what makes Model/CostUSD meaningful rather than decorative.
+	// it. It is a link, not the telemetry itself: the history response stays a
+	// single-table read, and the model/tokens/cost behind the turn are fetched
+	// on demand from the run's usage endpoint.
 	AgentRunID *int `json:"agent_run_id,omitempty"`
-	// Model and the metered cost of the turn behind this change. CostUSD is nil
-	// when the turn was never metered, or when any of its calls could not be
-	// priced — a partial sum would read as a complete one.
-	Model       string   `json:"model,omitempty"`
-	CostUSD     *float64 `json:"cost_usd,omitempty"`
-	TotalTokens int      `json:"total_tokens,omitempty"`
 	// Resolved values for display (when value is an ID)
 	ResolvedOldValue *string `json:"resolved_old_value,omitempty"` // Human-readable version of old_value
 	ResolvedNewValue *string `json:"resolved_new_value,omitempty"` // Human-readable version of new_value

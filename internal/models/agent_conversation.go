@@ -59,6 +59,9 @@ type AgentMessage struct {
 // rely on required-ness instead of guarding each read, and so this stays
 // shape-compatible with the agent-run usage response serving the same numbers.
 type RunUsageTotals struct {
+	// Model is the model that served the run. Empty when no metered call named
+	// one; omitted from responses in that case.
+	Model            string   `json:"model,omitempty"`
 	PromptTokens     int      `json:"prompt_tokens"`
 	CompletionTokens int      `json:"completion_tokens"`
 	TotalTokens      int      `json:"total_tokens"`
