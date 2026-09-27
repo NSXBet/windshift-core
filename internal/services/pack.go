@@ -21,6 +21,12 @@ import (
 const (
 	PackSchemaVersion = 1
 	PackKind          = "windshift.pack"
+
+	// Pack archives are configuration data; the HTTP layer already caps the
+	// compressed upload. These bound what that upload can expand to while every
+	// entry is read into memory, so a gzip bomb cannot exhaust the process.
+	packMaxTotalBytes = 128 << 20 // 128 MiB decompressed across the whole archive
+	packMaxEntryBytes = 64 << 20  // 64 MiB for any single archive entry
 )
 
 type PackManifest struct {
@@ -102,6 +108,13 @@ var packSemverPattern = regexp.MustCompile(`^\d+\.\d+\.\d+`)
 // Schema violations (unknown kind, missing version, dangling file
 // references) are rejected here, before anything is applied.
 func ParsePackArchive(data []byte) (*PackArchive, error) {
+	return parsePackArchive(data, packMaxTotalBytes, packMaxEntryBytes)
+}
+
+// parsePackArchive is ParsePackArchive with explicit decompressed-size
+// budgets, so tests can exercise the limits without materializing an archive
+// the size of the production caps.
+func parsePackArchive(data []byte, maxTotalBytes, maxEntryBytes int64) (*PackArchive, error) {
 	gz, err := gzip.NewReader(bytes.NewReader(data))
 	if err != nil {
 		return nil, fmt.Errorf("pack: archive must be a gzipped tar archive: %w", err)
@@ -110,6 +123,7 @@ func ParsePackArchive(data []byte) (*PackArchive, error) {
 
 	files := map[string][]byte{}
 	var manifestRaw []byte
+	var totalRead int64
 	tr := tar.NewReader(gz)
 	for {
 		header, err := tr.Next()
@@ -126,10 +140,25 @@ func ParsePackArchive(data []byte) (*PackArchive, error) {
 		if header.Typeflag != tar.TypeReg {
 			continue
 		}
-		content, err := io.ReadAll(tr)
+		// Cap each entry by the per-entry limit and the archive-wide budget
+		// still available. Reading one byte past the cap distinguishes an
+		// overrun from an entry that fits exactly.
+		remaining := maxTotalBytes - totalRead
+		readLimit := maxEntryBytes
+		if remaining < readLimit {
+			readLimit = remaining
+		}
+		content, err := io.ReadAll(io.LimitReader(tr, readLimit+1))
 		if err != nil {
 			return nil, fmt.Errorf("pack: reading %q: %w", name, err)
 		}
+		if int64(len(content)) > readLimit {
+			if remaining < maxEntryBytes {
+				return nil, fmt.Errorf("pack: decompressed archive exceeds the %d byte limit", maxTotalBytes)
+			}
+			return nil, fmt.Errorf("pack: entry %q exceeds the %d byte limit", name, maxEntryBytes)
+		}
+		totalRead += int64(len(content))
 		files[name] = content
 		lower := strings.ToLower(name)
 		if lower == "manifest.json" || lower == "pack.json" {
