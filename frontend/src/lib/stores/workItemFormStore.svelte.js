@@ -1,6 +1,6 @@
 // Centralized reactive state for the work-item create form.
 import { api } from '../api.js';
-import { isBooleanCustomFieldType } from '../utils/customFieldTypes.js';
+import { defaultCustomFieldValue, isBooleanCustomFieldType } from '../utils/customFieldTypes.js';
 import { dateInputToISOString } from '../utils/dateFormatter.js';
 import { isGenericSubtaskType, sortItemTypesByHierarchy } from '../utils/hierarchy.js';
 import {
@@ -575,9 +575,7 @@ class WorkItemFormStore {
         this.customFieldValues[field.id] =
           previous !== undefined && previous !== null && previous !== ''
             ? previous
-            : isBooleanCustomFieldType(field.field_type)
-              ? false
-              : '';
+            : defaultCustomFieldValue(field.field_type);
       });
 
       this.customFields = filteredCustomFields;
@@ -921,7 +919,7 @@ class WorkItemFormStore {
           const value = this.customFieldValues[fieldId];
           const fieldDef = this.allCustomFields.find((f) => f.id === fieldId);
           if (isBooleanCustomFieldType(fieldDef?.field_type)) continue;
-          if (value === undefined || value === null || value === '') {
+          if (this.#isEmptyValue(value)) {
             errors.push(`${fieldDef?.name || 'Custom field'} is required`);
           }
         }
@@ -969,7 +967,12 @@ class WorkItemFormStore {
     this.formData = defaultFormData({
       itemTypeId: this.availableItemTypes.length > 0 ? this.availableItemTypes[0].id : null,
     });
-    this.customFieldValues = {};
+    // Keep one defined value per rendered field. Blanking the map to {} while
+    // customFields still holds the old screen leaves `bind:value` undefined on
+    // reopen, which makes Svelte throw props_invalid_value.
+    this.customFieldValues = Object.fromEntries(
+      this.customFields.map((field) => [field.id, defaultCustomFieldValue(field.field_type)])
+    );
     this.selectedLabels = [];
     this.validationErrors = [];
     this.clearPendingDescriptionImages();
