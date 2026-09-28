@@ -29,9 +29,12 @@ type SLAMetricInput struct {
 	Goals         []models.SLAGoal
 }
 
-// SLAMetricService owns SLA metric configuration. Every write bumps the
-// workspace configuration generation and enqueues recalculation so ongoing
-// cycles pick up new rules.
+// SLAMetricService owns SLA metric configuration. Conditions, goals, and
+// targets are part of the metric payload, not separate sub-resources: they are
+// replaced atomically with the metric, their validation depends on the
+// workspace and its team bindings, and every write must bump the workspace
+// configuration generation and enqueue recalculation in one transaction.
+// See page 70 §9 (WI-1465).
 type SLAMetricService struct {
 	db     database.Database
 	repo   *repository.SLARepository
