@@ -835,6 +835,7 @@ export default {
         warnings: 'Warnings',
         recalculations: 'Recalculation',
         teams: 'Team Access',
+        report: 'Report',
       },
       metricsTitle: 'SLA Metrics',
       metricsSubtitle:
@@ -943,6 +944,26 @@ export default {
       selectTeamRequired: 'Select a team to bind.',
       bindingConsentHelp:
         'Both the team and the workspace must consent. You need to be an administrator of both.',
+      reportTitle: 'SLA Compliance Report',
+      reportSubtitle:
+        'Completed, breached, and ongoing aggregates per metric, with the breached-cycle list for the selected window.',
+      exportCsv: 'Export CSV',
+      from: 'From',
+      to: 'To',
+      apply: 'Apply',
+      currentStateNote:
+        'Ongoing and currently-breached counts are current state; completed and breached counts use the selected window and stored cycle snapshots.',
+      noReportData: 'No completed cycles in this window.',
+      metric: 'Metric',
+      ongoing: 'Ongoing',
+      currentlyBreached: 'Currently breached',
+      completed: 'Completed',
+      breached: 'Breached',
+      avgElapsed: 'Avg elapsed / goal',
+      breachedItems: 'Breached items',
+      stoppedAt: 'Stopped',
+      elapsed: 'Elapsed / goal',
+      reportLoadFailed: 'Failed to load the SLA report',
       calendarsTitle: 'Working Calendars',
       calendarsSubtitle:
         'Business-hours calendars that SLA goals count time against. Team calendars shared with this workspace appear read-only.',

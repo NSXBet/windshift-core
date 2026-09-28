@@ -4,7 +4,8 @@
   import SlaWarningThresholdsTab from './SlaWarningThresholdsTab.svelte';
   import SlaRecalculationTab from './SlaRecalculationTab.svelte';
   import SlaTeamBindingsTab from './SlaTeamBindingsTab.svelte';
-  import { BellRing, Calendar, Gauge, Handshake, RefreshCw } from '@lucide/svelte';
+  import SlaComplianceReportTab from './SlaComplianceReportTab.svelte';
+  import { BarChart3, BellRing, Calendar, Gauge, Handshake, RefreshCw } from '@lucide/svelte';
   import { t } from '../../stores/i18n.svelte.js';
 
   let { workspaceId = null } = $props();
@@ -41,6 +42,12 @@
       labelKey: 'workspaceSettings.serviceLevels.tabs.teams',
       icon: Handshake,
       component: SlaTeamBindingsTab,
+    },
+    {
+      id: 'report',
+      labelKey: 'workspaceSettings.serviceLevels.tabs.report',
+      icon: BarChart3,
+      component: SlaComplianceReportTab,
     },
   ];
 
