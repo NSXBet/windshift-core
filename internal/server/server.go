@@ -1799,6 +1799,7 @@ func (s *Server) initialize() error {
 		SLACalendars:       services.NewSLACalendarService(s.db, s.slaEngine),
 		SLASettings:        services.NewSLASettingsService(s.db, s.slaEngine),
 		SLATeamBindings:    services.NewSLATeamBindingService(s.db, permService),
+		SLAMetrics:         services.NewSLAMetricService(s.db, s.slaEngine),
 		Users:              services.NewUserReadService(s.db),
 		Statuses:           services.NewStatusService(s.db),
 		Teams:              teamRepo,

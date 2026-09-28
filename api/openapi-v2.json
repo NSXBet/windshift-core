@@ -37158,6 +37158,506 @@
         ],
         "type": "object"
       },
+      "GetWorkspacesWorkspaceIdSlaMetricsMetricIdResult": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": false,
+            "nullable": true,
+            "properties": {
+              "conditions": {
+                "description": "The conditions value.",
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "condition_type": {
+                      "description": "The condition type value.",
+                      "type": "string"
+                    },
+                    "config": {
+                      "description": "The config value.",
+                      "format": "byte",
+                      "type": "string"
+                    },
+                    "id": {
+                      "description": "The id value.",
+                      "type": "integer"
+                    },
+                    "metric_id": {
+                      "description": "The metric id value.",
+                      "type": "integer"
+                    },
+                    "phase": {
+                      "description": "The phase value.",
+                      "type": "string"
+                    },
+                    "position": {
+                      "description": "The position value.",
+                      "type": "integer"
+                    },
+                    "source_payload": {
+                      "description": "The source payload value.",
+                      "nullable": true,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "condition_type",
+                    "config",
+                    "id",
+                    "metric_id",
+                    "phase",
+                    "position"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "created_at": {
+                "description": "The created at value.",
+                "format": "date-time",
+                "type": "string"
+              },
+              "display_format": {
+                "description": "The display format value.",
+                "type": "string"
+              },
+              "goals": {
+                "description": "The goals value.",
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "created_at": {
+                      "description": "The created at value.",
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "id": {
+                      "description": "The id value.",
+                      "type": "integer"
+                    },
+                    "import_status": {
+                      "description": "The import status value.",
+                      "type": "string"
+                    },
+                    "metric_id": {
+                      "description": "The metric id value.",
+                      "type": "integer"
+                    },
+                    "original_jql": {
+                      "description": "The original jql value.",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "position": {
+                      "description": "The position value.",
+                      "type": "integer"
+                    },
+                    "ql_query": {
+                      "description": "The ql query value.",
+                      "type": "string"
+                    },
+                    "source_id": {
+                      "description": "The source id value.",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "source_payload": {
+                      "description": "The source payload value.",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "targets": {
+                      "description": "The targets value.",
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "calendar_id": {
+                            "description": "The calendar id value.",
+                            "type": "integer"
+                          },
+                          "goal_id": {
+                            "description": "The goal id value.",
+                            "type": "integer"
+                          },
+                          "id": {
+                            "description": "The id value.",
+                            "type": "integer"
+                          },
+                          "is_fallback": {
+                            "description": "The is fallback value.",
+                            "type": "boolean"
+                          },
+                          "position": {
+                            "description": "The position value.",
+                            "type": "integer"
+                          },
+                          "priority_id": {
+                            "description": "The priority id value.",
+                            "nullable": true,
+                            "type": "integer"
+                          },
+                          "source_id": {
+                            "description": "The source id value.",
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "source_payload": {
+                            "description": "The source payload value.",
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "target_ms": {
+                            "description": "The target ms value.",
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "calendar_id",
+                          "goal_id",
+                          "id",
+                          "is_fallback",
+                          "position",
+                          "target_ms"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "updated_at": {
+                      "description": "The updated at value.",
+                      "format": "date-time",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "created_at",
+                    "id",
+                    "import_status",
+                    "metric_id",
+                    "position",
+                    "ql_query",
+                    "updated_at"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "id": {
+                "description": "The id value.",
+                "type": "integer"
+              },
+              "import_status": {
+                "description": "The import status value.",
+                "type": "string"
+              },
+              "is_active": {
+                "description": "The is active value.",
+                "type": "boolean"
+              },
+              "name": {
+                "description": "The name value.",
+                "type": "string"
+              },
+              "position": {
+                "description": "The position value.",
+                "type": "integer"
+              },
+              "source": {
+                "description": "The source value.",
+                "nullable": true,
+                "type": "string"
+              },
+              "source_id": {
+                "description": "The source id value.",
+                "nullable": true,
+                "type": "string"
+              },
+              "source_payload": {
+                "description": "The source payload value.",
+                "nullable": true,
+                "type": "string"
+              },
+              "updated_at": {
+                "description": "The updated at value.",
+                "format": "date-time",
+                "type": "string"
+              },
+              "workspace_id": {
+                "description": "The workspace id value.",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "created_at",
+              "display_format",
+              "id",
+              "import_status",
+              "is_active",
+              "name",
+              "position",
+              "updated_at",
+              "workspace_id"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "GetWorkspacesWorkspaceIdSlaMetricsResult": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "conditions": {
+                  "description": "The conditions value.",
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "condition_type": {
+                        "description": "The condition type value.",
+                        "type": "string"
+                      },
+                      "config": {
+                        "description": "The config value.",
+                        "format": "byte",
+                        "type": "string"
+                      },
+                      "id": {
+                        "description": "The id value.",
+                        "type": "integer"
+                      },
+                      "metric_id": {
+                        "description": "The metric id value.",
+                        "type": "integer"
+                      },
+                      "phase": {
+                        "description": "The phase value.",
+                        "type": "string"
+                      },
+                      "position": {
+                        "description": "The position value.",
+                        "type": "integer"
+                      },
+                      "source_payload": {
+                        "description": "The source payload value.",
+                        "nullable": true,
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "condition_type",
+                      "config",
+                      "id",
+                      "metric_id",
+                      "phase",
+                      "position"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "created_at": {
+                  "description": "The created at value.",
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "display_format": {
+                  "description": "The display format value.",
+                  "type": "string"
+                },
+                "goals": {
+                  "description": "The goals value.",
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "created_at": {
+                        "description": "The created at value.",
+                        "format": "date-time",
+                        "type": "string"
+                      },
+                      "id": {
+                        "description": "The id value.",
+                        "type": "integer"
+                      },
+                      "import_status": {
+                        "description": "The import status value.",
+                        "type": "string"
+                      },
+                      "metric_id": {
+                        "description": "The metric id value.",
+                        "type": "integer"
+                      },
+                      "original_jql": {
+                        "description": "The original jql value.",
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "position": {
+                        "description": "The position value.",
+                        "type": "integer"
+                      },
+                      "ql_query": {
+                        "description": "The ql query value.",
+                        "type": "string"
+                      },
+                      "source_id": {
+                        "description": "The source id value.",
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "source_payload": {
+                        "description": "The source payload value.",
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "targets": {
+                        "description": "The targets value.",
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "calendar_id": {
+                              "description": "The calendar id value.",
+                              "type": "integer"
+                            },
+                            "goal_id": {
+                              "description": "The goal id value.",
+                              "type": "integer"
+                            },
+                            "id": {
+                              "description": "The id value.",
+                              "type": "integer"
+                            },
+                            "is_fallback": {
+                              "description": "The is fallback value.",
+                              "type": "boolean"
+                            },
+                            "position": {
+                              "description": "The position value.",
+                              "type": "integer"
+                            },
+                            "priority_id": {
+                              "description": "The priority id value.",
+                              "nullable": true,
+                              "type": "integer"
+                            },
+                            "source_id": {
+                              "description": "The source id value.",
+                              "nullable": true,
+                              "type": "string"
+                            },
+                            "source_payload": {
+                              "description": "The source payload value.",
+                              "nullable": true,
+                              "type": "string"
+                            },
+                            "target_ms": {
+                              "description": "The target ms value.",
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "calendar_id",
+                            "goal_id",
+                            "id",
+                            "is_fallback",
+                            "position",
+                            "target_ms"
+                          ],
+                          "type": "object"
+                        },
+                        "type": "array"
+                      },
+                      "updated_at": {
+                        "description": "The updated at value.",
+                        "format": "date-time",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "created_at",
+                      "id",
+                      "import_status",
+                      "metric_id",
+                      "position",
+                      "ql_query",
+                      "updated_at"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "id": {
+                  "description": "The id value.",
+                  "type": "integer"
+                },
+                "import_status": {
+                  "description": "The import status value.",
+                  "type": "string"
+                },
+                "is_active": {
+                  "description": "The is active value.",
+                  "type": "boolean"
+                },
+                "name": {
+                  "description": "The name value.",
+                  "type": "string"
+                },
+                "position": {
+                  "description": "The position value.",
+                  "type": "integer"
+                },
+                "source": {
+                  "description": "The source value.",
+                  "nullable": true,
+                  "type": "string"
+                },
+                "source_id": {
+                  "description": "The source id value.",
+                  "nullable": true,
+                  "type": "string"
+                },
+                "source_payload": {
+                  "description": "The source payload value.",
+                  "nullable": true,
+                  "type": "string"
+                },
+                "updated_at": {
+                  "description": "The updated at value.",
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "workspace_id": {
+                  "description": "The workspace id value.",
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "created_at",
+                "display_format",
+                "id",
+                "import_status",
+                "is_active",
+                "name",
+                "position",
+                "updated_at",
+                "workspace_id"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
       "GetWorkspacesWorkspaceIdSlaReportResult": {
         "additionalProperties": false,
         "properties": {
@@ -87212,6 +87712,459 @@
         ],
         "type": "object"
       },
+      "PostWorkspacesWorkspaceIdSlaMetricsPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "conditions": {
+            "description": "The conditions value.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "condition_type": {
+                  "description": "The condition type value.",
+                  "type": "string"
+                },
+                "config": {
+                  "description": "The config value.",
+                  "format": "byte",
+                  "type": "string"
+                },
+                "id": {
+                  "description": "The id value.",
+                  "type": "integer"
+                },
+                "metric_id": {
+                  "description": "The metric id value.",
+                  "type": "integer"
+                },
+                "phase": {
+                  "description": "The phase value.",
+                  "type": "string"
+                },
+                "position": {
+                  "description": "The position value.",
+                  "type": "integer"
+                },
+                "source_payload": {
+                  "description": "The source payload value.",
+                  "nullable": true,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "condition_type",
+                "config",
+                "id",
+                "metric_id",
+                "phase",
+                "position"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "display_format": {
+            "description": "The display format value.",
+            "type": "string"
+          },
+          "goals": {
+            "description": "The goals value.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "created_at": {
+                  "description": "The created at value.",
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "id": {
+                  "description": "The id value.",
+                  "type": "integer"
+                },
+                "import_status": {
+                  "description": "The import status value.",
+                  "type": "string"
+                },
+                "metric_id": {
+                  "description": "The metric id value.",
+                  "type": "integer"
+                },
+                "original_jql": {
+                  "description": "The original jql value.",
+                  "nullable": true,
+                  "type": "string"
+                },
+                "position": {
+                  "description": "The position value.",
+                  "type": "integer"
+                },
+                "ql_query": {
+                  "description": "The ql query value.",
+                  "type": "string"
+                },
+                "source_id": {
+                  "description": "The source id value.",
+                  "nullable": true,
+                  "type": "string"
+                },
+                "source_payload": {
+                  "description": "The source payload value.",
+                  "nullable": true,
+                  "type": "string"
+                },
+                "targets": {
+                  "description": "The targets value.",
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "calendar_id": {
+                        "description": "The calendar id value.",
+                        "type": "integer"
+                      },
+                      "goal_id": {
+                        "description": "The goal id value.",
+                        "type": "integer"
+                      },
+                      "id": {
+                        "description": "The id value.",
+                        "type": "integer"
+                      },
+                      "is_fallback": {
+                        "description": "The is fallback value.",
+                        "type": "boolean"
+                      },
+                      "position": {
+                        "description": "The position value.",
+                        "type": "integer"
+                      },
+                      "priority_id": {
+                        "description": "The priority id value.",
+                        "nullable": true,
+                        "type": "integer"
+                      },
+                      "source_id": {
+                        "description": "The source id value.",
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "source_payload": {
+                        "description": "The source payload value.",
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "target_ms": {
+                        "description": "The target ms value.",
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "calendar_id",
+                      "goal_id",
+                      "id",
+                      "is_fallback",
+                      "position",
+                      "target_ms"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "updated_at": {
+                  "description": "The updated at value.",
+                  "format": "date-time",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "created_at",
+                "id",
+                "import_status",
+                "metric_id",
+                "position",
+                "ql_query",
+                "updated_at"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "import_status": {
+            "description": "The import status value.",
+            "type": "string"
+          },
+          "is_active": {
+            "description": "The is active value.",
+            "nullable": true,
+            "type": "boolean"
+          },
+          "name": {
+            "description": "The name value.",
+            "type": "string"
+          },
+          "position": {
+            "description": "The position value.",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "conditions",
+          "display_format",
+          "goals",
+          "import_status",
+          "name",
+          "position"
+        ],
+        "type": "object"
+      },
+      "PostWorkspacesWorkspaceIdSlaMetricsResult": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": false,
+            "nullable": true,
+            "properties": {
+              "conditions": {
+                "description": "The conditions value.",
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "condition_type": {
+                      "description": "The condition type value.",
+                      "type": "string"
+                    },
+                    "config": {
+                      "description": "The config value.",
+                      "format": "byte",
+                      "type": "string"
+                    },
+                    "id": {
+                      "description": "The id value.",
+                      "type": "integer"
+                    },
+                    "metric_id": {
+                      "description": "The metric id value.",
+                      "type": "integer"
+                    },
+                    "phase": {
+                      "description": "The phase value.",
+                      "type": "string"
+                    },
+                    "position": {
+                      "description": "The position value.",
+                      "type": "integer"
+                    },
+                    "source_payload": {
+                      "description": "The source payload value.",
+                      "nullable": true,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "condition_type",
+                    "config",
+                    "id",
+                    "metric_id",
+                    "phase",
+                    "position"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "created_at": {
+                "description": "The created at value.",
+                "format": "date-time",
+                "type": "string"
+              },
+              "display_format": {
+                "description": "The display format value.",
+                "type": "string"
+              },
+              "goals": {
+                "description": "The goals value.",
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "created_at": {
+                      "description": "The created at value.",
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "id": {
+                      "description": "The id value.",
+                      "type": "integer"
+                    },
+                    "import_status": {
+                      "description": "The import status value.",
+                      "type": "string"
+                    },
+                    "metric_id": {
+                      "description": "The metric id value.",
+                      "type": "integer"
+                    },
+                    "original_jql": {
+                      "description": "The original jql value.",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "position": {
+                      "description": "The position value.",
+                      "type": "integer"
+                    },
+                    "ql_query": {
+                      "description": "The ql query value.",
+                      "type": "string"
+                    },
+                    "source_id": {
+                      "description": "The source id value.",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "source_payload": {
+                      "description": "The source payload value.",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "targets": {
+                      "description": "The targets value.",
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "calendar_id": {
+                            "description": "The calendar id value.",
+                            "type": "integer"
+                          },
+                          "goal_id": {
+                            "description": "The goal id value.",
+                            "type": "integer"
+                          },
+                          "id": {
+                            "description": "The id value.",
+                            "type": "integer"
+                          },
+                          "is_fallback": {
+                            "description": "The is fallback value.",
+                            "type": "boolean"
+                          },
+                          "position": {
+                            "description": "The position value.",
+                            "type": "integer"
+                          },
+                          "priority_id": {
+                            "description": "The priority id value.",
+                            "nullable": true,
+                            "type": "integer"
+                          },
+                          "source_id": {
+                            "description": "The source id value.",
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "source_payload": {
+                            "description": "The source payload value.",
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "target_ms": {
+                            "description": "The target ms value.",
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "calendar_id",
+                          "goal_id",
+                          "id",
+                          "is_fallback",
+                          "position",
+                          "target_ms"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "updated_at": {
+                      "description": "The updated at value.",
+                      "format": "date-time",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "created_at",
+                    "id",
+                    "import_status",
+                    "metric_id",
+                    "position",
+                    "ql_query",
+                    "updated_at"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "id": {
+                "description": "The id value.",
+                "type": "integer"
+              },
+              "import_status": {
+                "description": "The import status value.",
+                "type": "string"
+              },
+              "is_active": {
+                "description": "The is active value.",
+                "type": "boolean"
+              },
+              "name": {
+                "description": "The name value.",
+                "type": "string"
+              },
+              "position": {
+                "description": "The position value.",
+                "type": "integer"
+              },
+              "source": {
+                "description": "The source value.",
+                "nullable": true,
+                "type": "string"
+              },
+              "source_id": {
+                "description": "The source id value.",
+                "nullable": true,
+                "type": "string"
+              },
+              "source_payload": {
+                "description": "The source payload value.",
+                "nullable": true,
+                "type": "string"
+              },
+              "updated_at": {
+                "description": "The updated at value.",
+                "format": "date-time",
+                "type": "string"
+              },
+              "workspace_id": {
+                "description": "The workspace id value.",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "created_at",
+              "display_format",
+              "id",
+              "import_status",
+              "is_active",
+              "name",
+              "position",
+              "updated_at",
+              "workspace_id"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
       "PostWorkspacesWorkspaceIdSlaWarningThresholdsPayload": {
         "additionalProperties": false,
         "properties": {
@@ -91202,6 +92155,459 @@
               "timezone",
               "updated_at",
               "weekly_intervals"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "PutWorkspacesWorkspaceIdSlaMetricsMetricIdPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "conditions": {
+            "description": "The conditions value.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "condition_type": {
+                  "description": "The condition type value.",
+                  "type": "string"
+                },
+                "config": {
+                  "description": "The config value.",
+                  "format": "byte",
+                  "type": "string"
+                },
+                "id": {
+                  "description": "The id value.",
+                  "type": "integer"
+                },
+                "metric_id": {
+                  "description": "The metric id value.",
+                  "type": "integer"
+                },
+                "phase": {
+                  "description": "The phase value.",
+                  "type": "string"
+                },
+                "position": {
+                  "description": "The position value.",
+                  "type": "integer"
+                },
+                "source_payload": {
+                  "description": "The source payload value.",
+                  "nullable": true,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "condition_type",
+                "config",
+                "id",
+                "metric_id",
+                "phase",
+                "position"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "display_format": {
+            "description": "The display format value.",
+            "type": "string"
+          },
+          "goals": {
+            "description": "The goals value.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "created_at": {
+                  "description": "The created at value.",
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "id": {
+                  "description": "The id value.",
+                  "type": "integer"
+                },
+                "import_status": {
+                  "description": "The import status value.",
+                  "type": "string"
+                },
+                "metric_id": {
+                  "description": "The metric id value.",
+                  "type": "integer"
+                },
+                "original_jql": {
+                  "description": "The original jql value.",
+                  "nullable": true,
+                  "type": "string"
+                },
+                "position": {
+                  "description": "The position value.",
+                  "type": "integer"
+                },
+                "ql_query": {
+                  "description": "The ql query value.",
+                  "type": "string"
+                },
+                "source_id": {
+                  "description": "The source id value.",
+                  "nullable": true,
+                  "type": "string"
+                },
+                "source_payload": {
+                  "description": "The source payload value.",
+                  "nullable": true,
+                  "type": "string"
+                },
+                "targets": {
+                  "description": "The targets value.",
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "calendar_id": {
+                        "description": "The calendar id value.",
+                        "type": "integer"
+                      },
+                      "goal_id": {
+                        "description": "The goal id value.",
+                        "type": "integer"
+                      },
+                      "id": {
+                        "description": "The id value.",
+                        "type": "integer"
+                      },
+                      "is_fallback": {
+                        "description": "The is fallback value.",
+                        "type": "boolean"
+                      },
+                      "position": {
+                        "description": "The position value.",
+                        "type": "integer"
+                      },
+                      "priority_id": {
+                        "description": "The priority id value.",
+                        "nullable": true,
+                        "type": "integer"
+                      },
+                      "source_id": {
+                        "description": "The source id value.",
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "source_payload": {
+                        "description": "The source payload value.",
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "target_ms": {
+                        "description": "The target ms value.",
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "calendar_id",
+                      "goal_id",
+                      "id",
+                      "is_fallback",
+                      "position",
+                      "target_ms"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "updated_at": {
+                  "description": "The updated at value.",
+                  "format": "date-time",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "created_at",
+                "id",
+                "import_status",
+                "metric_id",
+                "position",
+                "ql_query",
+                "updated_at"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "import_status": {
+            "description": "The import status value.",
+            "type": "string"
+          },
+          "is_active": {
+            "description": "The is active value.",
+            "nullable": true,
+            "type": "boolean"
+          },
+          "name": {
+            "description": "The name value.",
+            "type": "string"
+          },
+          "position": {
+            "description": "The position value.",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "conditions",
+          "display_format",
+          "goals",
+          "import_status",
+          "name",
+          "position"
+        ],
+        "type": "object"
+      },
+      "PutWorkspacesWorkspaceIdSlaMetricsMetricIdResult": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": false,
+            "nullable": true,
+            "properties": {
+              "conditions": {
+                "description": "The conditions value.",
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "condition_type": {
+                      "description": "The condition type value.",
+                      "type": "string"
+                    },
+                    "config": {
+                      "description": "The config value.",
+                      "format": "byte",
+                      "type": "string"
+                    },
+                    "id": {
+                      "description": "The id value.",
+                      "type": "integer"
+                    },
+                    "metric_id": {
+                      "description": "The metric id value.",
+                      "type": "integer"
+                    },
+                    "phase": {
+                      "description": "The phase value.",
+                      "type": "string"
+                    },
+                    "position": {
+                      "description": "The position value.",
+                      "type": "integer"
+                    },
+                    "source_payload": {
+                      "description": "The source payload value.",
+                      "nullable": true,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "condition_type",
+                    "config",
+                    "id",
+                    "metric_id",
+                    "phase",
+                    "position"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "created_at": {
+                "description": "The created at value.",
+                "format": "date-time",
+                "type": "string"
+              },
+              "display_format": {
+                "description": "The display format value.",
+                "type": "string"
+              },
+              "goals": {
+                "description": "The goals value.",
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "created_at": {
+                      "description": "The created at value.",
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "id": {
+                      "description": "The id value.",
+                      "type": "integer"
+                    },
+                    "import_status": {
+                      "description": "The import status value.",
+                      "type": "string"
+                    },
+                    "metric_id": {
+                      "description": "The metric id value.",
+                      "type": "integer"
+                    },
+                    "original_jql": {
+                      "description": "The original jql value.",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "position": {
+                      "description": "The position value.",
+                      "type": "integer"
+                    },
+                    "ql_query": {
+                      "description": "The ql query value.",
+                      "type": "string"
+                    },
+                    "source_id": {
+                      "description": "The source id value.",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "source_payload": {
+                      "description": "The source payload value.",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "targets": {
+                      "description": "The targets value.",
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "calendar_id": {
+                            "description": "The calendar id value.",
+                            "type": "integer"
+                          },
+                          "goal_id": {
+                            "description": "The goal id value.",
+                            "type": "integer"
+                          },
+                          "id": {
+                            "description": "The id value.",
+                            "type": "integer"
+                          },
+                          "is_fallback": {
+                            "description": "The is fallback value.",
+                            "type": "boolean"
+                          },
+                          "position": {
+                            "description": "The position value.",
+                            "type": "integer"
+                          },
+                          "priority_id": {
+                            "description": "The priority id value.",
+                            "nullable": true,
+                            "type": "integer"
+                          },
+                          "source_id": {
+                            "description": "The source id value.",
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "source_payload": {
+                            "description": "The source payload value.",
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "target_ms": {
+                            "description": "The target ms value.",
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "calendar_id",
+                          "goal_id",
+                          "id",
+                          "is_fallback",
+                          "position",
+                          "target_ms"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "updated_at": {
+                      "description": "The updated at value.",
+                      "format": "date-time",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "created_at",
+                    "id",
+                    "import_status",
+                    "metric_id",
+                    "position",
+                    "ql_query",
+                    "updated_at"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "id": {
+                "description": "The id value.",
+                "type": "integer"
+              },
+              "import_status": {
+                "description": "The import status value.",
+                "type": "string"
+              },
+              "is_active": {
+                "description": "The is active value.",
+                "type": "boolean"
+              },
+              "name": {
+                "description": "The name value.",
+                "type": "string"
+              },
+              "position": {
+                "description": "The position value.",
+                "type": "integer"
+              },
+              "source": {
+                "description": "The source value.",
+                "nullable": true,
+                "type": "string"
+              },
+              "source_id": {
+                "description": "The source id value.",
+                "nullable": true,
+                "type": "string"
+              },
+              "source_payload": {
+                "description": "The source payload value.",
+                "nullable": true,
+                "type": "string"
+              },
+              "updated_at": {
+                "description": "The updated at value.",
+                "format": "date-time",
+                "type": "string"
+              },
+              "workspace_id": {
+                "description": "The workspace id value.",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "created_at",
+              "display_format",
+              "id",
+              "import_status",
+              "is_active",
+              "name",
+              "position",
+              "updated_at",
+              "workspace_id"
             ],
             "type": "object"
           }
@@ -117326,6 +118732,346 @@
           }
         ],
         "summary": "Update SLA calendar",
+        "tags": [
+          "Workspace configuration"
+        ],
+        "x-required-scopes": [
+          "workspaces:write"
+        ]
+      }
+    },
+    "/workspaces/{workspace_id}/sla/metrics": {
+      "get": {
+        "description": "List SLA metrics. Results include only resources visible to the authenticated caller; collections use their documented stable order and bounds.",
+        "operationId": "getWorkspacesWorkspaceIdSlaMetrics",
+        "parameters": [
+          {
+            "description": "The workspace identifier.",
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetWorkspacesWorkspaceIdSlaMetricsResult"
+                }
+              }
+            },
+            "description": "List SLA metrics response."
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationError"
+          },
+          "403": {
+            "$ref": "#/components/responses/PermissionError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimitError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "List SLA metrics",
+        "tags": [
+          "Workspace configuration"
+        ],
+        "x-required-scopes": [
+          "workspaces:read"
+        ]
+      },
+      "post": {
+        "description": "Create SLA metric. The server validates resource ownership and command preconditions before persisting changes. Unknown JSON fields are rejected when the operation accepts a body.",
+        "operationId": "postWorkspacesWorkspaceIdSlaMetrics",
+        "parameters": [
+          {
+            "description": "The workspace identifier.",
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostWorkspacesWorkspaceIdSlaMetricsPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostWorkspacesWorkspaceIdSlaMetricsResult"
+                }
+              }
+            },
+            "description": "Create SLA metric response."
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationError"
+          },
+          "403": {
+            "$ref": "#/components/responses/PermissionError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLargeError"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaTypeError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimitError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Create SLA metric",
+        "tags": [
+          "Workspace configuration"
+        ],
+        "x-required-scopes": [
+          "workspaces:write"
+        ]
+      }
+    },
+    "/workspaces/{workspace_id}/sla/metrics/{metric_id}": {
+      "delete": {
+        "description": "Delete SLA metric. The server verifies resource ownership and deletion preconditions before removing the resource.",
+        "operationId": "deleteWorkspacesWorkspaceIdSlaMetricsMetricId",
+        "parameters": [
+          {
+            "description": "The workspace identifier.",
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The SLA metric identifier.",
+            "in": "path",
+            "name": "metric_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Request completed successfully with no response body."
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationError"
+          },
+          "403": {
+            "$ref": "#/components/responses/PermissionError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimitError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Delete SLA metric",
+        "tags": [
+          "Workspace configuration"
+        ],
+        "x-required-scopes": [
+          "workspaces:write"
+        ]
+      },
+      "get": {
+        "description": "Get SLA metric. Results include only resources visible to the authenticated caller; collections use their documented stable order and bounds.",
+        "operationId": "getWorkspacesWorkspaceIdSlaMetricsMetricId",
+        "parameters": [
+          {
+            "description": "The workspace identifier.",
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The SLA metric identifier.",
+            "in": "path",
+            "name": "metric_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetWorkspacesWorkspaceIdSlaMetricsMetricIdResult"
+                }
+              }
+            },
+            "description": "Get SLA metric response."
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationError"
+          },
+          "403": {
+            "$ref": "#/components/responses/PermissionError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimitError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Get SLA metric",
+        "tags": [
+          "Workspace configuration"
+        ],
+        "x-required-scopes": [
+          "workspaces:read"
+        ]
+      },
+      "put": {
+        "description": "Update SLA metric. The server validates resource ownership and command preconditions before persisting changes. Unknown JSON fields are rejected when the operation accepts a body.",
+        "operationId": "putWorkspacesWorkspaceIdSlaMetricsMetricId",
+        "parameters": [
+          {
+            "description": "The workspace identifier.",
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The SLA metric identifier.",
+            "in": "path",
+            "name": "metric_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutWorkspacesWorkspaceIdSlaMetricsMetricIdPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PutWorkspacesWorkspaceIdSlaMetricsMetricIdResult"
+                }
+              }
+            },
+            "description": "Update SLA metric response."
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationError"
+          },
+          "403": {
+            "$ref": "#/components/responses/PermissionError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLargeError"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaTypeError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimitError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Update SLA metric",
         "tags": [
           "Workspace configuration"
         ],

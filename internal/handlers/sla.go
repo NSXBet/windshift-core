@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -27,6 +26,7 @@ type SLAHandler struct {
 	calendars         *services.SLACalendarService
 	settings          *services.SLASettingsService
 	bindings          *services.SLATeamBindingService
+	metrics           *services.SLAMetricService
 	permissionService *services.PermissionService
 }
 
@@ -40,6 +40,7 @@ func NewSLAHandler(db database.Database, engine *sla.Engine, permissionService *
 		calendars:         services.NewSLACalendarService(db, engine),
 		settings:          services.NewSLASettingsService(db, engine),
 		bindings:          services.NewSLATeamBindingService(db, permissionService),
+		metrics:           services.NewSLAMetricService(db, engine),
 		permissionService: permissionService,
 	}
 }
@@ -546,13 +547,26 @@ type slaMetricRequest struct {
 	Goals         []models.SLAGoal      `json:"goals"`
 }
 
+// input maps the transport request onto the shared metric service input.
+func (request slaMetricRequest) input() services.SLAMetricInput {
+	return services.SLAMetricInput{
+		Name:          request.Name,
+		DisplayFormat: request.DisplayFormat,
+		Position:      request.Position,
+		IsActive:      request.IsActive,
+		ImportStatus:  request.ImportStatus,
+		Conditions:    request.Conditions,
+		Goals:         request.Goals,
+	}
+}
+
 // ListMetrics returns a workspace's SLA metrics.
 func (h *SLAHandler) ListMetrics(w http.ResponseWriter, r *http.Request) {
 	workspaceID, ok := h.authorizeWorkspaceAdmin(w, r)
 	if !ok {
 		return
 	}
-	metrics, err := h.repo.ListMetrics(r.Context(), workspaceID)
+	metrics, err := h.metrics.List(r.Context(), workspaceID)
 	if err != nil {
 		respondError(w, r, slaInternal(err))
 		return
@@ -570,9 +584,8 @@ func (h *SLAHandler) GetMetric(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	metric, err := h.repo.GetMetric(r.Context(), metricID)
-	if err != nil || metric.WorkspaceID != workspaceID {
-		respondNotFound(w, r, "metric")
+	metric, err := h.metrics.Get(r.Context(), workspaceID, metricID)
+	if !h.writeMetricResult(w, r, err) {
 		return
 	}
 	respondJSONOK(w, metric)
@@ -588,29 +601,10 @@ func (h *SLAHandler) CreateMetric(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	metric, ok := h.buildMetric(w, r, workspaceID, request)
-	if !ok {
+	metric, err := h.metrics.Create(r.Context(), workspaceID, request.input())
+	if !h.writeMetricResult(w, r, err) {
 		return
 	}
-	ctx := r.Context()
-	var metricID int
-	err := database.WithTx(h.db, func(tx database.Tx) error {
-		id, err := h.repo.CreateMetric(ctx, tx, metric)
-		if err != nil {
-			return err
-		}
-		metricID = id
-		if _, err := h.engine.BumpConfigGeneration(ctx, tx, workspaceID); err != nil {
-			return err
-		}
-		return h.enqueueRecalcMetric(ctx, tx, metricID)
-	})
-	if err != nil {
-		respondError(w, r, slaInternal(err))
-		return
-	}
-	metric.ID = metricID
-	h.engine.Wake()
 	respondJSONCreated(w, metric)
 }
 
@@ -624,35 +618,14 @@ func (h *SLAHandler) UpdateMetric(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	existing, err := h.repo.GetMetric(r.Context(), metricID)
-	if err != nil || existing.WorkspaceID != workspaceID {
-		respondNotFound(w, r, "metric")
-		return
-	}
 	request, ok := decodeJSON[slaMetricRequest](w, r)
 	if !ok {
 		return
 	}
-	metric, ok := h.buildMetric(w, r, workspaceID, request)
-	if !ok {
+	metric, err := h.metrics.Update(r.Context(), workspaceID, metricID, request.input())
+	if !h.writeMetricResult(w, r, err) {
 		return
 	}
-	metric.ID = metricID
-	ctx := r.Context()
-	err = database.WithTx(h.db, func(tx database.Tx) error {
-		if err := h.repo.UpdateMetric(ctx, tx, metric); err != nil {
-			return err
-		}
-		if _, err := h.engine.BumpConfigGeneration(ctx, tx, workspaceID); err != nil {
-			return err
-		}
-		return h.enqueueRecalcMetric(ctx, tx, metricID)
-	})
-	if err != nil {
-		respondError(w, r, slaInternal(err))
-		return
-	}
-	h.engine.Wake()
 	respondJSONOK(w, metric)
 }
 
@@ -666,21 +639,7 @@ func (h *SLAHandler) DeleteMetric(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	existing, err := h.repo.GetMetric(r.Context(), metricID)
-	if err != nil || existing.WorkspaceID != workspaceID {
-		respondNotFound(w, r, "metric")
-		return
-	}
-	ctx := r.Context()
-	err = database.WithTx(h.db, func(tx database.Tx) error {
-		if err := h.repo.DeleteMetric(ctx, tx, metricID); err != nil {
-			return err
-		}
-		_, err := h.engine.BumpConfigGeneration(ctx, tx, workspaceID)
-		return err
-	})
-	if err != nil {
-		respondError(w, r, slaInternal(err))
+	if !h.writeMetricResult(w, r, h.metrics.Delete(r.Context(), workspaceID, metricID)) {
 		return
 	}
 	respondJSONOK(w, map[string]bool{"deleted": true})
@@ -702,33 +661,12 @@ func (h *SLAHandler) StartRecalculation(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	ctx := r.Context()
-	metricIDs := []int{request.MetricID}
-	if request.MetricID == 0 {
-		metrics, err := h.repo.ListMetrics(ctx, workspaceID)
-		if err != nil {
-			respondError(w, r, slaInternal(err))
-			return
-		}
-		metricIDs = metricIDs[:0]
-		for _, metric := range metrics {
-			metricIDs = append(metricIDs, metric.ID)
-		}
-	}
-	err := database.WithTx(h.db, func(tx database.Tx) error {
-		for _, metricID := range metricIDs {
-			if err := h.enqueueRecalcMetric(ctx, tx, metricID); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
+	enqueued, err := h.metrics.EnqueueRecalculation(r.Context(), workspaceID, request.MetricID)
 	if err != nil {
 		respondError(w, r, slaInternal(err))
 		return
 	}
-	h.engine.Wake()
-	respondJSONOK(w, map[string]any{"enqueued": len(metricIDs)})
+	respondJSONOK(w, map[string]any{"enqueued": enqueued})
 }
 
 // GetReport returns the completed-cycle compliance report for a workspace.
@@ -832,104 +770,18 @@ func (h *SLAHandler) authorizeTeamAdmin(w http.ResponseWriter, r *http.Request) 
 	return teamID, true
 }
 
-func (h *SLAHandler) buildMetric(w http.ResponseWriter, r *http.Request, workspaceID int, request slaMetricRequest) (*models.SLAMetric, bool) {
-	name := strings.TrimSpace(request.Name)
-	if name == "" {
-		respondValidationError(w, r, "name is required")
-		return nil, false
-	}
-	displayFormat := request.DisplayFormat
-	if displayFormat == "" {
-		displayFormat = "time"
-	}
-	if displayFormat != "time" && displayFormat != "due_date" {
-		respondValidationError(w, r, "display_format must be time or due_date")
-		return nil, false
-	}
-	isActive := true
-	if request.IsActive != nil {
-		isActive = *request.IsActive
-	}
-	importStatus := request.ImportStatus
-	if importStatus == "" {
-		importStatus = "native"
-	}
-	metric := &models.SLAMetric{
-		WorkspaceID:   workspaceID,
-		Name:          name,
-		DisplayFormat: displayFormat,
-		Position:      request.Position,
-		IsActive:      isActive,
-		ImportStatus:  importStatus,
-		Conditions:    request.Conditions,
-		Goals:         request.Goals,
-	}
-	if err := h.validateConditions(metric.Conditions); err != nil {
+// writeMetricResult maps metric service errors to responses. It returns true
+// when the caller should write the success body.
+func (h *SLAHandler) writeMetricResult(w http.ResponseWriter, r *http.Request, err error) bool {
+	switch {
+	case err == nil:
+		return true
+	case errors.Is(err, services.ErrSLAMetricInvalid):
 		respondValidationError(w, r, err.Error())
-		return nil, false
+	case errors.Is(err, repository.ErrNotFound):
+		respondNotFound(w, r, "metric")
+	default:
+		respondError(w, r, slaInternal(err))
 	}
-	if err := h.validateTargets(r.Context(), workspaceID, metric.Goals); err != nil {
-		respondValidationError(w, r, err.Error())
-		return nil, false
-	}
-	return metric, true
-}
-
-func (h *SLAHandler) validateConditions(conditions []models.SLACondition) error {
-	for i := range conditions {
-		condition := &conditions[i]
-		switch condition.Phase {
-		case models.SLAPhaseStart, models.SLAPhasePause, models.SLAPhaseStop:
-		default:
-			return errors.New("condition phase must be start, pause, or stop")
-		}
-		if strings.TrimSpace(condition.ConditionType) == "" {
-			return errors.New("condition_type is required")
-		}
-	}
-	return nil
-}
-
-// validateTargets ensures every referenced calendar belongs to the workspace or
-// to a team bound to it. A promise may never depend on an unauthorized
-// calendar.
-func (h *SLAHandler) validateTargets(ctx context.Context, workspaceID int, goals []models.SLAGoal) error {
-	for i := range goals {
-		for j := range goals[i].Targets {
-			target := &goals[i].Targets[j]
-			if target.CalendarID == 0 {
-				return errors.New("each goal target needs a calendar_id")
-			}
-			if target.TargetMs <= 0 {
-				return errors.New("each goal target needs a positive target_ms")
-			}
-			accessible, err := h.calendarAccessible(ctx, workspaceID, target.CalendarID)
-			if err != nil {
-				return err
-			}
-			if !accessible {
-				return errors.New("goal target references a calendar this workspace cannot use")
-			}
-		}
-	}
-	return nil
-}
-
-func (h *SLAHandler) calendarAccessible(ctx context.Context, workspaceID, calendarID int) (bool, error) {
-	var accessible bool
-	err := h.db.QueryRowContext(ctx, `SELECT EXISTS(
-		SELECT 1 FROM working_calendars c
-		WHERE c.id = ?
-		  AND (c.workspace_id = ?
-		       OR c.team_id IN (SELECT team_id FROM team_workspace_bindings WHERE workspace_id = ?))
-	)`, calendarID, workspaceID, workspaceID).Scan(&accessible)
-	if err != nil {
-		return false, err
-	}
-	return accessible, nil
-}
-
-func (h *SLAHandler) enqueueRecalcMetric(ctx context.Context, tx database.Tx, metricID int) error {
-	metric := metricID
-	return h.repo.UpsertJob(ctx, tx, &models.SLAJob{Kind: models.SLAJobRecalcMetric, MetricID: &metric, DueAt: time.Now().UTC()})
+	return false
 }

@@ -1,6 +1,7 @@
 package wscli
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -36,6 +37,47 @@ func (c *Client) GetSLAReport(workspaceID int, from, to string) (*models.SLARepo
 		return nil, err
 	}
 	return &report, nil
+}
+
+// ListSLAMetrics returns a workspace's SLA metrics.
+func (c *Client) ListSLAMetrics(workspaceID int) ([]models.SLAMetric, error) {
+	var metrics []models.SLAMetric
+	if err := c.GET(fmt.Sprintf("/rest/api/v2/workspaces/%d/sla/metrics", workspaceID), &metrics); err != nil {
+		return nil, err
+	}
+	return metrics, nil
+}
+
+// GetSLAMetric returns one SLA metric.
+func (c *Client) GetSLAMetric(workspaceID, metricID int) (*models.SLAMetric, error) {
+	var metric models.SLAMetric
+	if err := c.GET(fmt.Sprintf("/rest/api/v2/workspaces/%d/sla/metrics/%d", workspaceID, metricID), &metric); err != nil {
+		return nil, err
+	}
+	return &metric, nil
+}
+
+// CreateSLAMetric posts a metric payload and returns the persisted metric.
+func (c *Client) CreateSLAMetric(workspaceID int, payload json.RawMessage) (*models.SLAMetric, error) {
+	var metric models.SLAMetric
+	if err := c.POST(fmt.Sprintf("/rest/api/v2/workspaces/%d/sla/metrics", workspaceID), payload, &metric); err != nil {
+		return nil, err
+	}
+	return &metric, nil
+}
+
+// UpdateSLAMetric replaces a metric payload and returns the persisted metric.
+func (c *Client) UpdateSLAMetric(workspaceID, metricID int, payload json.RawMessage) (*models.SLAMetric, error) {
+	var metric models.SLAMetric
+	if err := c.PUT(fmt.Sprintf("/rest/api/v2/workspaces/%d/sla/metrics/%d", workspaceID, metricID), payload, &metric); err != nil {
+		return nil, err
+	}
+	return &metric, nil
+}
+
+// DeleteSLAMetric removes a metric.
+func (c *Client) DeleteSLAMetric(workspaceID, metricID int) error {
+	return c.DELETE(fmt.Sprintf("/rest/api/v2/workspaces/%d/sla/metrics/%d", workspaceID, metricID))
 }
 
 // ListSLAItems runs an SLA QL filter over the item list and returns the page.
