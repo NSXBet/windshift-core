@@ -125,6 +125,16 @@ export default {
       elapsedOfGoal: '{elapsed} elapsed of {goal} goal',
       notRunning: 'No running cycle',
       completedCycles: 'Completed cycles ({count})',
+      coverageDiscrepancies: {
+        sla_wider: 'This SLA counts time outside the bound team’s service hours.',
+        team_wider: 'The team is staffed during time this SLA excludes.',
+        both: 'The SLA and team service hours differ in both directions.',
+      },
+      coverageNotes: {
+        sla_outside_team_service_hours: 'SLA counts time the team does not staff.',
+        team_service_hours_outside_sla: 'Team staffed time is excluded from the SLA.',
+        sla_and_team_service_hours_differ: 'SLA and team service hours both differ.',
+      },
     },
     itemKey: 'Key',
     itemTitle: 'Title',
@@ -964,6 +974,21 @@ export default {
       stoppedAt: 'Stopped',
       elapsed: 'Elapsed / goal',
       reportLoadFailed: 'Failed to load the SLA report',
+      reportCoverage: 'Coverage',
+      coverageReference: 'Reference',
+      slaCounted: 'SLA counted',
+      teamService: 'Team service hours',
+      uncoveredTime: 'Uncovered time',
+      currentStateReference:
+        'Coverage compares stored cycle snapshots against the currently bound teams.',
+      coveragePreview: 'Team service-hours coverage',
+      coverageWeekly:
+        'SLA {sla}/week · team {team}/week · overlap {overlap}/week',
+      coverageDiscrepancies: {
+        sla_wider: 'The SLA counts more weekly hours than the bound teams staff.',
+        team_wider: 'The bound teams staff more weekly hours than the SLA counts.',
+        both: 'The SLA and the bound teams’ weekly hours differ in both directions.',
+      },
       calendarsTitle: 'Working Calendars',
       calendarsSubtitle:
         'Business-hours calendars that SLA goals count time against. Team calendars shared with this workspace appear read-only.',

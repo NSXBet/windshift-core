@@ -102,6 +102,18 @@
                 goal: formatDuration(cycle.goal_duration_ms),
               })}
             </div>
+            {#if cycle.coverage?.reference === 'team_service_hours' && cycle.coverage.discrepancy && cycle.coverage.discrepancy !== 'aligned'}
+              <div
+                class="text-xs mt-1"
+                style="color: var(--ds-text-subtle)"
+                data-testid="item-sla-coverage-{state.metric_id}"
+              >
+                {t(`items.sla.coverageDiscrepancies.${cycle.coverage.discrepancy}`)}
+                {#if cycle.coverage.note}
+                  · {t(`items.sla.coverageNotes.${cycle.coverage.note}`)}
+                {/if}
+              </div>
+            {/if}
           {:else}
             <div class="text-xs mt-1" style="color: var(--ds-text-subtle)">
               {t('items.sla.notRunning')}

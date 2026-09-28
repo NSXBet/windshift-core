@@ -168,6 +168,7 @@
 <WorkingCalendarEditor
   bind:isOpen={showEditor}
   calendar={editing}
+  {workspaceId}
   onSave={save}
   onClose={() => {
     showEditor = false;

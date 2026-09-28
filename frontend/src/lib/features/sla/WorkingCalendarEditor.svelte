@@ -10,8 +10,15 @@
   import { Plus, Trash2 } from '@lucide/svelte';
   import { t } from '../../stores/i18n.svelte.js';
   import { listIanaTimezones } from '../../utils/timeUtils.js';
+  import { api } from '../../api.js';
 
-  let { isOpen = $bindable(false), calendar = null, onSave, onClose } = $props();
+  let {
+    isOpen = $bindable(false),
+    calendar = null,
+    workspaceId = null,
+    onSave,
+    onClose,
+  } = $props();
 
   const weekdays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 
@@ -36,6 +43,8 @@
   let formData = $state(blankForm());
   let saving = $state(false);
   let error = $state(null);
+  let coverage = $state(null);
+  let coverageLoading = $state(false);
 
   const timezoneOptions = $derived.by(() => {
     const zones = formData.timezone && !baseTimezoneIds.includes(formData.timezone)
@@ -49,6 +58,39 @@
     error = null;
     formData = normalize(calendar);
   });
+
+  // Config-time coverage preview: only workspace-owned calendars have a
+  // workspace-relative reference to compare against.
+  $effect(() => {
+    const id = calendar?.id;
+    const ownedByWorkspace = !!calendar?.workspace_id;
+    if (!isOpen || !id || !workspaceId || !ownedByWorkspace || !api.sla?.getCoveragePreview) {
+      coverage = null;
+      return;
+    }
+    let active = true;
+    coverageLoading = true;
+    api.sla
+      .getCoveragePreview(workspaceId, id)
+      .then((value) => {
+        if (active) coverage = value;
+      })
+      .catch(() => {
+        if (active) coverage = null;
+      })
+      .finally(() => {
+        if (active) coverageLoading = false;
+      });
+    return () => {
+      active = false;
+    };
+  });
+
+  function formatWeekly(ms) {
+    if (ms == null || ms === 0) return '0m';
+    const hours = Math.round(ms / 3600000);
+    return `${hours}h`;
+  }
 
   function normalize(source) {
     const base = blankForm();
@@ -294,6 +336,28 @@
         <div class="form-group flex items-center gap-2">
           <Toggle bind:checked={formData.apply_to_ongoing} dataTestid="sla-calendar-apply-ongoing" />
           <span>{t('workspaceSettings.serviceLevels.applyToOngoing')}</span>
+        </div>
+      {/if}
+
+      {#if coverage && coverage.reference === 'team_service_hours'}
+        <div
+          class="mb-3 rounded border p-3 text-xs"
+          style="border-color: var(--ds-border)"
+          data-testid="sla-calendar-coverage"
+        >
+          <div class="font-medium mb-1">{t('workspaceSettings.serviceLevels.coveragePreview')}</div>
+          <div style="color: var(--ds-text-subtle)">
+            {t('workspaceSettings.serviceLevels.coverageWeekly', {
+              sla: formatWeekly(coverage.sla_weekly_ms),
+              team: formatWeekly(coverage.team_weekly_ms),
+              overlap: formatWeekly(coverage.overlap_weekly_ms),
+            })}
+          </div>
+          {#if coverage.discrepancy && coverage.discrepancy !== 'aligned'}
+            <div style="color: var(--ds-text-subtle)">
+              {t(`workspaceSettings.serviceLevels.coverageDiscrepancies.${coverage.discrepancy}`)}
+            </div>
+          {/if}
         </div>
       {/if}
     </div>

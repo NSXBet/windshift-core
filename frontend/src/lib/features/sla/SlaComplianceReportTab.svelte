@@ -191,6 +191,47 @@
   {/snippet}
 </DataTable>
 
+{#if report?.coverage && report.coverage.reference !== 'none'}
+  <h4 class="mt-6 mb-2 text-sm font-semibold" style="color: var(--ds-text)">
+    {t('workspaceSettings.serviceLevels.reportCoverage')}
+  </h4>
+  <div
+    class="rounded border p-3 text-sm grid grid-cols-2 gap-2 md:grid-cols-4"
+    style="border-color: var(--ds-border)"
+    data-testid="sla-report-coverage"
+  >
+    <div>
+      <div class="text-xs" style="color: var(--ds-text-subtle)">
+        {t('workspaceSettings.serviceLevels.coverageReference')}
+      </div>
+      <div>{report.coverage.reference}</div>
+    </div>
+    <div>
+      <div class="text-xs" style="color: var(--ds-text-subtle)">
+        {t('workspaceSettings.serviceLevels.slaCounted')}
+      </div>
+      <div>{formatDuration(report.coverage.sla_counted_ms)}</div>
+    </div>
+    <div>
+      <div class="text-xs" style="color: var(--ds-text-subtle)">
+        {t('workspaceSettings.serviceLevels.teamService')}
+      </div>
+      <div>{formatDuration(report.coverage.team_service_ms)}</div>
+    </div>
+    <div>
+      <div class="text-xs" style="color: var(--ds-text-subtle)">
+        {t('workspaceSettings.serviceLevels.uncoveredTime')}
+      </div>
+      <div>{formatDuration(report.coverage.uncovered_ms)}</div>
+    </div>
+  </div>
+  {#if report.coverage.current_state_reference}
+    <p class="mt-1 text-xs" style="color: var(--ds-text-subtle)">
+      {t('workspaceSettings.serviceLevels.currentStateReference')}
+    </p>
+  {/if}
+{/if}
+
 {#if (report?.breached_items ?? []).length > 0}
   <h4 class="mt-6 mb-2 text-sm font-semibold" style="color: var(--ds-text)">
     {t('workspaceSettings.serviceLevels.breachedItems')}
