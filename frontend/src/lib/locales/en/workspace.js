@@ -822,6 +822,7 @@ export default {
         metrics: 'Metrics',
         warnings: 'Warnings',
         recalculations: 'Recalculation',
+        teams: 'Team Access',
       },
       metricsTitle: 'SLA Metrics',
       metricsSubtitle:
@@ -910,6 +911,26 @@ export default {
       jobFailed: 'Failed',
       jobPending: 'Pending',
       dueAt: 'Due at',
+      bindingsTitle: 'Team Access',
+      bindingsSubtitle:
+        'Teams this workspace may use service hours from. Creating or removing a binding needs administration rights on both the team and the workspace.',
+      createBinding: 'Bind a team',
+      removeBinding: 'Remove binding',
+      removeBindingConfirm: 'Remove the binding to “{name}”? This cannot be undone.',
+      bindingCreated: 'Team bound',
+      bindingRemoved: 'Binding removed',
+      bindingDenied:
+        'You must be an administrator of both the team and this workspace to change a binding.',
+      removeBindingBlocked:
+        'This binding cannot be removed while an SLA goal still uses one of the team’s calendars.',
+      loadBindingsFailed: 'Failed to load team bindings',
+      noBindings: 'No teams are bound to this workspace yet.',
+      boundTeam: 'Team',
+      availableCalendars: 'Available calendars',
+      selectTeam: 'Select a team',
+      selectTeamRequired: 'Select a team to bind.',
+      bindingConsentHelp:
+        'Both the team and the workspace must consent. You need to be an administrator of both.',
       calendarsTitle: 'Working Calendars',
       calendarsSubtitle:
         'Business-hours calendars that SLA goals count time against. Team calendars shared with this workspace appear read-only.',

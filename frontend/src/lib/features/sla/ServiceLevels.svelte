@@ -3,7 +3,8 @@
   import SlaMetricsTab from './SlaMetricsTab.svelte';
   import SlaWarningThresholdsTab from './SlaWarningThresholdsTab.svelte';
   import SlaRecalculationTab from './SlaRecalculationTab.svelte';
-  import { BellRing, Calendar, Gauge, RefreshCw } from '@lucide/svelte';
+  import SlaTeamBindingsTab from './SlaTeamBindingsTab.svelte';
+  import { BellRing, Calendar, Gauge, Handshake, RefreshCw } from '@lucide/svelte';
   import { t } from '../../stores/i18n.svelte.js';
 
   let { workspaceId = null } = $props();
@@ -34,6 +35,12 @@
       labelKey: 'workspaceSettings.serviceLevels.tabs.recalculations',
       icon: RefreshCw,
       component: SlaRecalculationTab,
+    },
+    {
+      id: 'teams',
+      labelKey: 'workspaceSettings.serviceLevels.tabs.teams',
+      icon: Handshake,
+      component: SlaTeamBindingsTab,
     },
   ];
 
