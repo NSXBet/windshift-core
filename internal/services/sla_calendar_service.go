@@ -206,6 +206,34 @@ func (s *SLACalendarService) TeamCalendarImpact(ctx context.Context, teamID, cal
 	return s.CalendarImpact(ctx, calendarID)
 }
 
+// PreviewCoverage compares a workspace-visible calendar against the workspace's
+// bound team service hours. Informational only: it never blocks a save.
+func (s *SLACalendarService) PreviewCoverage(ctx context.Context, workspaceID, calendarID int) (*models.SLACoverage, error) {
+	if s.engine == nil {
+		return nil, repository.ErrNotFound
+	}
+	calendar, err := s.repo.GetCalendar(ctx, calendarID)
+	if err != nil {
+		return nil, err
+	}
+	accessible, err := s.repo.CalendarAccessibleToWorkspace(ctx, workspaceID, calendarID)
+	if err != nil {
+		return nil, err
+	}
+	if !accessible {
+		return nil, repository.ErrNotFound
+	}
+	raw, err := businesstime.FromStored(calendar.Timezone, calendar.WeeklyIntervals, calendar.Holidays)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrSLACalendarInvalid, err)
+	}
+	compiled, err := businesstime.Compile(raw)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrSLACalendarInvalid, err)
+	}
+	return s.engine.CoveragePreview(ctx, workspaceID, compiled)
+}
+
 // WorkspaceCalendarImpact previews the effect of editing a calendar visible to
 // one workspace. A team calendar's impact is filtered to that workspace so one
 // workspace admin never sees another workspace's metrics.

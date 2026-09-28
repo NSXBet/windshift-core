@@ -19,6 +19,7 @@ func registerSLACalendarRoutes(builder *routeBuilder, deps Deps) {
 	builder.Read("/workspaces/{workspace_id}/sla/calendars", AuthAuthenticated, []string{"workspaces:read"}, listSLACalendars(deps))
 	builder.Read("/workspaces/{workspace_id}/sla/available-calendars", AuthAuthenticated, []string{"workspaces:read"}, listAvailableSLACalendars(deps))
 	builder.Read("/workspaces/{workspace_id}/sla/calendars/{calendar_id}/impact", AuthAuthenticated, []string{"workspaces:read"}, getSLACalendarImpact(deps))
+	builder.Read("/workspaces/{workspace_id}/sla/coverage-preview", AuthAuthenticated, []string{"workspaces:read"}, getSLACoveragePreview(deps))
 	builder.JSON(http.MethodPost, "/workspaces/{workspace_id}/sla/calendars", http.StatusCreated, false, AuthAuthenticated, []string{"workspaces:write"}, createSLACalendar(deps))
 	builder.JSON(http.MethodPut, "/workspaces/{workspace_id}/sla/calendars/{calendar_id}", http.StatusOK, false, AuthAuthenticated, []string{"workspaces:write"}, updateSLACalendar(deps))
 	builder.Command(http.MethodDelete, "/workspaces/{workspace_id}/sla/calendars/{calendar_id}", AuthAuthenticated, []string{"workspaces:write"}, deleteSLACalendar(deps))
@@ -92,6 +93,33 @@ func listAvailableSLACalendars(deps Deps) readOperation[[]models.WorkingCalendar
 			return nil, internalError(err)
 		}
 		return calendars, nil
+	}
+}
+
+// getSLACoveragePreview compares a candidate calendar against the workspace's
+// bound team service hours. Informational only.
+func getSLACoveragePreview(deps Deps) readOperation[*models.SLACoverage] {
+	return func(r *http.Request) (*models.SLACoverage, error) {
+		service, err := requireSLACalendarAdmin(r, deps)
+		if err != nil {
+			return nil, err
+		}
+		workspaceID, err := pathID(r, "workspace_id")
+		if err != nil {
+			return nil, err
+		}
+		calendarID, err := optionalPositiveQuery(r, "calendar_id")
+		if err != nil {
+			return nil, err
+		}
+		if calendarID == nil {
+			return nil, newError(http.StatusBadRequest, "invalid_request", "calendar_id is required")
+		}
+		coverage, err := service.PreviewCoverage(r.Context(), workspaceID, *calendarID)
+		if err != nil {
+			return nil, slaCalendarError(err)
+		}
+		return coverage, nil
 	}
 }
 

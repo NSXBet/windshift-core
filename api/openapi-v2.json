@@ -21929,6 +21929,61 @@
                         "description": "The breached value.",
                         "type": "boolean"
                       },
+                      "coverage": {
+                        "additionalProperties": false,
+                        "description": "The coverage value.",
+                        "nullable": true,
+                        "properties": {
+                          "discrepancy": {
+                            "description": "The discrepancy value.",
+                            "type": "string"
+                          },
+                          "note": {
+                            "description": "The note value.",
+                            "type": "string"
+                          },
+                          "overlap_weekly_ms": {
+                            "description": "The overlap weekly ms value.",
+                            "type": "integer"
+                          },
+                          "reference": {
+                            "description": "The reference value.",
+                            "type": "string"
+                          },
+                          "sla_outside_team_weekly_ms": {
+                            "description": "The sla outside team weekly ms value.",
+                            "type": "integer"
+                          },
+                          "sla_weekly_ms": {
+                            "description": "The sla weekly ms value.",
+                            "type": "integer"
+                          },
+                          "team_ids": {
+                            "description": "The team ids value.",
+                            "items": {
+                              "type": "integer"
+                            },
+                            "type": "array"
+                          },
+                          "team_outside_sla_weekly_ms": {
+                            "description": "The team outside sla weekly ms value.",
+                            "type": "integer"
+                          },
+                          "team_weekly_ms": {
+                            "description": "The team weekly ms value.",
+                            "type": "integer"
+                          },
+                          "within_team_service_hours": {
+                            "description": "The within team service hours value.",
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "reference",
+                          "within_team_service_hours"
+                        ],
+                        "type": "object"
+                      },
                       "cycle_no": {
                         "description": "The cycle no value.",
                         "type": "integer"
@@ -22031,6 +22086,61 @@
                     "breached": {
                       "description": "The breached value.",
                       "type": "boolean"
+                    },
+                    "coverage": {
+                      "additionalProperties": false,
+                      "description": "The coverage value.",
+                      "nullable": true,
+                      "properties": {
+                        "discrepancy": {
+                          "description": "The discrepancy value.",
+                          "type": "string"
+                        },
+                        "note": {
+                          "description": "The note value.",
+                          "type": "string"
+                        },
+                        "overlap_weekly_ms": {
+                          "description": "The overlap weekly ms value.",
+                          "type": "integer"
+                        },
+                        "reference": {
+                          "description": "The reference value.",
+                          "type": "string"
+                        },
+                        "sla_outside_team_weekly_ms": {
+                          "description": "The sla outside team weekly ms value.",
+                          "type": "integer"
+                        },
+                        "sla_weekly_ms": {
+                          "description": "The sla weekly ms value.",
+                          "type": "integer"
+                        },
+                        "team_ids": {
+                          "description": "The team ids value.",
+                          "items": {
+                            "type": "integer"
+                          },
+                          "type": "array"
+                        },
+                        "team_outside_sla_weekly_ms": {
+                          "description": "The team outside sla weekly ms value.",
+                          "type": "integer"
+                        },
+                        "team_weekly_ms": {
+                          "description": "The team weekly ms value.",
+                          "type": "integer"
+                        },
+                        "within_team_service_hours": {
+                          "description": "The within team service hours value.",
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "reference",
+                        "within_team_service_hours"
+                      ],
+                      "type": "object"
                     },
                     "cycle_no": {
                       "description": "The cycle no value.",
@@ -37257,6 +37367,69 @@
         ],
         "type": "object"
       },
+      "GetWorkspacesWorkspaceIdSlaCoveragePreviewResult": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": false,
+            "nullable": true,
+            "properties": {
+              "discrepancy": {
+                "description": "The discrepancy value.",
+                "type": "string"
+              },
+              "note": {
+                "description": "The note value.",
+                "type": "string"
+              },
+              "overlap_weekly_ms": {
+                "description": "The overlap weekly ms value.",
+                "type": "integer"
+              },
+              "reference": {
+                "description": "The reference value.",
+                "type": "string"
+              },
+              "sla_outside_team_weekly_ms": {
+                "description": "The sla outside team weekly ms value.",
+                "type": "integer"
+              },
+              "sla_weekly_ms": {
+                "description": "The sla weekly ms value.",
+                "type": "integer"
+              },
+              "team_ids": {
+                "description": "The team ids value.",
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              "team_outside_sla_weekly_ms": {
+                "description": "The team outside sla weekly ms value.",
+                "type": "integer"
+              },
+              "team_weekly_ms": {
+                "description": "The team weekly ms value.",
+                "type": "integer"
+              },
+              "within_team_service_hours": {
+                "description": "The within team service hours value.",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "reference",
+              "within_team_service_hours"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
       "GetWorkspacesWorkspaceIdSlaMetricsMetricIdResult": {
         "additionalProperties": false,
         "properties": {
@@ -37825,6 +37998,54 @@
                   "type": "object"
                 },
                 "type": "array"
+              },
+              "coverage": {
+                "additionalProperties": false,
+                "description": "The coverage value.",
+                "nullable": true,
+                "properties": {
+                  "breached_outside_service_hours": {
+                    "description": "The breached outside service hours value.",
+                    "type": "integer"
+                  },
+                  "current_state_reference": {
+                    "description": "The current state reference value.",
+                    "type": "boolean"
+                  },
+                  "excluded_ms": {
+                    "description": "The excluded ms value.",
+                    "type": "integer"
+                  },
+                  "reference": {
+                    "description": "The reference value.",
+                    "type": "string"
+                  },
+                  "sla_counted_ms": {
+                    "description": "The sla counted ms value.",
+                    "type": "integer"
+                  },
+                  "team_ids": {
+                    "description": "The team ids value.",
+                    "items": {
+                      "type": "integer"
+                    },
+                    "type": "array"
+                  },
+                  "team_service_ms": {
+                    "description": "The team service ms value.",
+                    "type": "integer"
+                  },
+                  "uncovered_ms": {
+                    "description": "The uncovered ms value.",
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "breached_outside_service_hours",
+                  "current_state_reference",
+                  "reference"
+                ],
+                "type": "object"
               },
               "from": {
                 "description": "The from value.",
@@ -118898,6 +119119,73 @@
           }
         ],
         "summary": "Preview SLA calendar edit impact",
+        "tags": [
+          "Workspace configuration"
+        ],
+        "x-required-scopes": [
+          "workspaces:read"
+        ]
+      }
+    },
+    "/workspaces/{workspace_id}/sla/coverage-preview": {
+      "get": {
+        "description": "Preview SLA coverage discrepancy. Results include only resources visible to the authenticated caller; collections use their documented stable order and bounds.",
+        "operationId": "getWorkspacesWorkspaceIdSlaCoveragePreview",
+        "parameters": [
+          {
+            "description": "The workspace identifier.",
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The candidate scheduling calendar identifier.",
+            "in": "query",
+            "name": "calendar_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetWorkspacesWorkspaceIdSlaCoveragePreviewResult"
+                }
+              }
+            },
+            "description": "Preview SLA coverage discrepancy response."
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationError"
+          },
+          "403": {
+            "$ref": "#/components/responses/PermissionError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimitError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Preview SLA coverage discrepancy",
         "tags": [
           "Workspace configuration"
         ],

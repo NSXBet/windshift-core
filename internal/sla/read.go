@@ -32,6 +32,7 @@ func (e *Engine) ItemSLA(ctx context.Context, itemID, workspaceID int) ([]models
 	}
 
 	now := e.clock.Now()
+	reference, referenceErr := e.ReferenceForWorkspace(ctx, workspaceID)
 	grouped := map[int][]models.ItemSLACycle{}
 	var metricOrder []int
 	for _, cycle := range cycles {
@@ -56,6 +57,9 @@ func (e *Engine) ItemSLA(ctx context.Context, itemID, workspaceID int) ([]models
 			derived, err := Derive(&cycle, now)
 			if err != nil {
 				return nil, err
+			}
+			if referenceErr == nil {
+				derived.Coverage = coverageForCycle(&cycle, reference, now)
 			}
 			if cycle.Status == models.SLACycleOngoing {
 				state.Ongoing = &derived
@@ -82,9 +86,18 @@ func (e *Engine) isRecalculating(ctx context.Context, itemID, workspaceID int) (
 	return recalculating, nil
 }
 
-// Report returns the completed-cycle compliance report for a workspace.
+// Report returns the completed-cycle compliance report for a workspace. The
+// optional coverage block is derived from stored snapshots and never fails the
+// report.
 func (e *Engine) Report(ctx context.Context, workspaceID int, from, to *time.Time) (*models.SLAReport, error) {
-	return e.repo.SLAReport(ctx, workspaceID, from, to)
+	report, err := e.repo.SLAReport(ctx, workspaceID, from, to)
+	if err != nil {
+		return nil, err
+	}
+	if coverage, coverageErr := e.reportCoverage(ctx, workspaceID, from, to); coverageErr == nil {
+		report.Coverage = coverage
+	}
+	return report, nil
 }
 
 // WorkspaceForItem resolves the workspace that owns an item.

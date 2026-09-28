@@ -19,6 +19,7 @@ func RegisterSLARoutes(deps *Deps) {
 	api.HandleH("PUT /workspaces/{id}/sla/calendars/{calendarId}", auth(http.HandlerFunc(deps.SLA.UpdateWorkspaceCalendar)))
 	api.HandleH("DELETE /workspaces/{id}/sla/calendars/{calendarId}", auth(http.HandlerFunc(deps.SLA.DeleteWorkspaceCalendar)))
 	api.HandleH("GET /workspaces/{id}/sla/calendars/{calendarId}/impact", auth(http.HandlerFunc(deps.SLA.GetWorkspaceCalendarImpact)))
+	api.HandleH("GET /workspaces/{id}/sla/coverage-preview", auth(http.HandlerFunc(deps.SLA.GetCoveragePreview)))
 	api.HandleH("GET /workspaces/{id}/sla/available-calendars", auth(http.HandlerFunc(deps.SLA.ListAvailableCalendars)))
 
 	// Team service-hours calendars.

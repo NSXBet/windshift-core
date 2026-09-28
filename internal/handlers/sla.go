@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -283,6 +284,25 @@ func (h *SLAHandler) GetTeamCalendarImpact(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	respondJSONOK(w, impact)
+}
+
+// GetCoveragePreview returns the informative SLA-vs-team-service-hours
+// comparison for a candidate calendar. Read-only; it never blocks a save.
+func (h *SLAHandler) GetCoveragePreview(w http.ResponseWriter, r *http.Request) {
+	workspaceID, ok := h.authorizeWorkspaceAdmin(w, r)
+	if !ok {
+		return
+	}
+	calendarID, err := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("calendar_id")))
+	if err != nil || calendarID <= 0 {
+		respondValidationError(w, r, "calendar_id must be a positive integer")
+		return
+	}
+	coverage, err := h.calendars.PreviewCoverage(r.Context(), workspaceID, calendarID)
+	if !h.writeCalendarResult(w, r, err) {
+		return
+	}
+	respondJSONOK(w, coverage)
 }
 
 // input maps the transport request onto the shared calendar service input.

@@ -295,6 +295,92 @@ func (r *SLARepository) DeleteTeamWorkspaceBinding(ctx context.Context, workspac
 	return requireAffected(result)
 }
 
+// ListBoundTeamIDs returns the teams bound to a workspace.
+func (r *SLARepository) ListBoundTeamIDs(ctx context.Context, workspaceID int) ([]int, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT team_id FROM team_workspace_bindings WHERE workspace_id = ? ORDER BY team_id`, workspaceID)
+	if err != nil {
+		return nil, fmt.Errorf("list bound teams: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var ids []int
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan bound team: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// CalendarAccessibleToWorkspace reports whether a workspace may reference a
+// calendar: it owns it, or a bound team owns it.
+func (r *SLARepository) CalendarAccessibleToWorkspace(ctx context.Context, workspaceID, calendarID int) (bool, error) {
+	var accessible bool
+	err := r.db.QueryRowContext(ctx, `SELECT EXISTS(
+		SELECT 1 FROM working_calendars c
+		WHERE c.id = ?
+		  AND (c.workspace_id = ?
+		       OR c.team_id IN (SELECT team_id FROM team_workspace_bindings WHERE workspace_id = ?))
+	)`, calendarID, workspaceID, workspaceID).Scan(&accessible)
+	if err != nil {
+		return false, fmt.Errorf("check calendar access: %w", err)
+	}
+	return accessible, nil
+}
+
+// CompletedCycleCoverage is one completed cycle's stored scheduling snapshot
+// and window, used to compute a report's coverage block.
+type CompletedCycleCoverage struct {
+	CalendarSnapshot string
+	StartedAt        time.Time
+	StoppedAt        *time.Time
+	BreachedAt       *time.Time
+}
+
+// CompletedCyclesForCoverage returns completed cycles in the window with the
+// snapshot needed to compute exact coverage. History is never recomputed
+// against an edited calendar.
+func (r *SLARepository) CompletedCyclesForCoverage(ctx context.Context, workspaceID int, from, to *time.Time) ([]CompletedCycleCoverage, error) {
+	query := `SELECT c.calendar_snapshot, c.started_at, c.stopped_at, c.breached_at
+		FROM item_sla_cycles c
+		JOIN sla_metrics m ON m.id = c.metric_id
+		WHERE m.workspace_id = ? AND c.status = 'completed' AND c.calendar_snapshot IS NOT NULL`
+	args := []any{workspaceID}
+	if from != nil {
+		query += ` AND c.stopped_at >= ?`
+		args = append(args, *from)
+	}
+	if to != nil {
+		query += ` AND c.stopped_at < ?`
+		args = append(args, *to)
+	}
+	query += ` ORDER BY c.stopped_at`
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list cycles for coverage: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var cycles []CompletedCycleCoverage
+	for rows.Next() {
+		var cycle CompletedCycleCoverage
+		var stoppedAt, breachedAt sql.NullTime
+		if err := rows.Scan(&cycle.CalendarSnapshot, &cycle.StartedAt, &stoppedAt, &breachedAt); err != nil {
+			return nil, fmt.Errorf("scan cycle for coverage: %w", err)
+		}
+		if stoppedAt.Valid {
+			value := stoppedAt.Time
+			cycle.StoppedAt = &value
+		}
+		if breachedAt.Valid {
+			value := breachedAt.Time
+			cycle.BreachedAt = &value
+		}
+		cycles = append(cycles, cycle)
+	}
+	return cycles, rows.Err()
+}
+
 // ---------------------------------------------------------------------------
 // Workspace configuration generation
 // ---------------------------------------------------------------------------

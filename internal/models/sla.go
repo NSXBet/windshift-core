@@ -181,20 +181,21 @@ type SLAJob struct {
 // remaining are exact as of the derivation instant; the stored columns remain
 // the scheduling truth.
 type DerivedSLACycle struct {
-	CycleNo             int        `json:"cycle_no"`
-	Status              string     `json:"status"`
-	GoalID              *int       `json:"goal_id,omitempty"`
-	StartedAt           time.Time  `json:"started_at"`
-	StoppedAt           *time.Time `json:"stopped_at,omitempty"`
-	BreachTime          *time.Time `json:"breach_time,omitempty"`
-	ElapsedMs           int64      `json:"elapsed_ms"`
-	RemainingMs         *int64     `json:"remaining_ms,omitempty"`
-	GoalDurationMs      int64      `json:"goal_duration_ms"`
-	Paused              bool       `json:"paused"`
-	Breached            bool       `json:"breached"`
-	WithinCalendarHours bool       `json:"within_calendar_hours"`
-	PauseStartedAt      *time.Time `json:"pause_started_at,omitempty"`
-	NextDeadlineAt      *time.Time `json:"next_deadline_at,omitempty"`
+	CycleNo             int          `json:"cycle_no"`
+	Status              string       `json:"status"`
+	GoalID              *int         `json:"goal_id,omitempty"`
+	StartedAt           time.Time    `json:"started_at"`
+	StoppedAt           *time.Time   `json:"stopped_at,omitempty"`
+	BreachTime          *time.Time   `json:"breach_time,omitempty"`
+	ElapsedMs           int64        `json:"elapsed_ms"`
+	RemainingMs         *int64       `json:"remaining_ms,omitempty"`
+	GoalDurationMs      int64        `json:"goal_duration_ms"`
+	Paused              bool         `json:"paused"`
+	Breached            bool         `json:"breached"`
+	WithinCalendarHours bool         `json:"within_calendar_hours"`
+	PauseStartedAt      *time.Time   `json:"pause_started_at,omitempty"`
+	NextDeadlineAt      *time.Time   `json:"next_deadline_at,omitempty"`
+	Coverage            *SLACoverage `json:"coverage,omitempty"`
 }
 
 // SLAReportMetric aggregates completed cycles for a metric. Deltas are stored
@@ -228,10 +229,39 @@ type SLAReportBreach struct {
 
 // SLAReport is the compliance view over completed cycles.
 type SLAReport struct {
-	From          *time.Time        `json:"from,omitempty"`
-	To            *time.Time        `json:"to,omitempty"`
-	Metrics       []SLAReportMetric `json:"metrics"`
-	BreachedItems []SLAReportBreach `json:"breached_items"`
+	From          *time.Time         `json:"from,omitempty"`
+	To            *time.Time         `json:"to,omitempty"`
+	Metrics       []SLAReportMetric  `json:"metrics"`
+	BreachedItems []SLAReportBreach  `json:"breached_items"`
+	Coverage      *SLAReportCoverage `json:"coverage,omitempty"`
+}
+
+// SLACoverage is the informative SLA-vs-team service-hours comparison attached
+// to an item's SLA cycle. It never changes SLA semantics.
+type SLACoverage struct {
+	Reference              string `json:"reference"`
+	TeamIDs                []int  `json:"team_ids,omitempty"`
+	WithinTeamServiceHours bool   `json:"within_team_service_hours"`
+	SLAWeeklyMs            int64  `json:"sla_weekly_ms,omitempty"`
+	TeamWeeklyMs           int64  `json:"team_weekly_ms,omitempty"`
+	OverlapWeeklyMs        int64  `json:"overlap_weekly_ms,omitempty"`
+	SLAOutsideTeamWeeklyMs int64  `json:"sla_outside_team_weekly_ms,omitempty"`
+	TeamOutsideSLAWeeklyMs int64  `json:"team_outside_sla_weekly_ms,omitempty"`
+	Discrepancy            string `json:"discrepancy,omitempty"`
+	Note                   string `json:"note,omitempty"`
+}
+
+// SLAReportCoverage aggregates the same comparison over a report window using
+// each completed cycle's stored calendar snapshot.
+type SLAReportCoverage struct {
+	Reference                   string `json:"reference"`
+	TeamIDs                     []int  `json:"team_ids,omitempty"`
+	SLACountedMs                int64  `json:"sla_counted_ms,omitempty"`
+	TeamServiceMs               int64  `json:"team_service_ms,omitempty"`
+	UncoveredMs                 int64  `json:"uncovered_ms,omitempty"`
+	ExcludedMs                  int64  `json:"excluded_ms,omitempty"`
+	BreachedOutsideServiceHours int    `json:"breached_outside_service_hours"`
+	CurrentStateReference       bool   `json:"current_state_reference"`
 }
 
 // ItemSLA is the Jira-shaped SLA state for one item.
