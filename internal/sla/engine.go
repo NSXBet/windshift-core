@@ -41,7 +41,14 @@ type Engine struct {
 	cache *configCache
 	nudge func(time.Time)
 
-	sideEffects SideEffectEmitter
+	sideEffects    SideEffectEmitter
+	inlineObserver InlineObserver
+}
+
+// InlineObserver records the cost of inline evaluation for runtime guardrails.
+// Implementations must be safe for concurrent use.
+type InlineObserver interface {
+	ObserveSLAInlineDuration(time.Duration)
 }
 
 // NewEngine constructs an SLA engine.
@@ -66,6 +73,10 @@ func (e *Engine) SetClock(clock Clock) {
 // SetNudge installs the due-work loop nudge. It is optional.
 func (e *Engine) SetNudge(nudge func(time.Time)) { e.nudge = nudge }
 
+// SetInlineObserver installs the inline-evaluation cost observer. It is
+// optional; nil disables the guardrail metric.
+func (e *Engine) SetInlineObserver(observer InlineObserver) { e.inlineObserver = observer }
+
 // Now returns the engine's current evaluation instant.
 func (e *Engine) Now() time.Time { return e.clock.Now() }
 
@@ -86,6 +97,13 @@ type cycleKey struct {
 
 // ObserveItemFacts implements itemevents.FactObserver.
 func (e *Engine) ObserveItemFacts(ctx context.Context, tx database.Tx, facts []itemevents.RecordedFact) error {
+	started := time.Now()
+	evaluated := false
+	defer func() {
+		if evaluated && e.inlineObserver != nil {
+			e.inlineObserver.ObserveSLAInlineDuration(time.Since(started))
+		}
+	}()
 	if len(facts) == 0 {
 		return nil
 	}
@@ -118,6 +136,7 @@ func (e *Engine) ObserveItemFacts(ctx context.Context, tx database.Tx, facts []i
 		if !ok {
 			continue
 		}
+		evaluated = true
 		if err := e.observeWorkspace(ctx, tx, workspaceID, generation, byWorkspace[workspaceID]); err != nil {
 			slog.Warn("SLA inline evaluation failed; enqueuing repair",
 				slog.String("component", "sla"),
@@ -164,18 +183,10 @@ func (e *Engine) evaluateWorkspace(ctx context.Context, tx database.Tx, workspac
 		itemFacts[fact.ItemID] = append(itemFacts[fact.ItemID], fact)
 	}
 
-	ongoingList, err := e.repo.LockOngoingCycles(ctx, tx, itemOrder)
-	if err != nil {
-		return err
-	}
-	ongoing := make(map[cycleKey]*models.ItemSLACycle, len(ongoingList))
-	for i := range ongoingList {
-		cycle := &ongoingList[i]
-		ongoing[cycleKey{cycle.ItemID, cycle.MetricID}] = cycle
-	}
-
 	effectiveAt := e.clock.Now()
-	goalResults := make(map[int]map[int]goalTarget)
+	relevantByMetric := make(map[int][]int, len(config.metrics))
+	relevantItems := make(map[int]struct{}, len(itemOrder))
+	var relevantOrder []int
 	for _, metric := range config.metrics {
 		relevant := make([]int, 0, len(itemOrder))
 		for _, itemID := range itemOrder {
@@ -186,7 +197,37 @@ func (e *Engine) evaluateWorkspace(ctx context.Context, tx database.Tx, workspac
 				}
 			}
 		}
-		if len(relevant) == 0 || len(metric.goals) == 0 {
+		if len(relevant) == 0 {
+			continue
+		}
+		relevantByMetric[metric.id] = relevant
+		for _, itemID := range relevant {
+			if _, ok := relevantItems[itemID]; !ok {
+				relevantItems[itemID] = struct{}{}
+				relevantOrder = append(relevantOrder, itemID)
+			}
+		}
+	}
+	// Relevance is decided in memory before any per-cycle lock, so a rank drag
+	// or other irrelevant write costs only the workspace gate.
+	if len(relevantOrder) == 0 {
+		return nil
+	}
+
+	ongoingList, err := e.repo.LockOngoingCycles(ctx, tx, relevantOrder)
+	if err != nil {
+		return err
+	}
+	ongoing := make(map[cycleKey]*models.ItemSLACycle, len(ongoingList))
+	for i := range ongoingList {
+		cycle := &ongoingList[i]
+		ongoing[cycleKey{cycle.ItemID, cycle.MetricID}] = cycle
+	}
+
+	goalResults := make(map[int]map[int]goalTarget)
+	for _, metric := range config.metrics {
+		relevant, ok := relevantByMetric[metric.id]
+		if !ok || len(metric.goals) == 0 {
 			continue
 		}
 		resolved, err := e.resolveGoals(ctx, tx, config, metric, relevant, effectiveAt)

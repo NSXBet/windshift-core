@@ -1161,6 +1161,7 @@ func (s *Server) initialize() error {
 	}
 	s.slaEngine.SetClock(slaClock)
 	s.slaEngine.SetSideEffectEmitter(services.NewSLASideEffectEmitter(s.db))
+	s.slaEngine.SetInlineObserver(s.metrics)
 	s.slaLoop = sla.NewLoop(repository.NewSLARepository(s.db), s.slaEngine, slaClock, nil, sla.LoopConfig{})
 	s.slaEngine.SetNudge(s.slaLoop.Nudge)
 	itemevents.RegisterFactObserver(s.slaEngine)
