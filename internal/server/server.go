@@ -157,6 +157,7 @@ type Server struct {
 	slaEngine                    *sla.Engine
 	slaLoop                      *sla.Loop
 	slaLoopCancel                context.CancelFunc
+	slaTestClock                 *sla.TestClock
 	emailScheduler               *scheduler.EmailScheduler
 	ticketImport                 *services.TicketImportService
 	emailTrackingRetention       *scheduler.EmailTrackingRetentionSweeper
@@ -1149,15 +1150,27 @@ func (s *Server) initialize() error {
 	s.incidentEscalationSweeper.Start()
 
 	// SLA evaluation runs inline with item facts, and one process-wide
-	// goroutine fires deadline and recalculation jobs.
+	// goroutine fires deadline and recalculation jobs. Under the e2e test hook
+	// a manually advanced clock drives derivation and the loop stays off, so a
+	// browser test can prove display does not depend on background work.
 	s.slaEngine = sla.NewEngine(s.db)
+	slaClock := sla.Clock(sla.SystemClock{})
+	if os.Getenv("WINDSHIFT_E2E_TEST_HOOKS") == "1" {
+		s.slaTestClock = sla.NewTestClock(time.Now().UTC())
+		slaClock = s.slaTestClock
+	}
+	s.slaEngine.SetClock(slaClock)
 	s.slaEngine.SetSideEffectEmitter(services.NewSLASideEffectEmitter(s.db))
-	s.slaLoop = sla.NewLoop(repository.NewSLARepository(s.db), s.slaEngine, sla.SystemClock{}, nil, sla.LoopConfig{})
+	s.slaLoop = sla.NewLoop(repository.NewSLARepository(s.db), s.slaEngine, slaClock, nil, sla.LoopConfig{})
 	s.slaEngine.SetNudge(s.slaLoop.Nudge)
 	itemevents.RegisterFactObserver(s.slaEngine)
 	slaLoopCtx, slaLoopCancel := context.WithCancel(context.Background())
 	s.slaLoopCancel = slaLoopCancel
-	go s.slaLoop.Run(slaLoopCtx)
+	if s.slaTestClock != nil {
+		slog.Warn("WINDSHIFT_E2E_TEST_HOOKS enabled — SLA due-work loop disabled; test clock controls evaluation")
+	} else {
+		go s.slaLoop.Run(slaLoopCtx)
+	}
 
 	// Wire smart-commit dependencies into the SCM sync service and start its
 	// scheduler. Must be done after commentService and conditionService exist.
@@ -1708,6 +1721,9 @@ func (s *Server) initialize() error {
 		mux.Handle("POST /api/test/scm/setup-mock-repo", handlers.NewTestSetupMockRepo(services.NewTestSCMHookService(s.db, nil)))
 		mux.Handle("POST /api/test/scm/inject-ref", handlers.NewTestSCMInjectRef(services.NewTestSCMHookService(s.db, s.actionService)))
 		mux.Handle("POST /api/test/history/backdate", handlers.NewTestHistoryBackdate(services.NewTestHistoryHookService(s.db)))
+		if s.slaTestClock != nil {
+			mux.Handle("POST /api/test/sla/clock", handlers.NewTestSLAClock(s.slaTestClock))
+		}
 		slog.Warn("WINDSHIFT_E2E_TEST_HOOKS enabled — test hook routes are mounted; never enable in production")
 	}
 
