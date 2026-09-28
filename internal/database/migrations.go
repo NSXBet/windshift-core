@@ -1661,6 +1661,22 @@ var Catalog = []Migration{
 			);
 		`,
 	},
+	{
+		Version:       "20260928_sla_engine",
+		Name:          "Add SLA calendars, metrics, goals, cycles, and jobs",
+		CheckSQLite:   sqliteTableCheck("sla_metrics"),
+		CheckPostgres: pgTableCheck("sla_metrics"),
+		SQLite:        slaSchema,
+		Postgres:      slaSchemaPostgres,
+	},
+	{
+		Version:       "20260929_sla_warning_thresholds",
+		Name:          "Add SLA warning thresholds",
+		CheckSQLite:   sqliteTableCheck("sla_warning_thresholds"),
+		CheckPostgres: pgTableCheck("sla_warning_thresholds"),
+		SQLite:        slaWarningThresholdsSchema,
+		Postgres:      slaWarningThresholdsSchemaPostgres,
+	},
 }
 
 func applySQLitePersonalLabelsPerUserUnique(db Database) (retErr error) {

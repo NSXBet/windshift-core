@@ -6655,6 +6655,34 @@
         ]
       }
     },
+    "/items/{item_id}/sla": {
+      "get": {
+        "description": "Get item SLA state. Results include only resources visible to the authenticated caller; collections use their documented stable order and bounds.",
+        "parameters": [
+          {
+            "Name": "item_id",
+            "In": "path",
+            "Description": "The item identifier.",
+            "Required": true,
+            "Schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "401": {},
+          "403": {},
+          "404": {},
+          "429": {},
+          "500": {}
+        },
+        "summary": "Get item SLA state",
+        "tags": [
+          "Work items"
+        ]
+      }
+    },
     "/items/{item_id}/split": {
       "post": {
         "description": "Split item into subticket. The server validates resource ownership and command preconditions before persisting changes. Unknown JSON fields are rejected when the operation accepts a body.",
@@ -13309,6 +13337,350 @@
         "summary": "List workspace recurrences",
         "tags": [
           "Work items"
+        ]
+      }
+    },
+    "/workspaces/{workspace_id}/sla/available-calendars": {
+      "get": {
+        "description": "List available SLA calendars. Results include only resources visible to the authenticated caller; collections use their documented stable order and bounds.",
+        "parameters": [
+          {
+            "Name": "workspace_id",
+            "In": "path",
+            "Description": "The workspace identifier.",
+            "Required": true,
+            "Schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "401": {},
+          "403": {},
+          "404": {},
+          "429": {},
+          "500": {}
+        },
+        "summary": "List available SLA calendars",
+        "tags": [
+          "Workspace configuration"
+        ]
+      }
+    },
+    "/workspaces/{workspace_id}/sla/calendars": {
+      "get": {
+        "description": "List SLA calendars. Results include only resources visible to the authenticated caller; collections use their documented stable order and bounds.",
+        "parameters": [
+          {
+            "Name": "workspace_id",
+            "In": "path",
+            "Description": "The workspace identifier.",
+            "Required": true,
+            "Schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "401": {},
+          "403": {},
+          "404": {},
+          "429": {},
+          "500": {}
+        },
+        "summary": "List SLA calendars",
+        "tags": [
+          "Workspace configuration"
+        ]
+      },
+      "post": {
+        "description": "Create SLA calendar. The server validates resource ownership and command preconditions before persisting changes. Unknown JSON fields are rejected when the operation accepts a body.",
+        "parameters": [
+          {
+            "Name": "workspace_id",
+            "In": "path",
+            "Description": "The workspace identifier.",
+            "Required": true,
+            "Schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "400": {},
+          "401": {},
+          "403": {},
+          "404": {},
+          "413": {},
+          "415": {},
+          "429": {},
+          "500": {}
+        },
+        "summary": "Create SLA calendar",
+        "tags": [
+          "Workspace configuration"
+        ]
+      }
+    },
+    "/workspaces/{workspace_id}/sla/calendars/{calendar_id}": {
+      "delete": {
+        "description": "Delete SLA calendar. The server verifies resource ownership and deletion preconditions before removing the resource.",
+        "parameters": [
+          {
+            "Name": "workspace_id",
+            "In": "path",
+            "Description": "The workspace identifier.",
+            "Required": true,
+            "Schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "Name": "calendar_id",
+            "In": "path",
+            "Description": "The working calendar identifier.",
+            "Required": true,
+            "Schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "401": {},
+          "403": {},
+          "404": {},
+          "409": {},
+          "429": {},
+          "500": {}
+        },
+        "summary": "Delete SLA calendar",
+        "tags": [
+          "Workspace configuration"
+        ]
+      },
+      "put": {
+        "description": "Update SLA calendar. The server validates resource ownership and command preconditions before persisting changes. Unknown JSON fields are rejected when the operation accepts a body.",
+        "parameters": [
+          {
+            "Name": "workspace_id",
+            "In": "path",
+            "Description": "The workspace identifier.",
+            "Required": true,
+            "Schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "Name": "calendar_id",
+            "In": "path",
+            "Description": "The working calendar identifier.",
+            "Required": true,
+            "Schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "400": {},
+          "401": {},
+          "403": {},
+          "404": {},
+          "413": {},
+          "415": {},
+          "429": {},
+          "500": {}
+        },
+        "summary": "Update SLA calendar",
+        "tags": [
+          "Workspace configuration"
+        ]
+      }
+    },
+    "/workspaces/{workspace_id}/sla/report": {
+      "get": {
+        "description": "Get SLA compliance report. Results include only resources visible to the authenticated caller; collections use their documented stable order and bounds.",
+        "parameters": [
+          {
+            "Name": "workspace_id",
+            "In": "path",
+            "Description": "The workspace identifier.",
+            "Required": true,
+            "Schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "Name": "from",
+            "In": "query",
+            "Description": "Inclusive lower bound (RFC3339 or YYYY-MM-DD) on the cycle stop time.",
+            "Required": false,
+            "Schema": {
+              "type": "string"
+            }
+          },
+          {
+            "Name": "to",
+            "In": "query",
+            "Description": "Exclusive upper bound (RFC3339 or YYYY-MM-DD) on the cycle stop time.",
+            "Required": false,
+            "Schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "400": {},
+          "401": {},
+          "403": {},
+          "404": {},
+          "429": {},
+          "500": {}
+        },
+        "summary": "Get SLA compliance report",
+        "tags": [
+          "Work items"
+        ]
+      }
+    },
+    "/workspaces/{workspace_id}/sla/warning-thresholds": {
+      "get": {
+        "description": "List SLA warning thresholds. Results include only resources visible to the authenticated caller; collections use their documented stable order and bounds.",
+        "parameters": [
+          {
+            "Name": "workspace_id",
+            "In": "path",
+            "Description": "The workspace identifier.",
+            "Required": true,
+            "Schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "401": {},
+          "403": {},
+          "404": {},
+          "429": {},
+          "500": {}
+        },
+        "summary": "List SLA warning thresholds",
+        "tags": [
+          "Workspace configuration"
+        ]
+      },
+      "post": {
+        "description": "Create SLA warning threshold. The server validates resource ownership and command preconditions before persisting changes. Unknown JSON fields are rejected when the operation accepts a body.",
+        "parameters": [
+          {
+            "Name": "workspace_id",
+            "In": "path",
+            "Description": "The workspace identifier.",
+            "Required": true,
+            "Schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "400": {},
+          "401": {},
+          "403": {},
+          "404": {},
+          "413": {},
+          "415": {},
+          "429": {},
+          "500": {}
+        },
+        "summary": "Create SLA warning threshold",
+        "tags": [
+          "Workspace configuration"
+        ]
+      }
+    },
+    "/workspaces/{workspace_id}/sla/warning-thresholds/{threshold_id}": {
+      "delete": {
+        "description": "Delete SLA warning threshold. The server verifies resource ownership and deletion preconditions before removing the resource.",
+        "parameters": [
+          {
+            "Name": "workspace_id",
+            "In": "path",
+            "Description": "The workspace identifier.",
+            "Required": true,
+            "Schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "Name": "threshold_id",
+            "In": "path",
+            "Description": "The warning threshold identifier.",
+            "Required": true,
+            "Schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "401": {},
+          "403": {},
+          "404": {},
+          "429": {},
+          "500": {}
+        },
+        "summary": "Delete SLA warning threshold",
+        "tags": [
+          "Workspace configuration"
+        ]
+      },
+      "put": {
+        "description": "Update SLA warning threshold. The server validates resource ownership and command preconditions before persisting changes. Unknown JSON fields are rejected when the operation accepts a body.",
+        "parameters": [
+          {
+            "Name": "workspace_id",
+            "In": "path",
+            "Description": "The workspace identifier.",
+            "Required": true,
+            "Schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "Name": "threshold_id",
+            "In": "path",
+            "Description": "The warning threshold identifier.",
+            "Required": true,
+            "Schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "400": {},
+          "401": {},
+          "403": {},
+          "404": {},
+          "413": {},
+          "415": {},
+          "429": {},
+          "500": {}
+        },
+        "summary": "Update SLA warning threshold",
+        "tags": [
+          "Workspace configuration"
         ]
       }
     },

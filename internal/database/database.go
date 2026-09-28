@@ -128,6 +128,12 @@ var dailyBriefingsSchema string
 //go:embed schema/teams.sql
 var teamsSchema string
 
+//go:embed schema/sla.sql
+var slaSchema string
+
+//go:embed schema/sla_warning_thresholds.sql
+var slaWarningThresholdsSchema string
+
 //go:embed schema/incidents.sql
 var incidentsSchema string
 

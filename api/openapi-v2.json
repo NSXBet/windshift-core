@@ -6904,6 +6904,10 @@
                 "items": {
                   "additionalProperties": false,
                   "properties": {
+                    "from_all_statuses": {
+                      "description": "The from all statuses value.",
+                      "type": "boolean"
+                    },
                     "from_status_name": {
                       "description": "The from status name value.",
                       "type": "string"
@@ -7071,6 +7075,10 @@
                   "items": {
                     "additionalProperties": false,
                     "properties": {
+                      "from_all_statuses": {
+                        "description": "The from all statuses value.",
+                        "type": "boolean"
+                      },
                       "from_status_name": {
                         "description": "The from status name value.",
                         "type": "string"
@@ -21899,6 +21907,223 @@
         ],
         "type": "object"
       },
+      "GetItemsItemIdSlaResult": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "completed": {
+                  "description": "The completed value.",
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "breach_time": {
+                        "description": "The breach time value.",
+                        "format": "date-time",
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "breached": {
+                        "description": "The breached value.",
+                        "type": "boolean"
+                      },
+                      "cycle_no": {
+                        "description": "The cycle no value.",
+                        "type": "integer"
+                      },
+                      "elapsed_ms": {
+                        "description": "The elapsed ms value.",
+                        "type": "integer"
+                      },
+                      "goal_duration_ms": {
+                        "description": "The goal duration ms value.",
+                        "type": "integer"
+                      },
+                      "goal_id": {
+                        "description": "The goal id value.",
+                        "nullable": true,
+                        "type": "integer"
+                      },
+                      "next_deadline_at": {
+                        "description": "The next deadline at value.",
+                        "format": "date-time",
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "pause_started_at": {
+                        "description": "The pause started at value.",
+                        "format": "date-time",
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "paused": {
+                        "description": "The paused value.",
+                        "type": "boolean"
+                      },
+                      "remaining_ms": {
+                        "description": "The remaining ms value.",
+                        "nullable": true,
+                        "type": "integer"
+                      },
+                      "started_at": {
+                        "description": "The started at value.",
+                        "format": "date-time",
+                        "type": "string"
+                      },
+                      "status": {
+                        "description": "The status value.",
+                        "type": "string"
+                      },
+                      "stopped_at": {
+                        "description": "The stopped at value.",
+                        "format": "date-time",
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "within_calendar_hours": {
+                        "description": "The within calendar hours value.",
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "breached",
+                      "cycle_no",
+                      "elapsed_ms",
+                      "goal_duration_ms",
+                      "paused",
+                      "started_at",
+                      "status",
+                      "within_calendar_hours"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "display_format": {
+                  "description": "The display format value.",
+                  "type": "string"
+                },
+                "item_id": {
+                  "description": "The item id value.",
+                  "type": "integer"
+                },
+                "metric_id": {
+                  "description": "The metric id value.",
+                  "type": "integer"
+                },
+                "metric_name": {
+                  "description": "The metric name value.",
+                  "type": "string"
+                },
+                "ongoing": {
+                  "additionalProperties": false,
+                  "description": "The ongoing value.",
+                  "nullable": true,
+                  "properties": {
+                    "breach_time": {
+                      "description": "The breach time value.",
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "breached": {
+                      "description": "The breached value.",
+                      "type": "boolean"
+                    },
+                    "cycle_no": {
+                      "description": "The cycle no value.",
+                      "type": "integer"
+                    },
+                    "elapsed_ms": {
+                      "description": "The elapsed ms value.",
+                      "type": "integer"
+                    },
+                    "goal_duration_ms": {
+                      "description": "The goal duration ms value.",
+                      "type": "integer"
+                    },
+                    "goal_id": {
+                      "description": "The goal id value.",
+                      "nullable": true,
+                      "type": "integer"
+                    },
+                    "next_deadline_at": {
+                      "description": "The next deadline at value.",
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "pause_started_at": {
+                      "description": "The pause started at value.",
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "paused": {
+                      "description": "The paused value.",
+                      "type": "boolean"
+                    },
+                    "remaining_ms": {
+                      "description": "The remaining ms value.",
+                      "nullable": true,
+                      "type": "integer"
+                    },
+                    "started_at": {
+                      "description": "The started at value.",
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "status": {
+                      "description": "The status value.",
+                      "type": "string"
+                    },
+                    "stopped_at": {
+                      "description": "The stopped at value.",
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "within_calendar_hours": {
+                      "description": "The within calendar hours value.",
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "breached",
+                    "cycle_no",
+                    "elapsed_ms",
+                    "goal_duration_ms",
+                    "paused",
+                    "started_at",
+                    "status",
+                    "within_calendar_hours"
+                  ],
+                  "type": "object"
+                },
+                "recalculating": {
+                  "description": "The recalculating value.",
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "display_format",
+                "item_id",
+                "metric_id",
+                "metric_name",
+                "recalculating"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
       "GetItemsItemIdStatusDurationsResult": {
         "additionalProperties": false,
         "properties": {
@@ -30060,6 +30285,10 @@
                   "items": {
                     "additionalProperties": false,
                     "properties": {
+                      "from_all_statuses": {
+                        "description": "The from all statuses value.",
+                        "type": "boolean"
+                      },
                       "from_status_name": {
                         "description": "The from status name value.",
                         "type": "string"
@@ -36734,6 +36963,411 @@
               "updated_at"
             ],
             "type": "object"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "GetWorkspacesWorkspaceIdSlaAvailableCalendarsResult": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "created_at": {
+                  "description": "The created at value.",
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "description": {
+                  "description": "The description value.",
+                  "type": "string"
+                },
+                "holidays": {
+                  "description": "The holidays value.",
+                  "format": "byte",
+                  "type": "string"
+                },
+                "id": {
+                  "description": "The id value.",
+                  "type": "integer"
+                },
+                "is_default": {
+                  "description": "The is default value.",
+                  "type": "boolean"
+                },
+                "name": {
+                  "description": "The name value.",
+                  "type": "string"
+                },
+                "source": {
+                  "description": "The source value.",
+                  "nullable": true,
+                  "type": "string"
+                },
+                "source_id": {
+                  "description": "The source id value.",
+                  "nullable": true,
+                  "type": "string"
+                },
+                "source_payload": {
+                  "description": "The source payload value.",
+                  "nullable": true,
+                  "type": "string"
+                },
+                "team_id": {
+                  "description": "The team id value.",
+                  "nullable": true,
+                  "type": "integer"
+                },
+                "timezone": {
+                  "description": "The timezone value.",
+                  "type": "string"
+                },
+                "updated_at": {
+                  "description": "The updated at value.",
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "weekly_intervals": {
+                  "description": "The weekly intervals value.",
+                  "format": "byte",
+                  "type": "string"
+                },
+                "workspace_id": {
+                  "description": "The workspace id value.",
+                  "nullable": true,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "created_at",
+                "description",
+                "holidays",
+                "id",
+                "is_default",
+                "name",
+                "timezone",
+                "updated_at",
+                "weekly_intervals"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "GetWorkspacesWorkspaceIdSlaCalendarsResult": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "created_at": {
+                  "description": "The created at value.",
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "description": {
+                  "description": "The description value.",
+                  "type": "string"
+                },
+                "holidays": {
+                  "description": "The holidays value.",
+                  "format": "byte",
+                  "type": "string"
+                },
+                "id": {
+                  "description": "The id value.",
+                  "type": "integer"
+                },
+                "is_default": {
+                  "description": "The is default value.",
+                  "type": "boolean"
+                },
+                "name": {
+                  "description": "The name value.",
+                  "type": "string"
+                },
+                "source": {
+                  "description": "The source value.",
+                  "nullable": true,
+                  "type": "string"
+                },
+                "source_id": {
+                  "description": "The source id value.",
+                  "nullable": true,
+                  "type": "string"
+                },
+                "source_payload": {
+                  "description": "The source payload value.",
+                  "nullable": true,
+                  "type": "string"
+                },
+                "team_id": {
+                  "description": "The team id value.",
+                  "nullable": true,
+                  "type": "integer"
+                },
+                "timezone": {
+                  "description": "The timezone value.",
+                  "type": "string"
+                },
+                "updated_at": {
+                  "description": "The updated at value.",
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "weekly_intervals": {
+                  "description": "The weekly intervals value.",
+                  "format": "byte",
+                  "type": "string"
+                },
+                "workspace_id": {
+                  "description": "The workspace id value.",
+                  "nullable": true,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "created_at",
+                "description",
+                "holidays",
+                "id",
+                "is_default",
+                "name",
+                "timezone",
+                "updated_at",
+                "weekly_intervals"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "GetWorkspacesWorkspaceIdSlaReportResult": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": false,
+            "properties": {
+              "breached_items": {
+                "description": "The breached items value.",
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "breached_at": {
+                      "description": "The breached at value.",
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "cycle_id": {
+                      "description": "The cycle id value.",
+                      "type": "integer"
+                    },
+                    "elapsed_ms": {
+                      "description": "The elapsed ms value.",
+                      "type": "integer"
+                    },
+                    "goal_duration_ms": {
+                      "description": "The goal duration ms value.",
+                      "type": "integer"
+                    },
+                    "item_id": {
+                      "description": "The item id value.",
+                      "type": "integer"
+                    },
+                    "item_key": {
+                      "description": "The item key value.",
+                      "type": "string"
+                    },
+                    "metric_name": {
+                      "description": "The metric name value.",
+                      "type": "string"
+                    },
+                    "status_name": {
+                      "description": "The status name value.",
+                      "type": "string"
+                    },
+                    "stopped_at": {
+                      "description": "The stopped at value.",
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "title": {
+                      "description": "The title value.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "cycle_id",
+                    "elapsed_ms",
+                    "goal_duration_ms",
+                    "item_id",
+                    "item_key",
+                    "metric_name",
+                    "title"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "from": {
+                "description": "The from value.",
+                "format": "date-time",
+                "nullable": true,
+                "type": "string"
+              },
+              "metrics": {
+                "description": "The metrics value.",
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "avg_elapsed_ms": {
+                      "description": "The avg elapsed ms value.",
+                      "nullable": true,
+                      "type": "integer"
+                    },
+                    "avg_goal_ms": {
+                      "description": "The avg goal ms value.",
+                      "nullable": true,
+                      "type": "integer"
+                    },
+                    "breached": {
+                      "description": "The breached value.",
+                      "type": "integer"
+                    },
+                    "completed": {
+                      "description": "The completed value.",
+                      "type": "integer"
+                    },
+                    "currently_breached": {
+                      "description": "The currently breached value.",
+                      "type": "integer"
+                    },
+                    "max_elapsed_ms": {
+                      "description": "The max elapsed ms value.",
+                      "nullable": true,
+                      "type": "integer"
+                    },
+                    "metric_id": {
+                      "description": "The metric id value.",
+                      "type": "integer"
+                    },
+                    "metric_name": {
+                      "description": "The metric name value.",
+                      "type": "string"
+                    },
+                    "ongoing": {
+                      "description": "The ongoing value.",
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "breached",
+                    "completed",
+                    "currently_breached",
+                    "metric_id",
+                    "metric_name",
+                    "ongoing"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "to": {
+                "description": "The to value.",
+                "format": "date-time",
+                "nullable": true,
+                "type": "string"
+              }
+            },
+            "required": [
+              "breached_items",
+              "metrics"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "GetWorkspacesWorkspaceIdSlaWarningThresholdsResult": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "created_at": {
+                  "description": "The created at value.",
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "id": {
+                  "description": "The id value.",
+                  "type": "integer"
+                },
+                "is_active": {
+                  "description": "The is active value.",
+                  "type": "boolean"
+                },
+                "label": {
+                  "description": "The label value.",
+                  "type": "string"
+                },
+                "metric_id": {
+                  "description": "The metric id value.",
+                  "nullable": true,
+                  "type": "integer"
+                },
+                "metric_name": {
+                  "description": "The metric name value.",
+                  "type": "string"
+                },
+                "percent": {
+                  "description": "The percent value.",
+                  "type": "integer"
+                },
+                "updated_at": {
+                  "description": "The updated at value.",
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "workspace_id": {
+                  "description": "The workspace id value.",
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "created_at",
+                "id",
+                "is_active",
+                "label",
+                "percent",
+                "updated_at",
+                "workspace_id"
+              ],
+              "type": "object"
+            },
+            "type": "array"
           }
         },
         "required": [
@@ -50262,6 +50896,10 @@
                 "items": {
                   "additionalProperties": false,
                   "properties": {
+                    "from_all_statuses": {
+                      "description": "The from all statuses value.",
+                      "type": "boolean"
+                    },
                     "from_status_name": {
                       "description": "The from status name value.",
                       "type": "string"
@@ -61892,6 +62530,10 @@
             "items": {
               "additionalProperties": false,
               "properties": {
+                "from_all_statuses": {
+                  "description": "The from all statuses value.",
+                  "type": "boolean"
+                },
                 "from_status_name": {
                   "description": "The from status name value.",
                   "type": "string"
@@ -62052,6 +62694,10 @@
                 "items": {
                   "additionalProperties": false,
                   "properties": {
+                    "from_all_statuses": {
+                      "description": "The from all statuses value.",
+                      "type": "boolean"
+                    },
                     "from_status_name": {
                       "description": "The from status name value.",
                       "type": "string"
@@ -86328,6 +86974,276 @@
         ],
         "type": "object"
       },
+      "PostWorkspacesWorkspaceIdSlaCalendarsPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "apply_to_ongoing": {
+            "description": "The apply to ongoing value.",
+            "type": "boolean"
+          },
+          "description": {
+            "description": "The description value.",
+            "type": "string"
+          },
+          "holidays": {
+            "description": "The holidays value.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "date": {
+                  "description": "The date value.",
+                  "type": "string"
+                },
+                "month_day": {
+                  "description": "The month day value.",
+                  "type": "string"
+                },
+                "name": {
+                  "description": "The name value.",
+                  "type": "string"
+                },
+                "recurring": {
+                  "description": "The recurring value.",
+                  "type": "boolean"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "is_default": {
+            "description": "The is default value.",
+            "type": "boolean"
+          },
+          "name": {
+            "description": "The name value.",
+            "type": "string"
+          },
+          "timezone": {
+            "description": "The timezone value.",
+            "type": "string"
+          },
+          "weekly_intervals": {
+            "additionalProperties": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "end": {
+                    "description": "The end value.",
+                    "type": "string"
+                  },
+                  "start": {
+                    "description": "The start value.",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "end",
+                  "start"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "description": "The weekly intervals value.",
+            "type": "object"
+          }
+        },
+        "required": [
+          "apply_to_ongoing",
+          "description",
+          "holidays",
+          "is_default",
+          "name",
+          "timezone",
+          "weekly_intervals"
+        ],
+        "type": "object"
+      },
+      "PostWorkspacesWorkspaceIdSlaCalendarsResult": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": false,
+            "nullable": true,
+            "properties": {
+              "created_at": {
+                "description": "The created at value.",
+                "format": "date-time",
+                "type": "string"
+              },
+              "description": {
+                "description": "The description value.",
+                "type": "string"
+              },
+              "holidays": {
+                "description": "The holidays value.",
+                "format": "byte",
+                "type": "string"
+              },
+              "id": {
+                "description": "The id value.",
+                "type": "integer"
+              },
+              "is_default": {
+                "description": "The is default value.",
+                "type": "boolean"
+              },
+              "name": {
+                "description": "The name value.",
+                "type": "string"
+              },
+              "source": {
+                "description": "The source value.",
+                "nullable": true,
+                "type": "string"
+              },
+              "source_id": {
+                "description": "The source id value.",
+                "nullable": true,
+                "type": "string"
+              },
+              "source_payload": {
+                "description": "The source payload value.",
+                "nullable": true,
+                "type": "string"
+              },
+              "team_id": {
+                "description": "The team id value.",
+                "nullable": true,
+                "type": "integer"
+              },
+              "timezone": {
+                "description": "The timezone value.",
+                "type": "string"
+              },
+              "updated_at": {
+                "description": "The updated at value.",
+                "format": "date-time",
+                "type": "string"
+              },
+              "weekly_intervals": {
+                "description": "The weekly intervals value.",
+                "format": "byte",
+                "type": "string"
+              },
+              "workspace_id": {
+                "description": "The workspace id value.",
+                "nullable": true,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "created_at",
+              "description",
+              "holidays",
+              "id",
+              "is_default",
+              "name",
+              "timezone",
+              "updated_at",
+              "weekly_intervals"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "PostWorkspacesWorkspaceIdSlaWarningThresholdsPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "is_active": {
+            "description": "The is active value.",
+            "nullable": true,
+            "type": "boolean"
+          },
+          "label": {
+            "description": "The label value.",
+            "type": "string"
+          },
+          "metric_id": {
+            "description": "The metric id value.",
+            "nullable": true,
+            "type": "integer"
+          },
+          "percent": {
+            "description": "The percent value.",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "label",
+          "percent"
+        ],
+        "type": "object"
+      },
+      "PostWorkspacesWorkspaceIdSlaWarningThresholdsResult": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": false,
+            "nullable": true,
+            "properties": {
+              "created_at": {
+                "description": "The created at value.",
+                "format": "date-time",
+                "type": "string"
+              },
+              "id": {
+                "description": "The id value.",
+                "type": "integer"
+              },
+              "is_active": {
+                "description": "The is active value.",
+                "type": "boolean"
+              },
+              "label": {
+                "description": "The label value.",
+                "type": "string"
+              },
+              "metric_id": {
+                "description": "The metric id value.",
+                "nullable": true,
+                "type": "integer"
+              },
+              "metric_name": {
+                "description": "The metric name value.",
+                "type": "string"
+              },
+              "percent": {
+                "description": "The percent value.",
+                "type": "integer"
+              },
+              "updated_at": {
+                "description": "The updated at value.",
+                "format": "date-time",
+                "type": "string"
+              },
+              "workspace_id": {
+                "description": "The workspace id value.",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "created_at",
+              "id",
+              "is_active",
+              "label",
+              "percent",
+              "updated_at",
+              "workspace_id"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
       "PostWorkspacesWorkspaceIdTestCasesImportFeaturePayload": {
         "type": "string"
       },
@@ -89979,6 +90895,276 @@
               "type": "object"
             },
             "type": "array"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "PutWorkspacesWorkspaceIdSlaCalendarsCalendarIdPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "apply_to_ongoing": {
+            "description": "The apply to ongoing value.",
+            "type": "boolean"
+          },
+          "description": {
+            "description": "The description value.",
+            "type": "string"
+          },
+          "holidays": {
+            "description": "The holidays value.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "date": {
+                  "description": "The date value.",
+                  "type": "string"
+                },
+                "month_day": {
+                  "description": "The month day value.",
+                  "type": "string"
+                },
+                "name": {
+                  "description": "The name value.",
+                  "type": "string"
+                },
+                "recurring": {
+                  "description": "The recurring value.",
+                  "type": "boolean"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "is_default": {
+            "description": "The is default value.",
+            "type": "boolean"
+          },
+          "name": {
+            "description": "The name value.",
+            "type": "string"
+          },
+          "timezone": {
+            "description": "The timezone value.",
+            "type": "string"
+          },
+          "weekly_intervals": {
+            "additionalProperties": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "end": {
+                    "description": "The end value.",
+                    "type": "string"
+                  },
+                  "start": {
+                    "description": "The start value.",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "end",
+                  "start"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "description": "The weekly intervals value.",
+            "type": "object"
+          }
+        },
+        "required": [
+          "apply_to_ongoing",
+          "description",
+          "holidays",
+          "is_default",
+          "name",
+          "timezone",
+          "weekly_intervals"
+        ],
+        "type": "object"
+      },
+      "PutWorkspacesWorkspaceIdSlaCalendarsCalendarIdResult": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": false,
+            "nullable": true,
+            "properties": {
+              "created_at": {
+                "description": "The created at value.",
+                "format": "date-time",
+                "type": "string"
+              },
+              "description": {
+                "description": "The description value.",
+                "type": "string"
+              },
+              "holidays": {
+                "description": "The holidays value.",
+                "format": "byte",
+                "type": "string"
+              },
+              "id": {
+                "description": "The id value.",
+                "type": "integer"
+              },
+              "is_default": {
+                "description": "The is default value.",
+                "type": "boolean"
+              },
+              "name": {
+                "description": "The name value.",
+                "type": "string"
+              },
+              "source": {
+                "description": "The source value.",
+                "nullable": true,
+                "type": "string"
+              },
+              "source_id": {
+                "description": "The source id value.",
+                "nullable": true,
+                "type": "string"
+              },
+              "source_payload": {
+                "description": "The source payload value.",
+                "nullable": true,
+                "type": "string"
+              },
+              "team_id": {
+                "description": "The team id value.",
+                "nullable": true,
+                "type": "integer"
+              },
+              "timezone": {
+                "description": "The timezone value.",
+                "type": "string"
+              },
+              "updated_at": {
+                "description": "The updated at value.",
+                "format": "date-time",
+                "type": "string"
+              },
+              "weekly_intervals": {
+                "description": "The weekly intervals value.",
+                "format": "byte",
+                "type": "string"
+              },
+              "workspace_id": {
+                "description": "The workspace id value.",
+                "nullable": true,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "created_at",
+              "description",
+              "holidays",
+              "id",
+              "is_default",
+              "name",
+              "timezone",
+              "updated_at",
+              "weekly_intervals"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "PutWorkspacesWorkspaceIdSlaWarningThresholdsThresholdIdPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "is_active": {
+            "description": "The is active value.",
+            "nullable": true,
+            "type": "boolean"
+          },
+          "label": {
+            "description": "The label value.",
+            "type": "string"
+          },
+          "metric_id": {
+            "description": "The metric id value.",
+            "nullable": true,
+            "type": "integer"
+          },
+          "percent": {
+            "description": "The percent value.",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "label",
+          "percent"
+        ],
+        "type": "object"
+      },
+      "PutWorkspacesWorkspaceIdSlaWarningThresholdsThresholdIdResult": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": false,
+            "nullable": true,
+            "properties": {
+              "created_at": {
+                "description": "The created at value.",
+                "format": "date-time",
+                "type": "string"
+              },
+              "id": {
+                "description": "The id value.",
+                "type": "integer"
+              },
+              "is_active": {
+                "description": "The is active value.",
+                "type": "boolean"
+              },
+              "label": {
+                "description": "The label value.",
+                "type": "string"
+              },
+              "metric_id": {
+                "description": "The metric id value.",
+                "nullable": true,
+                "type": "integer"
+              },
+              "metric_name": {
+                "description": "The metric name value.",
+                "type": "string"
+              },
+              "percent": {
+                "description": "The percent value.",
+                "type": "integer"
+              },
+              "updated_at": {
+                "description": "The updated at value.",
+                "format": "date-time",
+                "type": "string"
+              },
+              "workspace_id": {
+                "description": "The workspace id value.",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "created_at",
+              "id",
+              "is_active",
+              "label",
+              "percent",
+              "updated_at",
+              "workspace_id"
+            ],
+            "type": "object"
           }
         },
         "required": [
@@ -102165,6 +103351,63 @@
         ],
         "x-required-scopes": [
           "items:write"
+        ]
+      }
+    },
+    "/items/{item_id}/sla": {
+      "get": {
+        "description": "Get item SLA state. Results include only resources visible to the authenticated caller; collections use their documented stable order and bounds.",
+        "operationId": "getItemsItemIdSla",
+        "parameters": [
+          {
+            "description": "The item identifier.",
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetItemsItemIdSlaResult"
+                }
+              }
+            },
+            "description": "Get item SLA state response."
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationError"
+          },
+          "403": {
+            "$ref": "#/components/responses/PermissionError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimitError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Get item SLA state",
+        "tags": [
+          "Work items"
+        ],
+        "x-required-scopes": [
+          "items:read"
         ]
       }
     },
@@ -115613,6 +116856,712 @@
         ],
         "x-required-scopes": [
           "items:read"
+        ]
+      }
+    },
+    "/workspaces/{workspace_id}/sla/available-calendars": {
+      "get": {
+        "description": "List available SLA calendars. Results include only resources visible to the authenticated caller; collections use their documented stable order and bounds.",
+        "operationId": "getWorkspacesWorkspaceIdSlaAvailableCalendars",
+        "parameters": [
+          {
+            "description": "The workspace identifier.",
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetWorkspacesWorkspaceIdSlaAvailableCalendarsResult"
+                }
+              }
+            },
+            "description": "List available SLA calendars response."
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationError"
+          },
+          "403": {
+            "$ref": "#/components/responses/PermissionError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimitError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "List available SLA calendars",
+        "tags": [
+          "Workspace configuration"
+        ],
+        "x-required-scopes": [
+          "workspaces:read"
+        ]
+      }
+    },
+    "/workspaces/{workspace_id}/sla/calendars": {
+      "get": {
+        "description": "List SLA calendars. Results include only resources visible to the authenticated caller; collections use their documented stable order and bounds.",
+        "operationId": "getWorkspacesWorkspaceIdSlaCalendars",
+        "parameters": [
+          {
+            "description": "The workspace identifier.",
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetWorkspacesWorkspaceIdSlaCalendarsResult"
+                }
+              }
+            },
+            "description": "List SLA calendars response."
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationError"
+          },
+          "403": {
+            "$ref": "#/components/responses/PermissionError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimitError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "List SLA calendars",
+        "tags": [
+          "Workspace configuration"
+        ],
+        "x-required-scopes": [
+          "workspaces:read"
+        ]
+      },
+      "post": {
+        "description": "Create SLA calendar. The server validates resource ownership and command preconditions before persisting changes. Unknown JSON fields are rejected when the operation accepts a body.",
+        "operationId": "postWorkspacesWorkspaceIdSlaCalendars",
+        "parameters": [
+          {
+            "description": "The workspace identifier.",
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostWorkspacesWorkspaceIdSlaCalendarsPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostWorkspacesWorkspaceIdSlaCalendarsResult"
+                }
+              }
+            },
+            "description": "Create SLA calendar response."
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationError"
+          },
+          "403": {
+            "$ref": "#/components/responses/PermissionError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLargeError"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaTypeError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimitError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Create SLA calendar",
+        "tags": [
+          "Workspace configuration"
+        ],
+        "x-required-scopes": [
+          "workspaces:write"
+        ]
+      }
+    },
+    "/workspaces/{workspace_id}/sla/calendars/{calendar_id}": {
+      "delete": {
+        "description": "Delete SLA calendar. The server verifies resource ownership and deletion preconditions before removing the resource.",
+        "operationId": "deleteWorkspacesWorkspaceIdSlaCalendarsCalendarId",
+        "parameters": [
+          {
+            "description": "The workspace identifier.",
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The working calendar identifier.",
+            "in": "path",
+            "name": "calendar_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Request completed successfully with no response body."
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationError"
+          },
+          "403": {
+            "$ref": "#/components/responses/PermissionError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "409": {
+            "$ref": "#/components/responses/ConflictError"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLargeError"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaTypeError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimitError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Delete SLA calendar",
+        "tags": [
+          "Workspace configuration"
+        ],
+        "x-required-scopes": [
+          "workspaces:write"
+        ]
+      },
+      "put": {
+        "description": "Update SLA calendar. The server validates resource ownership and command preconditions before persisting changes. Unknown JSON fields are rejected when the operation accepts a body.",
+        "operationId": "putWorkspacesWorkspaceIdSlaCalendarsCalendarId",
+        "parameters": [
+          {
+            "description": "The workspace identifier.",
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The working calendar identifier.",
+            "in": "path",
+            "name": "calendar_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutWorkspacesWorkspaceIdSlaCalendarsCalendarIdPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PutWorkspacesWorkspaceIdSlaCalendarsCalendarIdResult"
+                }
+              }
+            },
+            "description": "Update SLA calendar response."
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationError"
+          },
+          "403": {
+            "$ref": "#/components/responses/PermissionError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLargeError"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaTypeError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimitError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Update SLA calendar",
+        "tags": [
+          "Workspace configuration"
+        ],
+        "x-required-scopes": [
+          "workspaces:write"
+        ]
+      }
+    },
+    "/workspaces/{workspace_id}/sla/report": {
+      "get": {
+        "description": "Get SLA compliance report. Results include only resources visible to the authenticated caller; collections use their documented stable order and bounds.",
+        "operationId": "getWorkspacesWorkspaceIdSlaReport",
+        "parameters": [
+          {
+            "description": "The workspace identifier.",
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Inclusive lower bound (RFC3339 or YYYY-MM-DD) on the cycle stop time.",
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Exclusive upper bound (RFC3339 or YYYY-MM-DD) on the cycle stop time.",
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetWorkspacesWorkspaceIdSlaReportResult"
+                }
+              }
+            },
+            "description": "Get SLA compliance report response."
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationError"
+          },
+          "403": {
+            "$ref": "#/components/responses/PermissionError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimitError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Get SLA compliance report",
+        "tags": [
+          "Work items"
+        ],
+        "x-required-scopes": [
+          "items:read"
+        ]
+      }
+    },
+    "/workspaces/{workspace_id}/sla/warning-thresholds": {
+      "get": {
+        "description": "List SLA warning thresholds. Results include only resources visible to the authenticated caller; collections use their documented stable order and bounds.",
+        "operationId": "getWorkspacesWorkspaceIdSlaWarningThresholds",
+        "parameters": [
+          {
+            "description": "The workspace identifier.",
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetWorkspacesWorkspaceIdSlaWarningThresholdsResult"
+                }
+              }
+            },
+            "description": "List SLA warning thresholds response."
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationError"
+          },
+          "403": {
+            "$ref": "#/components/responses/PermissionError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimitError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "List SLA warning thresholds",
+        "tags": [
+          "Workspace configuration"
+        ],
+        "x-required-scopes": [
+          "workspaces:read"
+        ]
+      },
+      "post": {
+        "description": "Create SLA warning threshold. The server validates resource ownership and command preconditions before persisting changes. Unknown JSON fields are rejected when the operation accepts a body.",
+        "operationId": "postWorkspacesWorkspaceIdSlaWarningThresholds",
+        "parameters": [
+          {
+            "description": "The workspace identifier.",
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostWorkspacesWorkspaceIdSlaWarningThresholdsPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostWorkspacesWorkspaceIdSlaWarningThresholdsResult"
+                }
+              }
+            },
+            "description": "Create SLA warning threshold response."
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationError"
+          },
+          "403": {
+            "$ref": "#/components/responses/PermissionError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLargeError"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaTypeError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimitError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Create SLA warning threshold",
+        "tags": [
+          "Workspace configuration"
+        ],
+        "x-required-scopes": [
+          "workspaces:write"
+        ]
+      }
+    },
+    "/workspaces/{workspace_id}/sla/warning-thresholds/{threshold_id}": {
+      "delete": {
+        "description": "Delete SLA warning threshold. The server verifies resource ownership and deletion preconditions before removing the resource.",
+        "operationId": "deleteWorkspacesWorkspaceIdSlaWarningThresholdsThresholdId",
+        "parameters": [
+          {
+            "description": "The workspace identifier.",
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The warning threshold identifier.",
+            "in": "path",
+            "name": "threshold_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Request completed successfully with no response body."
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationError"
+          },
+          "403": {
+            "$ref": "#/components/responses/PermissionError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLargeError"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaTypeError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimitError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Delete SLA warning threshold",
+        "tags": [
+          "Workspace configuration"
+        ],
+        "x-required-scopes": [
+          "workspaces:write"
+        ]
+      },
+      "put": {
+        "description": "Update SLA warning threshold. The server validates resource ownership and command preconditions before persisting changes. Unknown JSON fields are rejected when the operation accepts a body.",
+        "operationId": "putWorkspacesWorkspaceIdSlaWarningThresholdsThresholdId",
+        "parameters": [
+          {
+            "description": "The workspace identifier.",
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The warning threshold identifier.",
+            "in": "path",
+            "name": "threshold_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutWorkspacesWorkspaceIdSlaWarningThresholdsThresholdIdPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PutWorkspacesWorkspaceIdSlaWarningThresholdsThresholdIdResult"
+                }
+              }
+            },
+            "description": "Update SLA warning threshold response."
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationError"
+          },
+          "403": {
+            "$ref": "#/components/responses/PermissionError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLargeError"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaTypeError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimitError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Update SLA warning threshold",
+        "tags": [
+          "Workspace configuration"
+        ],
+        "x-required-scopes": [
+          "workspaces:write"
         ]
       }
     },

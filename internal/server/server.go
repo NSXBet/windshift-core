@@ -33,6 +33,7 @@ import (
 	"windshift/internal/events"
 	"windshift/internal/handlers"
 	"windshift/internal/health"
+	"windshift/internal/itemevents"
 	"windshift/internal/ldap"
 	"windshift/internal/licensing"
 	"windshift/internal/llm"
@@ -53,6 +54,7 @@ import (
 	"windshift/internal/scheduler"
 	"windshift/internal/scm"
 	"windshift/internal/services"
+	"windshift/internal/sla"
 	"windshift/internal/smtp"
 	"windshift/internal/sso"
 	"windshift/internal/standardagent"
@@ -152,6 +154,9 @@ type Server struct {
 	eventEngine                  *events.Engine
 	approvalEscalationSweeper    *services.ApprovalEscalationSweeper
 	incidentEscalationSweeper    *services.IncidentEscalationSweeper
+	slaEngine                    *sla.Engine
+	slaLoop                      *sla.Loop
+	slaLoopCancel                context.CancelFunc
 	emailScheduler               *scheduler.EmailScheduler
 	ticketImport                 *services.TicketImportService
 	emailTrackingRetention       *scheduler.EmailTrackingRetentionSweeper
@@ -1143,6 +1148,17 @@ func (s *Server) initialize() error {
 	s.incidentEscalationSweeper = services.NewIncidentEscalationSweeper(s.db, incidentService, services.DefaultIncidentEscalationSweeperConfig())
 	s.incidentEscalationSweeper.Start()
 
+	// SLA evaluation runs inline with item facts, and one process-wide
+	// goroutine fires deadline and recalculation jobs.
+	s.slaEngine = sla.NewEngine(s.db)
+	s.slaEngine.SetSideEffectEmitter(services.NewSLASideEffectEmitter(s.db))
+	s.slaLoop = sla.NewLoop(repository.NewSLARepository(s.db), s.slaEngine, sla.SystemClock{}, nil, sla.LoopConfig{})
+	s.slaEngine.SetNudge(s.slaLoop.Nudge)
+	itemevents.RegisterFactObserver(s.slaEngine)
+	slaLoopCtx, slaLoopCancel := context.WithCancel(context.Background())
+	s.slaLoopCancel = slaLoopCancel
+	go s.slaLoop.Run(slaLoopCtx)
+
 	// Wire smart-commit dependencies into the SCM sync service and start its
 	// scheduler. Must be done after commentService and conditionService exist.
 	scmSyncService.SetSmartCommitServices(
@@ -1493,7 +1509,9 @@ func (s *Server) initialize() error {
 	)
 
 	// Build route dependencies
+	slaHandler := handlers.NewSLAHandler(s.db, s.slaEngine, permService)
 	routeDeps := &routes.Deps{
+		SLA:       slaHandler,
 		API:       api,
 		SCIMGroup: scimGroup,
 		Mux:       mux,
@@ -1777,6 +1795,9 @@ func (s *Server) initialize() error {
 	if err := v2.RegisterRoutes(v2.Deps{
 		Mux:                mux,
 		Tokens:             tokenManager,
+		SLA:                s.slaEngine,
+		SLACalendars:       services.NewSLACalendarService(s.db, s.slaEngine),
+		SLASettings:        services.NewSLASettingsService(s.db, s.slaEngine),
 		Users:              services.NewUserReadService(s.db),
 		Statuses:           services.NewStatusService(s.db),
 		Teams:              teamRepo,
@@ -2228,6 +2249,12 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	if s.incidentEscalationSweeper != nil {
 		slog.Info("stopping incident escalation sweeper")
 		s.incidentEscalationSweeper.Stop()
+	}
+
+	if s.slaLoopCancel != nil {
+		slog.Info("stopping SLA due-work loop")
+		s.slaLoopCancel()
+		itemevents.ClearFactObserver()
 	}
 
 	if s.assetActionService != nil {

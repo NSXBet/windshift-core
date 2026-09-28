@@ -652,6 +652,10 @@ const (
 	// Mention events
 	EventMention = "mention.created"
 
+	// SLA events
+	EventSLABreached = "sla.breached"
+	EventSLAWarning  = "sla.warning"
+
 	// Approval events
 	EventApprovalRequested   = "approval.requested"
 	EventApprovalStepStarted = "approval.step_started"
@@ -674,6 +678,8 @@ func GetAvailableNotificationEvents() []NotificationEvent {
 		{EventItemLinked, "Item Linked", "When work items are linked together", "link"},
 		{EventItemUnlinked, "Item Unlinked", "When work item links are removed", "link"},
 		{EventStatusChanged, "Status Changed", "When a work item's status is changed", "status"},
+		{EventSLABreached, "SLA Breached", "When a work item misses an SLA goal", "sla"},
+		{EventSLAWarning, "SLA Warning", "When a work item approaches an SLA goal", "sla"},
 		{EventMention, "User Mentioned", "When a user is @mentioned in a comment or description", "mention"},
 		{EventApprovalRequested, "Approval Requested", "When an item enters a status that requires approval", "approval"},
 		{EventApprovalStepStarted, "Approval Step Started", "When a new approval step opens for its approvers", "approval"},

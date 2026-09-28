@@ -23,6 +23,7 @@ import (
 	"windshift/internal/repository"
 	"windshift/internal/services"
 	"windshift/internal/services/actioncatalog"
+	"windshift/internal/sla"
 )
 
 const (
@@ -602,6 +603,15 @@ type Deps struct {
 	CORS                         Middleware
 	CSRF                         csrfValidator
 	Concurrency                  concurrencyLimiter
+	// SLA serves the read-only item SLA state and compliance report. Optional:
+	// nil keeps the routes registered but answering not-found.
+	SLA *sla.Engine
+	// SLACalendars serves workspace working-calendar configuration. Optional:
+	// nil keeps the routes registered but answering not-found.
+	SLACalendars *services.SLACalendarService
+	// SLASettings serves SLA warning-threshold configuration. Optional: nil
+	// keeps the routes registered but answering not-found.
+	SLASettings *services.SLASettingsService
 }
 
 // RegisterRoutes validates dependencies and mounts the canonical inventory twice.
@@ -831,6 +841,9 @@ func buildRoutes(deps Deps) []route {
 	registerTestManagementRoutes(&builder, deps.TestManagement)
 	registerAssetRoutes(&builder, deps.Assets)
 	registerItemRoutes(&builder, deps.ItemApplication, deps.ItemDetail, deps.ItemLifecycle, deps.Access, deps.StoryPointRollup, deps.DBRequestTimeout)
+	registerSLARoutes(&builder, deps)
+	registerSLACalendarRoutes(&builder, deps)
+	registerSLAWarningThresholdRoutes(&builder, deps)
 	registerTicketImportRoutes(&builder, deps.TicketImport)
 	applyEmbeddedContractMetadata(builder.routes, contractMetadataJSON)
 	return builder.routes

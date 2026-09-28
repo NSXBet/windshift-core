@@ -1,0 +1,46 @@
+package routes
+
+import "net/http"
+
+// RegisterSLARoutes registers SLA configuration and item SLA state routes.
+func RegisterSLARoutes(deps *Deps) {
+	if deps.SLA == nil {
+		return
+	}
+	api := deps.API
+	auth := deps.AuthMiddleware.RequireAuth
+
+	// Item SLA state.
+	api.HandleH("GET /items/{id}/sla", auth(http.HandlerFunc(deps.SLA.GetItemSLA)))
+
+	// Workspace calendars.
+	api.HandleH("GET /workspaces/{id}/sla/calendars", auth(http.HandlerFunc(deps.SLA.ListWorkspaceCalendars)))
+	api.HandleH("POST /workspaces/{id}/sla/calendars", auth(http.HandlerFunc(deps.SLA.CreateWorkspaceCalendar)))
+	api.HandleH("PUT /workspaces/{id}/sla/calendars/{calendarId}", auth(http.HandlerFunc(deps.SLA.UpdateWorkspaceCalendar)))
+	api.HandleH("DELETE /workspaces/{id}/sla/calendars/{calendarId}", auth(http.HandlerFunc(deps.SLA.DeleteWorkspaceCalendar)))
+	api.HandleH("GET /workspaces/{id}/sla/available-calendars", auth(http.HandlerFunc(deps.SLA.ListAvailableCalendars)))
+
+	// Team service-hours calendars.
+	api.HandleH("GET /teams/{id}/working-calendars", auth(http.HandlerFunc(deps.SLA.ListTeamCalendars)))
+	api.HandleH("POST /teams/{id}/working-calendars", auth(http.HandlerFunc(deps.SLA.CreateTeamCalendar)))
+	api.HandleH("PUT /teams/{id}/working-calendars/{calendarId}", auth(http.HandlerFunc(deps.SLA.UpdateTeamCalendar)))
+	api.HandleH("DELETE /teams/{id}/working-calendars/{calendarId}", auth(http.HandlerFunc(deps.SLA.DeleteTeamCalendar)))
+
+	// Metrics and goals.
+	api.HandleH("GET /workspaces/{id}/sla/metrics", auth(http.HandlerFunc(deps.SLA.ListMetrics)))
+	api.HandleH("POST /workspaces/{id}/sla/metrics", auth(http.HandlerFunc(deps.SLA.CreateMetric)))
+	api.HandleH("GET /workspaces/{id}/sla/metrics/{metricId}", auth(http.HandlerFunc(deps.SLA.GetMetric)))
+	api.HandleH("PUT /workspaces/{id}/sla/metrics/{metricId}", auth(http.HandlerFunc(deps.SLA.UpdateMetric)))
+	api.HandleH("DELETE /workspaces/{id}/sla/metrics/{metricId}", auth(http.HandlerFunc(deps.SLA.DeleteMetric)))
+
+	// Recalculation progress.
+	api.HandleH("GET /workspaces/{id}/sla/report", auth(http.HandlerFunc(deps.SLA.GetReport)))
+	api.HandleH("GET /workspaces/{id}/sla/recalculations", auth(http.HandlerFunc(deps.SLA.ListRecalculations)))
+	api.HandleH("POST /workspaces/{id}/sla/recalculations", auth(http.HandlerFunc(deps.SLA.StartRecalculation)))
+
+	// Warning thresholds.
+	api.HandleH("GET /workspaces/{id}/sla/warning-thresholds", auth(http.HandlerFunc(deps.SLA.ListWarningThresholds)))
+	api.HandleH("POST /workspaces/{id}/sla/warning-thresholds", auth(http.HandlerFunc(deps.SLA.CreateWarningThreshold)))
+	api.HandleH("PUT /workspaces/{id}/sla/warning-thresholds/{thresholdId}", auth(http.HandlerFunc(deps.SLA.UpdateWarningThreshold)))
+	api.HandleH("DELETE /workspaces/{id}/sla/warning-thresholds/{thresholdId}", auth(http.HandlerFunc(deps.SLA.DeleteWarningThreshold)))
+}

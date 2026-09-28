@@ -192,6 +192,10 @@ var systemFieldSortColumns = map[string]string{
 	"project":        "i.project_id",
 	"rank":           "i.rank",
 	"frac_index":     "i.frac_index",
+	// SLA urgency: nearest running deadline first; paused cycles carry no
+	// deadline and sort last. Exact business-time remaining is display-only.
+	"sla_deadline": "(SELECT sla_c.next_deadline_at FROM item_sla_cycles sla_c WHERE sla_c.item_id = i.id AND sla_c.status = 'ongoing' ORDER BY sla_c.next_deadline_at LIMIT 1)",
+	"sla_urgency":  "(SELECT CASE WHEN sla_c.pause_started_at IS NOT NULL THEN 1 ELSE 0 END FROM item_sla_cycles sla_c WHERE sla_c.item_id = i.id AND sla_c.status = 'ongoing' LIMIT 1)",
 }
 
 // unsortableCustomFieldTypes lists custom field types that cannot be meaningfully sorted.

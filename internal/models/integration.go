@@ -781,6 +781,11 @@ const (
 	ActionTriggerItemLinked       ActionTriggerType = "item_linked"
 	ActionTriggerManual           ActionTriggerType = "manual"
 
+	// SLA-driven triggers emitted in the breach/warning transaction. They are
+	// configuration consumers, not fields on imported SLA goals.
+	ActionTriggerSLABreached ActionTriggerType = "sla_breached"
+	ActionTriggerSLAWarning  ActionTriggerType = "sla_warning"
+
 	// SCM-driven triggers emitted by the repo-sync loop when a new git ref
 	// matching the per-repository pattern is observed. Payload (in
 	// ActionEvent.NewValues) carries: ref.name, ref.short, ref.sha,

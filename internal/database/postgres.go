@@ -136,6 +136,12 @@ var dailyBriefingsSchemaPostgres string
 //go:embed schema/teams_postgres.sql
 var teamsSchemaPostgres string
 
+//go:embed schema/sla_postgres.sql
+var slaSchemaPostgres string
+
+//go:embed schema/sla_warning_thresholds_postgres.sql
+var slaWarningThresholdsSchemaPostgres string
+
 //go:embed schema/incidents_postgres.sql
 var incidentsSchemaPostgres string
 
@@ -552,6 +558,8 @@ func (p *PostgresDB) getPostgresSchemaFiles() []schemaFile {
 		{"ldap_postgres.sql", ldapSchemaPostgres},
 		{"daily_briefings_postgres.sql", dailyBriefingsSchemaPostgres},
 		{"teams_postgres.sql", teamsSchemaPostgres},
+		{"sla_postgres.sql", slaSchemaPostgres},
+		{"sla_warning_thresholds_postgres.sql", slaWarningThresholdsSchemaPostgres},
 		{"incidents_postgres.sql", incidentsSchemaPostgres},
 		{"condition_sets_postgres.sql", conditionSetsSchemaPostgres},
 		{"approvals_postgres.sql", approvalsSchemaPostgres},
