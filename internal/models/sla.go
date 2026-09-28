@@ -154,6 +154,7 @@ type ItemSLACycle struct {
 	AbandonReason       *string         `json:"abandon_reason,omitempty"`
 	CalendarSnapshot    json.RawMessage `json:"calendar_snapshot"`
 	GoalQuerySnapshot   string          `json:"goal_query_snapshot"`
+	SourceID            *string         `json:"source_id,omitempty"`
 	SourcePayload       *string         `json:"source_payload,omitempty"`
 	CreatedAt           time.Time       `json:"created_at"`
 	UpdatedAt           time.Time       `json:"updated_at"`

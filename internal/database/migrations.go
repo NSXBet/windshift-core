@@ -1677,6 +1677,14 @@ var Catalog = []Migration{
 		SQLite:        slaWarningThresholdsSchema,
 		Postgres:      slaWarningThresholdsSchemaPostgres,
 	},
+	{
+		Version:       "20260930_sla_cycle_source_id",
+		Name:          "Add SLA cycle import source identity",
+		CheckSQLite:   sqliteColumnCheck("item_sla_cycles", "source_id"),
+		CheckPostgres: pgColumnCheck("item_sla_cycles", "source_id"),
+		SQLite:        slaImportSchema,
+		Postgres:      slaImportSchemaPostgres,
+	},
 }
 
 func applySQLitePersonalLabelsPerUserUnique(db Database) (retErr error) {

@@ -28,6 +28,7 @@ type SLAHandler struct {
 	settings          *services.SLASettingsService
 	bindings          *services.SLATeamBindingService
 	metrics           *services.SLAMetricService
+	slaImport         *services.SLAImportService
 	permissionService *services.PermissionService
 }
 
@@ -42,6 +43,7 @@ func NewSLAHandler(db database.Database, engine *sla.Engine, permissionService *
 		settings:          services.NewSLASettingsService(db, engine),
 		bindings:          services.NewSLATeamBindingService(db, permissionService),
 		metrics:           services.NewSLAMetricService(db, engine),
+		slaImport:         services.NewSLAImportService(db, engine),
 		permissionService: permissionService,
 	}
 }
@@ -824,6 +826,59 @@ func (h *SLAHandler) authorizeTeamAdmin(w http.ResponseWriter, r *http.Request) 
 		return 0, false
 	}
 	return teamID, true
+}
+
+type slaImportRequest struct {
+	Mode     string                     `json:"mode"`
+	Document services.SLAImportDocument `json:"document"`
+}
+
+// PreviewSLAImport resolves a Jira SLA document without writing and reports the
+// planned changes and any clauses that need attention.
+func (h *SLAHandler) PreviewSLAImport(w http.ResponseWriter, r *http.Request) {
+	workspaceID, ok := h.authorizeWorkspaceAdmin(w, r)
+	if !ok {
+		return
+	}
+	request, ok := decodeJSON[services.SLAImportDocument](w, r)
+	if !ok {
+		return
+	}
+	result, err := h.slaImport.Preview(r.Context(), workspaceID, request)
+	if !h.writeImportResult(w, r, result, err) {
+		return
+	}
+}
+
+// ImportSLA applies a Jira SLA document in merge or replace mode.
+func (h *SLAHandler) ImportSLA(w http.ResponseWriter, r *http.Request) {
+	workspaceID, ok := h.authorizeWorkspaceAdmin(w, r)
+	if !ok {
+		return
+	}
+	request, ok := decodeJSON[slaImportRequest](w, r)
+	if !ok {
+		return
+	}
+	result, err := h.slaImport.Import(r.Context(), workspaceID, request.Document, request.Mode)
+	if !h.writeImportResult(w, r, result, err) {
+		return
+	}
+}
+
+// writeImportResult maps import errors and writes the result. It returns true
+// when the caller should write the success body.
+func (h *SLAHandler) writeImportResult(w http.ResponseWriter, r *http.Request, result *services.SLAImportResult, err error) bool {
+	switch {
+	case err == nil:
+		respondJSONOK(w, result)
+		return true
+	case errors.Is(err, services.ErrSLAImportInvalid):
+		respondValidationError(w, r, err.Error())
+	default:
+		respondError(w, r, slaInternal(err))
+	}
+	return false
 }
 
 // writeMetricResult maps metric service errors to responses. It returns true

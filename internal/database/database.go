@@ -134,6 +134,9 @@ var slaSchema string
 //go:embed schema/sla_warning_thresholds.sql
 var slaWarningThresholdsSchema string
 
+//go:embed schema/sla_import.sql
+var slaImportSchema string
+
 //go:embed schema/incidents.sql
 var incidentsSchema string
 

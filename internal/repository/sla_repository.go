@@ -159,6 +159,159 @@ func (r *SLARepository) GetCalendar(ctx context.Context, id int) (*models.Workin
 	return &calendar, nil
 }
 
+// GetCalendarBySourceID resolves a workspace-owned calendar by its import
+// source identity.
+func (r *SLARepository) GetCalendarBySourceID(ctx context.Context, workspaceID int, sourceID string) (*models.WorkingCalendar, error) {
+	row := r.db.QueryRowContext(ctx, `SELECT `+calendarColumns+` FROM working_calendars WHERE workspace_id = ? AND source_id = ?`, workspaceID, sourceID)
+	calendar, err := scanCalendar(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("load calendar by source: %w", err)
+	}
+	return &calendar, nil
+}
+
+// GetMetricBySourceID resolves a metric by its import source identity.
+func (r *SLARepository) GetMetricBySourceID(ctx context.Context, workspaceID int, sourceID string) (*models.SLAMetric, error) {
+	var id int
+	err := r.db.QueryRowContext(ctx, `SELECT id FROM sla_metrics WHERE workspace_id = ? AND source_id = ?`, workspaceID, sourceID).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("load metric by source: %w", err)
+	}
+	return r.GetMetric(ctx, id)
+}
+
+// GetCycleBySourceID resolves an imported cycle by its Jira identity.
+func (r *SLARepository) GetCycleBySourceID(ctx context.Context, metricID int, sourceID string) (*models.ItemSLACycle, error) {
+	row := r.db.QueryRowContext(ctx, `SELECT `+cycleColumns+` FROM item_sla_cycles WHERE metric_id = ? AND source_id = ?`, metricID, sourceID)
+	cycle, err := scanCycle(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("load cycle by source: %w", err)
+	}
+	return &cycle, nil
+}
+
+// GetCycleBySourceIDTx resolves an imported cycle inside the caller's
+// transaction.
+func (r *SLARepository) GetCycleBySourceIDTx(ctx context.Context, tx database.Tx, metricID int, sourceID string) (*models.ItemSLACycle, error) {
+	row := tx.QueryRowContext(ctx, `SELECT `+cycleColumns+` FROM item_sla_cycles WHERE metric_id = ? AND source_id = ?`, metricID, sourceID)
+	cycle, err := scanCycle(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("load cycle by source: %w", err)
+	}
+	return &cycle, nil
+}
+
+// GoalIDsBySourceID maps a metric's goals by source identity inside the
+// caller's transaction.
+func (r *SLARepository) GoalIDsBySourceID(ctx context.Context, tx database.Tx, metricID int) (map[string]int, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT id, source_id FROM sla_goals WHERE metric_id = ? AND source_id IS NOT NULL`, metricID)
+	if err != nil {
+		return nil, fmt.Errorf("load goal source ids: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	ids := map[string]int{}
+	for rows.Next() {
+		var id int
+		var sourceID string
+		if err := rows.Scan(&id, &sourceID); err != nil {
+			return nil, fmt.Errorf("scan goal source id: %w", err)
+		}
+		ids[sourceID] = id
+	}
+	return ids, rows.Err()
+}
+
+// ItemIDByWorkspaceNumber resolves an item by its workspace-relative number,
+// which is how an imported Jira issue key maps to a Windshift item.
+func (r *SLARepository) ItemIDByWorkspaceNumber(ctx context.Context, workspaceID, number int) (int, error) {
+	var id int
+	err := r.db.QueryRowContext(ctx, `SELECT id FROM items WHERE workspace_id = ? AND workspace_item_number = ?`, workspaceID, number).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, ErrNotFound
+	}
+	if err != nil {
+		return 0, fmt.Errorf("resolve item number: %w", err)
+	}
+	return id, nil
+}
+
+// PriorityIDByName resolves a priority by its display name.
+func (r *SLARepository) PriorityIDByName(ctx context.Context, name string) (int, error) {
+	var id int
+	err := r.db.QueryRowContext(ctx, `SELECT id FROM priorities WHERE name = ? ORDER BY id LIMIT 1`, name).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, ErrNotFound
+	}
+	if err != nil {
+		return 0, fmt.Errorf("resolve priority: %w", err)
+	}
+	return id, nil
+}
+
+// ListImportedMetricSourceIDs returns the source ids of metrics imported from a
+// system, used to reconcile replace-mode imports.
+func (r *SLARepository) ListImportedMetricSourceIDs(ctx context.Context, workspaceID int, source string) ([]string, error) {
+	return r.listImportedSourceIDs(ctx, `SELECT source_id FROM sla_metrics WHERE workspace_id = ? AND source = ? AND source_id IS NOT NULL`, workspaceID, source)
+}
+
+// ListImportedCalendarSourceIDs returns workspace calendar source ids for a
+// source system.
+func (r *SLARepository) ListImportedCalendarSourceIDs(ctx context.Context, workspaceID int, source string) ([]string, error) {
+	return r.listImportedSourceIDs(ctx, `SELECT source_id FROM working_calendars WHERE workspace_id = ? AND source = ? AND source_id IS NOT NULL`, workspaceID, source)
+}
+
+// ListImportedCycleSourceIDs returns cycle source ids for one imported metric.
+func (r *SLARepository) ListImportedCycleSourceIDs(ctx context.Context, metricID int) ([]string, error) {
+	return r.listImportedSourceIDs(ctx, `SELECT source_id FROM item_sla_cycles WHERE metric_id = ? AND origin = 'import' AND source_id IS NOT NULL`, metricID)
+}
+
+func (r *SLARepository) listImportedSourceIDs(ctx context.Context, query string, args ...any) ([]string, error) {
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list imported source ids: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan imported source id: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// DeleteImportedCyclesNotIn removes imported cycles for a metric whose source
+// id is not in keep. Native cycles are never touched.
+func (r *SLARepository) DeleteImportedCyclesNotIn(ctx context.Context, tx database.Tx, metricID int, keep []string) error {
+	query := `DELETE FROM item_sla_cycles WHERE metric_id = ? AND origin = 'import'`
+	args := []any{metricID}
+	if len(keep) > 0 {
+		placeholders := strings.TrimSuffix(strings.Repeat("?,", len(keep)), ",")
+		query += ` AND (source_id IS NULL OR source_id NOT IN (` + placeholders + `))`
+		for _, id := range keep {
+			args = append(args, id)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, query, args...); err != nil {
+		return fmt.Errorf("delete stale imported cycles: %w", err)
+	}
+	return nil
+}
+
 // CreateCalendar inserts a calendar and returns its ID.
 func (r *SLARepository) CreateCalendar(ctx context.Context, calendar *models.WorkingCalendar) (int, error) {
 	holidays := calendar.Holidays
@@ -186,6 +339,42 @@ func (r *SLARepository) UpdateCalendar(ctx context.Context, calendar *models.Wor
 		holidays = json.RawMessage("[]")
 	}
 	result, err := r.db.ExecContext(ctx, `UPDATE working_calendars
+		SET name = ?, description = ?, timezone = ?, weekly_intervals = ?, holidays = ?, is_default = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE id = ?`,
+		calendar.Name, calendar.Description, calendar.Timezone, string(calendar.WeeklyIntervals), string(holidays), calendar.IsDefault, calendar.ID)
+	if err != nil {
+		return fmt.Errorf("update calendar: %w", err)
+	}
+	return requireAffected(result)
+}
+
+// CreateCalendarTx inserts a calendar inside the caller's transaction.
+func (r *SLARepository) CreateCalendarTx(ctx context.Context, tx database.Tx, calendar *models.WorkingCalendar) (int, error) {
+	holidays := calendar.Holidays
+	if len(holidays) == 0 {
+		holidays = json.RawMessage("[]")
+	}
+	var id int
+	err := tx.QueryRowContext(ctx, `INSERT INTO working_calendars
+		(workspace_id, team_id, name, description, timezone, weekly_intervals, holidays, is_default, source, source_id, source_payload)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+		nullableInt(calendar.WorkspaceID), nullableInt(calendar.TeamID), calendar.Name, calendar.Description,
+		calendar.Timezone, string(calendar.WeeklyIntervals), string(holidays), calendar.IsDefault,
+		calendar.Source, calendar.SourceID, calendar.SourcePayload,
+	).Scan(&id)
+	if err != nil {
+		return 0, fmt.Errorf("create calendar: %w", err)
+	}
+	return id, nil
+}
+
+// UpdateCalendarTx writes the mutable calendar fields inside a transaction.
+func (r *SLARepository) UpdateCalendarTx(ctx context.Context, tx database.Tx, calendar *models.WorkingCalendar) error {
+	holidays := calendar.Holidays
+	if len(holidays) == 0 {
+		holidays = json.RawMessage("[]")
+	}
+	result, err := tx.ExecContext(ctx, `UPDATE working_calendars
 		SET name = ?, description = ?, timezone = ?, weekly_intervals = ?, holidays = ?, is_default = ?, updated_at = CURRENT_TIMESTAMP
 		WHERE id = ?`,
 		calendar.Name, calendar.Description, calendar.Timezone, string(calendar.WeeklyIntervals), string(holidays), calendar.IsDefault, calendar.ID)
@@ -749,21 +938,21 @@ const cycleColumns = `id, item_id, metric_id, goal_id, calendar_id, cycle_no, st
 	started_at, stopped_at, breach_time, goal_duration_ms, elapsed_ms, remaining_ms,
 	paused, within_calendar_hours, breached, pause_started_at, next_deadline_at,
 	last_calculated_at, remaining_at_pause_ms, breached_at, origin, abandon_reason,
-	calendar_snapshot, goal_query_snapshot, source_payload, created_at, updated_at`
+	calendar_snapshot, goal_query_snapshot, source_id, source_payload, created_at, updated_at`
 
 func scanCycle(scanner interface{ Scan(...any) error }) (models.ItemSLACycle, error) {
 	var cycle models.ItemSLACycle
 	var goalID, calendarID sql.NullInt64
 	var stoppedAt, breachTime, pauseStartedAt, nextDeadlineAt, breachedAt sql.NullTime
 	var remainingAtPause sql.NullInt64
-	var abandonReason, sourcePayload sql.NullString
+	var abandonReason, sourceID, sourcePayload sql.NullString
 	var calendarSnapshot []byte
 	err := scanner.Scan(
 		&cycle.ID, &cycle.ItemID, &cycle.MetricID, &goalID, &calendarID, &cycle.CycleNo, &cycle.Status,
 		&cycle.StartedAt, &stoppedAt, &breachTime, &cycle.GoalDurationMs, &cycle.ElapsedMs, &cycle.RemainingMs,
 		&cycle.Paused, &cycle.WithinCalendarHours, &cycle.Breached, &pauseStartedAt, &nextDeadlineAt,
 		&cycle.LastCalculatedAt, &remainingAtPause, &breachedAt, &cycle.Origin, &abandonReason,
-		&calendarSnapshot, &cycle.GoalQuerySnapshot, &sourcePayload, &cycle.CreatedAt, &cycle.UpdatedAt,
+		&calendarSnapshot, &cycle.GoalQuerySnapshot, &sourceID, &sourcePayload, &cycle.CreatedAt, &cycle.UpdatedAt,
 	)
 	if err != nil {
 		return models.ItemSLACycle{}, err
@@ -794,6 +983,9 @@ func scanCycle(scanner interface{ Scan(...any) error }) (models.ItemSLACycle, er
 	if remainingAtPause.Valid {
 		value := remainingAtPause.Int64
 		cycle.RemainingAtPauseMs = &value
+	}
+	if sourceID.Valid {
+		cycle.SourceID = &sourceID.String
 	}
 	if abandonReason.Valid {
 		cycle.AbandonReason = &abandonReason.String
@@ -946,13 +1138,13 @@ func (r *SLARepository) InsertCycle(ctx context.Context, tx database.Tx, cycle *
 		(item_id, metric_id, goal_id, calendar_id, cycle_no, status, started_at, stopped_at, breach_time,
 		 goal_duration_ms, elapsed_ms, remaining_ms, paused, within_calendar_hours, breached,
 		 pause_started_at, next_deadline_at, last_calculated_at, remaining_at_pause_ms, breached_at,
-		 origin, abandon_reason, calendar_snapshot, goal_query_snapshot, source_payload)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+		 origin, abandon_reason, calendar_snapshot, goal_query_snapshot, source_id, source_payload)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
 		cycle.ItemID, cycle.MetricID, nullableInt(cycle.GoalID), nullableInt(cycle.CalendarID), cycle.CycleNo, cycle.Status,
 		cycle.StartedAt, cycle.StoppedAt, cycle.BreachTime, cycle.GoalDurationMs, cycle.ElapsedMs, cycle.RemainingMs,
 		cycle.Paused, cycle.WithinCalendarHours, cycle.Breached, cycle.PauseStartedAt, cycle.NextDeadlineAt,
 		cycle.LastCalculatedAt, cycle.RemainingAtPauseMs, cycle.BreachedAt, cycle.Origin, cycle.AbandonReason,
-		string(holidays), cycle.GoalQuerySnapshot, cycle.SourcePayload).Scan(&id)
+		string(holidays), cycle.GoalQuerySnapshot, cycle.SourceID, cycle.SourcePayload).Scan(&id)
 	if err != nil {
 		return 0, fmt.Errorf("insert cycle: %w", err)
 	}
@@ -965,12 +1157,12 @@ func (r *SLARepository) UpdateCycle(ctx context.Context, tx database.Tx, cycle *
 		goal_id = ?, calendar_id = ?, status = ?, stopped_at = ?, breach_time = ?, goal_duration_ms = ?,
 		elapsed_ms = ?, remaining_ms = ?, paused = ?, within_calendar_hours = ?, breached = ?,
 		pause_started_at = ?, next_deadline_at = ?, last_calculated_at = ?, remaining_at_pause_ms = ?,
-		breached_at = ?, origin = ?, abandon_reason = ?, calendar_snapshot = ?, goal_query_snapshot = ?, updated_at = CURRENT_TIMESTAMP
+		breached_at = ?, origin = ?, abandon_reason = ?, calendar_snapshot = ?, goal_query_snapshot = ?, source_id = ?, updated_at = CURRENT_TIMESTAMP
 		WHERE id = ?`,
 		nullableInt(cycle.GoalID), nullableInt(cycle.CalendarID), cycle.Status, cycle.StoppedAt, cycle.BreachTime,
 		cycle.GoalDurationMs, cycle.ElapsedMs, cycle.RemainingMs, cycle.Paused, cycle.WithinCalendarHours,
 		cycle.Breached, cycle.PauseStartedAt, cycle.NextDeadlineAt, cycle.LastCalculatedAt, cycle.RemainingAtPauseMs,
-		cycle.BreachedAt, cycle.Origin, cycle.AbandonReason, string(cycle.CalendarSnapshot), cycle.GoalQuerySnapshot, cycle.ID)
+		cycle.BreachedAt, cycle.Origin, cycle.AbandonReason, string(cycle.CalendarSnapshot), cycle.GoalQuerySnapshot, cycle.SourceID, cycle.ID)
 	if err != nil {
 		return fmt.Errorf("update cycle: %w", err)
 	}

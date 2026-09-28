@@ -142,6 +142,9 @@ var slaSchemaPostgres string
 //go:embed schema/sla_warning_thresholds_postgres.sql
 var slaWarningThresholdsSchemaPostgres string
 
+//go:embed schema/sla_import_postgres.sql
+var slaImportSchemaPostgres string
+
 //go:embed schema/incidents_postgres.sql
 var incidentsSchemaPostgres string
 
@@ -560,6 +563,7 @@ func (p *PostgresDB) getPostgresSchemaFiles() []schemaFile {
 		{"teams_postgres.sql", teamsSchemaPostgres},
 		{"sla_postgres.sql", slaSchemaPostgres},
 		{"sla_warning_thresholds_postgres.sql", slaWarningThresholdsSchemaPostgres},
+		{"sla_import_postgres.sql", slaImportSchemaPostgres},
 		{"incidents_postgres.sql", incidentsSchemaPostgres},
 		{"condition_sets_postgres.sql", conditionSetsSchemaPostgres},
 		{"approvals_postgres.sql", approvalsSchemaPostgres},

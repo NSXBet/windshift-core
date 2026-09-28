@@ -45,6 +45,10 @@ func RegisterSLARoutes(deps *Deps) {
 	api.HandleH("PUT /workspaces/{id}/sla/metrics/{metricId}", auth(http.HandlerFunc(deps.SLA.UpdateMetric)))
 	api.HandleH("DELETE /workspaces/{id}/sla/metrics/{metricId}", auth(http.HandlerFunc(deps.SLA.DeleteMetric)))
 
+	// Jira SLA configuration and cycle import.
+	api.HandleH("POST /workspaces/{id}/sla/import/preview", auth(http.HandlerFunc(deps.SLA.PreviewSLAImport)))
+	api.HandleH("POST /workspaces/{id}/sla/import", auth(http.HandlerFunc(deps.SLA.ImportSLA)))
+
 	// Recalculation progress.
 	api.HandleH("GET /workspaces/{id}/sla/report", auth(http.HandlerFunc(deps.SLA.GetReport)))
 	api.HandleH("GET /workspaces/{id}/sla/recalculations", auth(http.HandlerFunc(deps.SLA.ListRecalculations)))
