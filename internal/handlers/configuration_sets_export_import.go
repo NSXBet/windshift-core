@@ -149,6 +149,11 @@ func (h *ConfigurationSetHandler) Import(w http.ResponseWriter, r *http.Request)
 			restapi.RespondError(w, r, apiErr)
 			return
 		}
+		var serviceErr *services.ServiceError
+		if errors.As(err, &serviceErr) {
+			handleServiceError(w, r, err)
+			return
+		}
 		respondInternalError(w, r, err)
 		return
 	}

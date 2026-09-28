@@ -160,7 +160,10 @@ type ConfigSetTplTransitionCondition struct {
 // On export, the service rewrites known integer references inside Config:
 //   - role_id   → role_name
 //   - group_id  → group_name
-//   - field_id  → custom_field_name (when source=='custom_field')
+//   - field_id  → custom_field_name (when source=='custom_field' and the
+//     source is a regular_field/custom_field user reference)
+//   - field_identifier → custom_field_name (field_value rules whose
+//     identifier is a numeric custom-field id)
 //
 // Importer reverses these substitutions.
 type ConfigSetTplCondition struct {

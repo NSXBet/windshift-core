@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -315,6 +316,9 @@ func validateConditionInput(condition models.Condition) error {
 		if json.Unmarshal(condition.Config, &config) != nil || config.FieldIdentifier == "" || config.Pattern == "" {
 			return governanceValidation("field_value requires field_identifier and pattern")
 		}
+		if _, err := regexp.Compile(config.Pattern); err != nil {
+			return governanceValidation("field_value pattern is not a valid regex")
+		}
 	case models.ConditionTypeScript:
 		var config models.ConditionScriptConfig
 		if json.Unmarshal(condition.Config, &config) != nil || config.Script == "" {
@@ -342,6 +346,21 @@ func validateConditionFieldRef(ref models.FieldRef, conditionType string) error 
 		}
 	default:
 		return governanceValidation(conditionType + ": invalid source")
+	}
+	return nil
+}
+
+// validateConditionMap validates a condition whose config was decoded from a
+// template document. Import and conformance repair build configs this way
+// instead of the live CRUD model, so they share the CRUD validator here.
+// Invalid templates are a client error, so surface them as a 400.
+func validateConditionMap(conditionType, mode string, config map[string]any) error {
+	raw, err := json.Marshal(config)
+	if err != nil {
+		return NewServiceError(400, "invalid "+conditionType+" config")
+	}
+	if err := validateConditionInput(models.Condition{ConditionType: conditionType, Mode: mode, Config: raw}); err != nil {
+		return NewServiceError(400, err.Error())
 	}
 	return nil
 }

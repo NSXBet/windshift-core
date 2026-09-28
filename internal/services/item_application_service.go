@@ -972,7 +972,10 @@ func (s *ItemApplicationService) AvailableTransitions(ctx context.Context, userI
 	}
 	if s.conditions != nil {
 		conditionSetID, conditionErr := s.conditions.GetConditionSetIDForItem(item.WorkspaceID, item.ItemTypeID)
-		if conditionErr == nil && conditionSetID != nil {
+		if conditionErr != nil {
+			return ItemTransitionSummary{}, conditionErr
+		}
+		if conditionSetID != nil {
 			candidates := make([]TransitionWithID, 0, len(options))
 			for _, option := range options {
 				color := ""
@@ -982,16 +985,17 @@ func (s *ItemApplicationService) AvailableTransitions(ctx context.Context, userI
 				candidates = append(candidates, TransitionWithID{TransitionID: option.TransitionID, StatusID: option.StatusID, BuiltinKey: option.BuiltinKey, StatusName: option.StatusName, CategoryColor: color})
 			}
 			filtered, filterErr := s.conditions.FilterTransitionsByConditions(ctx, *conditionSetID, candidates, userID, BuildItemContextFromIDs(s.db, itemID, item.WorkspaceID, item.StatusID, item.ItemTypeID))
-			if filterErr == nil {
-				options = options[:0]
-				for _, option := range filtered {
-					var color *string
-					if option.CategoryColor != "" {
-						value := option.CategoryColor
-						color = &value
-					}
-					options = append(options, StatusTransitionOption{TransitionID: option.TransitionID, StatusID: option.StatusID, BuiltinKey: option.BuiltinKey, StatusName: option.StatusName, CategoryColor: color})
+			if filterErr != nil {
+				return ItemTransitionSummary{}, filterErr
+			}
+			options = options[:0]
+			for _, option := range filtered {
+				var color *string
+				if option.CategoryColor != "" {
+					value := option.CategoryColor
+					color = &value
 				}
+				options = append(options, StatusTransitionOption{TransitionID: option.TransitionID, StatusID: option.StatusID, BuiltinKey: option.BuiltinKey, StatusName: option.StatusName, CategoryColor: color})
 			}
 		}
 	}

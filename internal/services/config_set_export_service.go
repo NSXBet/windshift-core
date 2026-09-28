@@ -463,15 +463,15 @@ func (s *ConfigSetExportService) rewriteConditionConfigForExport(ctx context.Con
 		// field_identifier may be either a numeric custom-field id or a
 		// regular column name; only rewrite if it parses as an integer that
 		// matches a custom field row.
-		if rawID, ok := cfg["field_id"]; ok {
-			if id, ok := parseIntish(rawID); ok && id > 0 {
+		if rawIdent, ok := cfg["field_identifier"]; ok {
+			if id, ok := parseIntish(rawIdent); ok && id > 0 {
 				name, err := s.lookupCustomFieldName(ctx, id)
 				if err != nil {
 					return err
 				}
 				cfg["custom_field_name"] = name
 				customFieldNames[id] = name
-				delete(cfg, "field_id")
+				delete(cfg, "field_identifier")
 			}
 		}
 	case models.ConditionTypeScript:

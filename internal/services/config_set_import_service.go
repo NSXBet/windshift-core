@@ -430,6 +430,9 @@ func (s *ConfigSetImportService) apply(ctx context.Context, tx database.Tx, tpl 
 			}
 			for _, c := range tc.Conditions {
 				cfg := s.rewriteConditionConfigForImport(c.Type, c.Config, customFieldNameToID, ctx)
+				if err := validateConditionMap(c.Type, c.Mode, cfg); err != nil {
+					return 0, nil, fmt.Errorf("condition_set %q: %w", set.Name, err)
+				}
 				if err := s.createCondition(ctx, tx, cstID, c, cfg, now); err != nil {
 					return 0, nil, fmt.Errorf("condition_set %q: insert condition: %w", set.Name, err)
 				}
@@ -899,7 +902,7 @@ func (s *ConfigSetImportService) rewriteConditionConfigForImport(condType string
 	case models.ConditionTypeFieldValue:
 		if name, ok := out["custom_field_name"].(string); ok && name != "" {
 			if id, ok := customFieldNameToID[lowerStr(name)]; ok {
-				out["field_id"] = id
+				out["field_identifier"] = strconv.Itoa(id)
 			}
 			delete(out, "custom_field_name")
 		}

@@ -617,6 +617,9 @@ func (r *conformanceRepairer) repairConditionSets(entity *conformanceEntityPlan)
 			}
 			for _, c := range tc.Conditions {
 				cfg := r.rewriteConditionConfig(c)
+				if err := validateConditionMap(c.Type, c.Mode, cfg); err != nil {
+					return fmt.Errorf("restore conditions: %w", err)
+				}
 				cfgBytes, err := json.Marshal(cfg)
 				if err != nil {
 					return fmt.Errorf("restore conditions: %w", err)
@@ -686,15 +689,30 @@ func (r *conformanceRepairer) rewriteConditionConfig(c ConfigSetTplCondition) ma
 			delete(out, nameKey)
 		}
 	}
-	switch c.Type {
-	case models.ConditionTypeUserInRole:
-		rewrite("role_name", "role_id", "workspace_roles", "name")
-	case models.ConditionTypeUserInGroup:
-		rewrite("group_name", "group_id", "groups", "group_name")
-	case models.ConditionTypeFieldValue:
+	// Mirrors rewriteFieldRefForImport: a custom_field user reference carries
+	// custom_field_name in the template and field_id in the live config.
+	rewriteCustomFieldRef := func() {
+		if source, _ := out["source"].(string); source != "custom_field" {
+			return
+		}
 		if name, ok := out["custom_field_name"].(string); ok && name != "" {
 			if id, _ := r.lookupID("custom_field_definitions", "name", name); id > 0 {
 				out["field_id"] = id
+			}
+			delete(out, "custom_field_name")
+		}
+	}
+	switch c.Type {
+	case models.ConditionTypeUserInRole:
+		rewrite("role_name", "role_id", "workspace_roles", "name")
+		rewriteCustomFieldRef()
+	case models.ConditionTypeUserInGroup:
+		rewrite("group_name", "group_id", "groups", "group_name")
+		rewriteCustomFieldRef()
+	case models.ConditionTypeFieldValue:
+		if name, ok := out["custom_field_name"].(string); ok && name != "" {
+			if id, _ := r.lookupID("custom_field_definitions", "name", name); id > 0 {
+				out["field_identifier"] = strconv.Itoa(id)
 			}
 			delete(out, "custom_field_name")
 		}
