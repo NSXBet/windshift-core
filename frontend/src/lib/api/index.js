@@ -106,6 +106,7 @@ import {
 import { queryLanguage } from './queryLanguage.js';
 import { recurrence } from './recurrence.js';
 import { issueSync, itemSCMLinks, scmProviders, userSCM, workspaceSCM } from './scm.js';
+import { sla } from './sla.js';
 import { sso } from './sso.js';
 import { teams } from './teams.js';
 import { tests } from './tests/index.js';
@@ -185,6 +186,9 @@ export const api = {
 
   // Teams (cross-workspace orgs with on-call)
   teams,
+
+  // SLA configuration, reporting, and item state
+  sla,
 
   // On-call schedules (per-team)
   onCallSchedules,

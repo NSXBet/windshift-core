@@ -5,6 +5,7 @@ import {
   IconChartBar as BarChart3,
   IconBook as Book,
   IconCalendar as Calendar,
+  IconClock as Clock,
   IconFileCheck as FileCheck,
   IconFileStack as FileStack,
   IconGitBranch as GitBranch,
@@ -219,6 +220,12 @@ export const workspaceSettingsItems = [
     labelKey: 'workspaceSettings.tabs.templates',
     icon: FileStack,
     view: 'workspace-settings-templates',
+  },
+  {
+    id: 'service-levels',
+    labelKey: 'workspaceSettings.tabs.serviceLevels',
+    icon: Clock,
+    view: 'workspace-settings-service-levels',
   },
   {
     id: 'danger',

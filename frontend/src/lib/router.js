@@ -34,6 +34,7 @@ const routes = {
   '/workspaces/:id/settings/issue-sync': 'workspace-settings-issue-sync',
   '/workspaces/:id/settings/action-credentials': 'workspace-settings-action-credentials',
   '/workspaces/:id/settings/templates': 'workspace-settings-templates',
+  '/workspaces/:id/settings/service-levels': 'workspace-settings-service-levels',
   '/workspaces/:id/settings/danger': 'workspace-settings-danger',
   '/workspaces/:id/actions': 'workspace-actions',
   '/workspaces/:id/actions/:actionId': 'workspace-actions',

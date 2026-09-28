@@ -129,6 +129,7 @@ export const MAIN_APP_ROUTE_CONFIG = {
         'workspace-settings-action-credentials',
         'workspace-settings-recurrence',
         'workspace-settings-templates',
+        'workspace-settings-service-levels',
         'workspace-settings-danger',
       ],
       getProps: (currentRoute) => ({
@@ -466,6 +467,7 @@ export const WORKSPACE_SETTINGS_TABS = {
   'workspace-settings-action-credentials': 'action-credentials',
   'workspace-settings-recurrence': 'recurrence',
   'workspace-settings-templates': 'templates',
+  'workspace-settings-service-levels': 'service-levels',
   'workspace-settings-danger': 'danger',
 };
 

@@ -139,6 +139,9 @@ const shortcuts = {
   configurationSets: {
     add: { key: 'a' },
   },
+  serviceLevels: {
+    add: { key: 'a' },
+  },
   conditionSets: {
     add: { key: 'a' },
   },
