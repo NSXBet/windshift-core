@@ -249,6 +249,42 @@ func (h *SLAHandler) DeleteTeamCalendar(w http.ResponseWriter, r *http.Request) 
 	respondJSONOK(w, map[string]bool{"deleted": true})
 }
 
+// GetWorkspaceCalendarImpact previews what editing a workspace-visible
+// calendar would recalculate, scoped to that workspace.
+func (h *SLAHandler) GetWorkspaceCalendarImpact(w http.ResponseWriter, r *http.Request) {
+	workspaceID, ok := h.authorizeWorkspaceAdmin(w, r)
+	if !ok {
+		return
+	}
+	calendarID, ok := requireIDParam(w, r, "calendarId")
+	if !ok {
+		return
+	}
+	impact, err := h.calendars.WorkspaceCalendarImpact(r.Context(), workspaceID, calendarID)
+	if !h.writeCalendarResult(w, r, err) {
+		return
+	}
+	respondJSONOK(w, impact)
+}
+
+// GetTeamCalendarImpact previews what editing a team calendar would
+// recalculate across every bound workspace.
+func (h *SLAHandler) GetTeamCalendarImpact(w http.ResponseWriter, r *http.Request) {
+	teamID, ok := h.authorizeTeamAdmin(w, r)
+	if !ok {
+		return
+	}
+	calendarID, ok := requireIDParam(w, r, "calendarId")
+	if !ok {
+		return
+	}
+	impact, err := h.calendars.TeamCalendarImpact(r.Context(), teamID, calendarID)
+	if !h.writeCalendarResult(w, r, err) {
+		return
+	}
+	respondJSONOK(w, impact)
+}
+
 // input maps the transport request onto the shared calendar service input.
 func (request slaCalendarRequest) input() services.SLACalendarInput {
 	return services.SLACalendarInput{

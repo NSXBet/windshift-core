@@ -18,6 +18,7 @@ import (
 func registerSLACalendarRoutes(builder *routeBuilder, deps Deps) {
 	builder.Read("/workspaces/{workspace_id}/sla/calendars", AuthAuthenticated, []string{"workspaces:read"}, listSLACalendars(deps))
 	builder.Read("/workspaces/{workspace_id}/sla/available-calendars", AuthAuthenticated, []string{"workspaces:read"}, listAvailableSLACalendars(deps))
+	builder.Read("/workspaces/{workspace_id}/sla/calendars/{calendar_id}/impact", AuthAuthenticated, []string{"workspaces:read"}, getSLACalendarImpact(deps))
 	builder.JSON(http.MethodPost, "/workspaces/{workspace_id}/sla/calendars", http.StatusCreated, false, AuthAuthenticated, []string{"workspaces:write"}, createSLACalendar(deps))
 	builder.JSON(http.MethodPut, "/workspaces/{workspace_id}/sla/calendars/{calendar_id}", http.StatusOK, false, AuthAuthenticated, []string{"workspaces:write"}, updateSLACalendar(deps))
 	builder.Command(http.MethodDelete, "/workspaces/{workspace_id}/sla/calendars/{calendar_id}", AuthAuthenticated, []string{"workspaces:write"}, deleteSLACalendar(deps))
@@ -91,6 +92,30 @@ func listAvailableSLACalendars(deps Deps) readOperation[[]models.WorkingCalendar
 			return nil, internalError(err)
 		}
 		return calendars, nil
+	}
+}
+
+// getSLACalendarImpact previews the recalculation an edit to a
+// workspace-visible calendar would trigger, scoped to that workspace.
+func getSLACalendarImpact(deps Deps) readOperation[*models.SLACalendarImpact] {
+	return func(r *http.Request) (*models.SLACalendarImpact, error) {
+		service, err := requireSLACalendarAdmin(r, deps)
+		if err != nil {
+			return nil, err
+		}
+		workspaceID, err := pathID(r, "workspace_id")
+		if err != nil {
+			return nil, err
+		}
+		calendarID, err := pathID(r, "calendar_id")
+		if err != nil {
+			return nil, err
+		}
+		impact, err := service.WorkspaceCalendarImpact(r.Context(), workspaceID, calendarID)
+		if err != nil {
+			return nil, slaCalendarError(err)
+		}
+		return impact, nil
 	}
 }
 

@@ -13503,6 +13503,44 @@
         ]
       }
     },
+    "/workspaces/{workspace_id}/sla/calendars/{calendar_id}/impact": {
+      "get": {
+        "description": "Preview SLA calendar edit impact. Results include only resources visible to the authenticated caller; collections use their documented stable order and bounds.",
+        "parameters": [
+          {
+            "Name": "workspace_id",
+            "In": "path",
+            "Description": "The workspace identifier.",
+            "Required": true,
+            "Schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "Name": "calendar_id",
+            "In": "path",
+            "Description": "The working calendar identifier.",
+            "Required": true,
+            "Schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "401": {},
+          "403": {},
+          "404": {},
+          "429": {},
+          "500": {}
+        },
+        "summary": "Preview SLA calendar edit impact",
+        "tags": [
+          "Workspace configuration"
+        ]
+      }
+    },
     "/workspaces/{workspace_id}/sla/metrics": {
       "get": {
         "description": "List SLA metrics. Results include only resources visible to the authenticated caller; collections use their documented stable order and bounds.",

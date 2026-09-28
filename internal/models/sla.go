@@ -261,3 +261,30 @@ type SLAWarningThreshold struct {
 	// Joined fields for API responses.
 	MetricName string `json:"metric_name,omitempty"`
 }
+
+// SLACalendarImpact describes what a calendar edit would recalculate. It is a
+// read-only preview: it lists the bound workspaces, the goal targets that
+// reference the calendar, and the ongoing cycle count per workspace.
+type SLACalendarImpact struct {
+	CalendarID int                          `json:"calendar_id"`
+	Workspaces []SLACalendarImpactWorkspace `json:"workspaces"`
+}
+
+// SLACalendarImpactWorkspace is one workspace affected by a calendar edit.
+type SLACalendarImpactWorkspace struct {
+	WorkspaceID   int                       `json:"workspace_id"`
+	WorkspaceName string                    `json:"workspace_name"`
+	GoalTargets   []SLACalendarImpactTarget `json:"goal_targets"`
+	OngoingCycles int                       `json:"ongoing_cycles"`
+}
+
+// SLACalendarImpactTarget is one goal target referencing the calendar.
+type SLACalendarImpactTarget struct {
+	TargetID   int    `json:"target_id"`
+	GoalID     int    `json:"goal_id"`
+	MetricID   int    `json:"metric_id"`
+	MetricName string `json:"metric_name"`
+	IsFallback bool   `json:"is_fallback"`
+	PriorityID *int   `json:"priority_id,omitempty"`
+	TargetMs   int64  `json:"target_ms"`
+}

@@ -18,6 +18,7 @@ func RegisterSLARoutes(deps *Deps) {
 	api.HandleH("POST /workspaces/{id}/sla/calendars", auth(http.HandlerFunc(deps.SLA.CreateWorkspaceCalendar)))
 	api.HandleH("PUT /workspaces/{id}/sla/calendars/{calendarId}", auth(http.HandlerFunc(deps.SLA.UpdateWorkspaceCalendar)))
 	api.HandleH("DELETE /workspaces/{id}/sla/calendars/{calendarId}", auth(http.HandlerFunc(deps.SLA.DeleteWorkspaceCalendar)))
+	api.HandleH("GET /workspaces/{id}/sla/calendars/{calendarId}/impact", auth(http.HandlerFunc(deps.SLA.GetWorkspaceCalendarImpact)))
 	api.HandleH("GET /workspaces/{id}/sla/available-calendars", auth(http.HandlerFunc(deps.SLA.ListAvailableCalendars)))
 
 	// Team service-hours calendars.
@@ -25,6 +26,7 @@ func RegisterSLARoutes(deps *Deps) {
 	api.HandleH("POST /teams/{id}/working-calendars", auth(http.HandlerFunc(deps.SLA.CreateTeamCalendar)))
 	api.HandleH("PUT /teams/{id}/working-calendars/{calendarId}", auth(http.HandlerFunc(deps.SLA.UpdateTeamCalendar)))
 	api.HandleH("DELETE /teams/{id}/working-calendars/{calendarId}", auth(http.HandlerFunc(deps.SLA.DeleteTeamCalendar)))
+	api.HandleH("GET /teams/{id}/working-calendars/{calendarId}/impact", auth(http.HandlerFunc(deps.SLA.GetTeamCalendarImpact)))
 
 	// Team-workspace bindings. Creating or deleting requires both team and
 	// workspace administration; listing requires the relevant side's admin.

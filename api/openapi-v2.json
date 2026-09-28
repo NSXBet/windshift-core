@@ -37064,6 +37064,105 @@
         ],
         "type": "object"
       },
+      "GetWorkspacesWorkspaceIdSlaCalendarsCalendarIdImpactResult": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": false,
+            "nullable": true,
+            "properties": {
+              "calendar_id": {
+                "description": "The calendar id value.",
+                "type": "integer"
+              },
+              "workspaces": {
+                "description": "The workspaces value.",
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "goal_targets": {
+                      "description": "The goal targets value.",
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "goal_id": {
+                            "description": "The goal id value.",
+                            "type": "integer"
+                          },
+                          "is_fallback": {
+                            "description": "The is fallback value.",
+                            "type": "boolean"
+                          },
+                          "metric_id": {
+                            "description": "The metric id value.",
+                            "type": "integer"
+                          },
+                          "metric_name": {
+                            "description": "The metric name value.",
+                            "type": "string"
+                          },
+                          "priority_id": {
+                            "description": "The priority id value.",
+                            "nullable": true,
+                            "type": "integer"
+                          },
+                          "target_id": {
+                            "description": "The target id value.",
+                            "type": "integer"
+                          },
+                          "target_ms": {
+                            "description": "The target ms value.",
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "goal_id",
+                          "is_fallback",
+                          "metric_id",
+                          "metric_name",
+                          "target_id",
+                          "target_ms"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "ongoing_cycles": {
+                      "description": "The ongoing cycles value.",
+                      "type": "integer"
+                    },
+                    "workspace_id": {
+                      "description": "The workspace id value.",
+                      "type": "integer"
+                    },
+                    "workspace_name": {
+                      "description": "The workspace name value.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "goal_targets",
+                    "ongoing_cycles",
+                    "workspace_id",
+                    "workspace_name"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "calendar_id",
+              "workspaces"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
       "GetWorkspacesWorkspaceIdSlaCalendarsResult": {
         "additionalProperties": false,
         "properties": {
@@ -118737,6 +118836,73 @@
         ],
         "x-required-scopes": [
           "workspaces:write"
+        ]
+      }
+    },
+    "/workspaces/{workspace_id}/sla/calendars/{calendar_id}/impact": {
+      "get": {
+        "description": "Preview SLA calendar edit impact. Results include only resources visible to the authenticated caller; collections use their documented stable order and bounds.",
+        "operationId": "getWorkspacesWorkspaceIdSlaCalendarsCalendarIdImpact",
+        "parameters": [
+          {
+            "description": "The workspace identifier.",
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The working calendar identifier.",
+            "in": "path",
+            "name": "calendar_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetWorkspacesWorkspaceIdSlaCalendarsCalendarIdImpactResult"
+                }
+              }
+            },
+            "description": "Preview SLA calendar edit impact response."
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationError"
+          },
+          "403": {
+            "$ref": "#/components/responses/PermissionError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimitError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Preview SLA calendar edit impact",
+        "tags": [
+          "Workspace configuration"
+        ],
+        "x-required-scopes": [
+          "workspaces:read"
         ]
       }
     },

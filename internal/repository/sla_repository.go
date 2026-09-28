@@ -1315,6 +1315,106 @@ func (r *SLARepository) MarkThresholdFired(ctx context.Context, tx database.Tx, 
 }
 
 // ---------------------------------------------------------------------------
+// Calendar impact preview
+// ---------------------------------------------------------------------------
+
+// CalendarImpact returns, for every workspace that can use the calendar, the
+// goal targets referencing it and the count of ongoing cycles scheduled
+// against it. Workspaces owned by a team calendar's bound teams are included
+// even when they currently have no references.
+func (r *SLARepository) CalendarImpact(ctx context.Context, calendarID int) ([]models.SLACalendarImpactWorkspace, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT w.id, w.name
+		FROM workspaces w
+		WHERE w.id IN (
+			SELECT wc.workspace_id FROM working_calendars wc WHERE wc.id = ? AND wc.workspace_id IS NOT NULL
+			UNION
+			SELECT b.workspace_id FROM team_workspace_bindings b
+			JOIN working_calendars wc ON wc.team_id = b.team_id
+			WHERE wc.id = ?
+		)
+		ORDER BY w.name, w.id`, calendarID, calendarID)
+	if err != nil {
+		return nil, fmt.Errorf("load calendar impact workspaces: %w", err)
+	}
+	index := map[int]int{}
+	var workspaces []models.SLACalendarImpactWorkspace
+	for rows.Next() {
+		var workspace models.SLACalendarImpactWorkspace
+		if err := rows.Scan(&workspace.WorkspaceID, &workspace.WorkspaceName); err != nil {
+			_ = rows.Close()
+			return nil, fmt.Errorf("scan impact workspace: %w", err)
+		}
+		index[workspace.WorkspaceID] = len(workspaces)
+		workspaces = append(workspaces, workspace)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+
+	targetRows, err := r.db.QueryContext(ctx, `
+		SELECT m.workspace_id, t.id, t.goal_id, g.metric_id, m.name, t.is_fallback, t.priority_id, t.target_ms
+		FROM sla_goal_targets t
+		JOIN sla_goals g ON g.id = t.goal_id
+		JOIN sla_metrics m ON m.id = g.metric_id
+		WHERE t.calendar_id = ?
+		ORDER BY m.workspace_id, m.position, g.position, t.position, t.id`, calendarID)
+	if err != nil {
+		return nil, fmt.Errorf("load calendar impact targets: %w", err)
+	}
+	for targetRows.Next() {
+		var workspaceID int
+		var target models.SLACalendarImpactTarget
+		var priority sql.NullInt64
+		if err := targetRows.Scan(&workspaceID, &target.TargetID, &target.GoalID, &target.MetricID, &target.MetricName, &target.IsFallback, &priority, &target.TargetMs); err != nil {
+			_ = targetRows.Close()
+			return nil, fmt.Errorf("scan impact target: %w", err)
+		}
+		if priority.Valid {
+			value := int(priority.Int64)
+			target.PriorityID = &value
+		}
+		if idx, ok := index[workspaceID]; ok {
+			workspaces[idx].GoalTargets = append(workspaces[idx].GoalTargets, target)
+		}
+	}
+	if err := targetRows.Err(); err != nil {
+		_ = targetRows.Close()
+		return nil, err
+	}
+	if err := targetRows.Close(); err != nil {
+		return nil, err
+	}
+
+	countRows, err := r.db.QueryContext(ctx, `
+		SELECT m.workspace_id, COUNT(*)
+		FROM item_sla_cycles c
+		JOIN sla_metrics m ON m.id = c.metric_id
+		WHERE c.calendar_id = ? AND c.status = 'ongoing'
+		GROUP BY m.workspace_id`, calendarID)
+	if err != nil {
+		return nil, fmt.Errorf("load calendar impact cycles: %w", err)
+	}
+	defer func() { _ = countRows.Close() }()
+	for countRows.Next() {
+		var workspaceID, count int
+		if err := countRows.Scan(&workspaceID, &count); err != nil {
+			return nil, fmt.Errorf("scan impact cycle count: %w", err)
+		}
+		if idx, ok := index[workspaceID]; ok {
+			workspaces[idx].OngoingCycles = count
+		}
+	}
+	if err := countRows.Err(); err != nil {
+		return nil, err
+	}
+	return workspaces, nil
+}
+
 // Helpers
 // ---------------------------------------------------------------------------
 

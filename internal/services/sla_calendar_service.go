@@ -180,6 +180,48 @@ func (s *SLACalendarService) DeleteTeam(ctx context.Context, teamID, calendarID 
 	return s.repo.DeleteCalendar(ctx, calendarID)
 }
 
+// CalendarImpact previews what a calendar edit would recalculate across every
+// workspace that can use it. Read-only.
+func (s *SLACalendarService) CalendarImpact(ctx context.Context, calendarID int) (*models.SLACalendarImpact, error) {
+	if _, err := s.repo.GetCalendar(ctx, calendarID); err != nil {
+		return nil, err
+	}
+	workspaces, err := s.repo.CalendarImpact(ctx, calendarID)
+	if err != nil {
+		return nil, err
+	}
+	return &models.SLACalendarImpact{CalendarID: calendarID, Workspaces: workspaces}, nil
+}
+
+// TeamCalendarImpact previews the effect of editing a team calendar, scoped to
+// the team that owns it.
+func (s *SLACalendarService) TeamCalendarImpact(ctx context.Context, teamID, calendarID int) (*models.SLACalendarImpact, error) {
+	calendar, err := s.repo.GetCalendar(ctx, calendarID)
+	if err != nil {
+		return nil, err
+	}
+	if calendar.TeamID == nil || *calendar.TeamID != teamID {
+		return nil, repository.ErrNotFound
+	}
+	return s.CalendarImpact(ctx, calendarID)
+}
+
+// WorkspaceCalendarImpact previews the effect of editing a calendar visible to
+// one workspace. A team calendar's impact is filtered to that workspace so one
+// workspace admin never sees another workspace's metrics.
+func (s *SLACalendarService) WorkspaceCalendarImpact(ctx context.Context, workspaceID, calendarID int) (*models.SLACalendarImpact, error) {
+	impact, err := s.CalendarImpact(ctx, calendarID)
+	if err != nil {
+		return nil, err
+	}
+	for _, workspace := range impact.Workspaces {
+		if workspace.WorkspaceID == workspaceID {
+			return &models.SLACalendarImpact{CalendarID: calendarID, Workspaces: []models.SLACalendarImpactWorkspace{workspace}}, nil
+		}
+	}
+	return nil, repository.ErrNotFound
+}
+
 func buildSLACalendar(input SLACalendarInput) (*models.WorkingCalendar, error) {
 	name := strings.TrimSpace(input.Name)
 	if name == "" {
