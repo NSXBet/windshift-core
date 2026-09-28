@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -8,9 +9,34 @@ import (
 	"strconv"
 
 	"windshift/internal/database"
+	"windshift/internal/itemevents"
 	"windshift/internal/models"
 	"windshift/internal/repository"
 )
+
+// itemsAssignedToUser loads the minimal item shape needed to record an
+// assignee removal before the bulk clear runs.
+func itemsAssignedToUser(tx database.Tx, userID int) ([]models.Item, error) {
+	rows, err := tx.Query(`SELECT id, workspace_id, assignee_id FROM items WHERE assignee_id = ?`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var items []models.Item
+	for rows.Next() {
+		var item models.Item
+		var assignee sql.NullInt64
+		if err := rows.Scan(&item.ID, &item.WorkspaceID, &assignee); err != nil {
+			return nil, err
+		}
+		if assignee.Valid {
+			value := int(assignee.Int64)
+			item.AssigneeID = &value
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
 
 // UserNotificationDeleter removes a user's notifications through the
 // notification service/manager layer so caches are invalidated with the rows.
@@ -138,7 +164,30 @@ func OffboardUser(db database.Database, userID int, notificationDeleter UserNoti
 		}
 	}
 
-	// c) Unassign from all items
+	// c) Unassign from all items. Record the removal as an item fact so inline
+	//    SLA evaluation and other observers see the assignee change; the bulk
+	//    clear then writes the same state inside this transaction.
+	assignedItems, err := itemsAssignedToUser(tx, userID)
+	if err != nil {
+		return result, fmt.Errorf("failed to load assigned items: %w", err)
+	}
+	if len(assignedItems) > 0 {
+		metadata := itemevents.System("user_offboard")
+		records := make([]itemevents.UpdateRecord, 0, len(assignedItems))
+		for i := range assignedItems {
+			original := &assignedItems[i]
+			patched := *original
+			patched.AssigneeID = nil
+			records = append(records, itemevents.UpdateRecord{
+				Item:     &patched,
+				Changes:  itemevents.Changes(original, &patched),
+				Metadata: metadata,
+			})
+		}
+		if _, err := itemevents.NewRecorder(db).UpdatedBatch(context.Background(), tx, records); err != nil {
+			return result, fmt.Errorf("record assignee removal: %w", err)
+		}
+	}
 	if err := itemRepo.ClearAssigneeForUserTx(tx, userID); err != nil {
 		return result, fmt.Errorf("failed to unassign items: %w", err)
 	}

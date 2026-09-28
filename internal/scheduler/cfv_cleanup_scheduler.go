@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"windshift/internal/database"
+	"windshift/internal/models"
 	"windshift/internal/repository"
 )
 
@@ -270,6 +271,9 @@ func (s *CFVCleanupScheduler) scrubTableField(cfRepo *repository.CustomFieldRepo
 				continue
 			}
 			processed++
+			if table == "items" {
+				s.enqueueSLARecalc(row.ID)
+			}
 		}
 		if len(batch) < s.batchSize {
 			return processed, nil
@@ -403,10 +407,37 @@ func (s *CFVCleanupScheduler) scrubTableOptions(cfRepo *repository.CustomFieldRe
 				continue
 			}
 			processed++
+			if table == "items" {
+				s.enqueueSLARecalc(row.ID)
+			}
 		}
 		if len(batch) < s.batchSize {
 			return processed, nil
 		}
+	}
+}
+
+// enqueueSLARecalc schedules an SLA recalculation for an item whose custom
+// field values changed outside the recorder. It only enqueues when the item's
+// workspace has SLA configuration; the due-work loop notices the job within its
+// safety interval.
+func (s *CFVCleanupScheduler) enqueueSLARecalc(itemID int) {
+	repo := repository.NewSLARepository(s.db)
+	ctx := context.Background()
+	var workspaceID int
+	if err := s.db.QueryRowContext(ctx, `SELECT workspace_id FROM items WHERE id = ?`, itemID).Scan(&workspaceID); err != nil {
+		return
+	}
+	generation, err := repo.WorkspaceGeneration(ctx, workspaceID)
+	if err != nil || generation == 0 {
+		return
+	}
+	item := itemID
+	err = database.WithTx(s.db, func(tx database.Tx) error {
+		return repo.UpsertJob(ctx, tx, &models.SLAJob{Kind: models.SLAJobRecalcItem, ItemID: &item, DueAt: time.Now().UTC()})
+	})
+	if err != nil {
+		slog.Warn("cfv_cleanup: enqueue SLA recalc failed", "item_id", itemID, "error", err)
 	}
 }
 
