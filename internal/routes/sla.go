@@ -26,6 +26,15 @@ func RegisterSLARoutes(deps *Deps) {
 	api.HandleH("PUT /teams/{id}/working-calendars/{calendarId}", auth(http.HandlerFunc(deps.SLA.UpdateTeamCalendar)))
 	api.HandleH("DELETE /teams/{id}/working-calendars/{calendarId}", auth(http.HandlerFunc(deps.SLA.DeleteTeamCalendar)))
 
+	// Team-workspace bindings. Creating or deleting requires both team and
+	// workspace administration; listing requires the relevant side's admin.
+	api.HandleH("GET /workspaces/{id}/team-bindings", auth(http.HandlerFunc(deps.SLA.ListWorkspaceTeamBindings)))
+	api.HandleH("POST /workspaces/{id}/team-bindings", auth(http.HandlerFunc(deps.SLA.CreateWorkspaceTeamBinding)))
+	api.HandleH("DELETE /workspaces/{id}/team-bindings/{bindingId}", auth(http.HandlerFunc(deps.SLA.DeleteWorkspaceTeamBinding)))
+	api.HandleH("GET /teams/{id}/workspace-bindings", auth(http.HandlerFunc(deps.SLA.ListTeamWorkspaceBindings)))
+	api.HandleH("POST /teams/{id}/workspace-bindings", auth(http.HandlerFunc(deps.SLA.CreateTeamWorkspaceBinding)))
+	api.HandleH("DELETE /teams/{id}/workspace-bindings/{bindingId}", auth(http.HandlerFunc(deps.SLA.DeleteTeamWorkspaceBinding)))
+
 	// Metrics and goals.
 	api.HandleH("GET /workspaces/{id}/sla/metrics", auth(http.HandlerFunc(deps.SLA.ListMetrics)))
 	api.HandleH("POST /workspaces/{id}/sla/metrics", auth(http.HandlerFunc(deps.SLA.CreateMetric)))

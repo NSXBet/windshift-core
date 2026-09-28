@@ -26,6 +26,7 @@ type SLAHandler struct {
 	engine            *sla.Engine
 	calendars         *services.SLACalendarService
 	settings          *services.SLASettingsService
+	bindings          *services.SLATeamBindingService
 	permissionService *services.PermissionService
 }
 
@@ -38,6 +39,7 @@ func NewSLAHandler(db database.Database, engine *sla.Engine, permissionService *
 		engine:            engine,
 		calendars:         services.NewSLACalendarService(db, engine),
 		settings:          services.NewSLASettingsService(db, engine),
+		bindings:          services.NewSLATeamBindingService(db, permissionService),
 		permissionService: permissionService,
 	}
 }
@@ -279,6 +281,149 @@ func (h *SLAHandler) writeCalendarResult(w http.ResponseWriter, r *http.Request,
 
 func (h *SLAHandler) writeCalendarDelete(w http.ResponseWriter, r *http.Request, err error) bool {
 	return h.writeCalendarResult(w, r, err)
+}
+
+// ---------------------------------------------------------------------------
+// Team-workspace bindings
+// ---------------------------------------------------------------------------
+
+type slaBindingRequest struct {
+	TeamID      int `json:"team_id"`
+	WorkspaceID int `json:"workspace_id"`
+}
+
+// ListWorkspaceTeamBindings returns the teams bound to a workspace.
+func (h *SLAHandler) ListWorkspaceTeamBindings(w http.ResponseWriter, r *http.Request) {
+	workspaceID, ok := h.authorizeWorkspaceAdmin(w, r)
+	if !ok {
+		return
+	}
+	bindings, err := h.bindings.ListForWorkspace(r.Context(), workspaceID)
+	if err != nil {
+		respondError(w, r, slaInternal(err))
+		return
+	}
+	respondJSONOK(w, bindings)
+}
+
+// CreateWorkspaceTeamBinding binds a team to a workspace after both sides
+// consent.
+func (h *SLAHandler) CreateWorkspaceTeamBinding(w http.ResponseWriter, r *http.Request) {
+	workspaceID, ok := h.authorizeWorkspaceAdmin(w, r)
+	if !ok {
+		return
+	}
+	user, ok := RequireAuth(w, r)
+	if !ok {
+		return
+	}
+	request, ok := decodeJSON[slaBindingRequest](w, r)
+	if !ok {
+		return
+	}
+	binding, err := h.bindings.Create(r.Context(), user.ID, request.TeamID, workspaceID)
+	if !h.writeBindingResult(w, r, err) {
+		return
+	}
+	respondJSONCreated(w, binding)
+}
+
+// DeleteWorkspaceTeamBinding removes a workspace-scoped binding after both
+// sides consent.
+func (h *SLAHandler) DeleteWorkspaceTeamBinding(w http.ResponseWriter, r *http.Request) {
+	workspaceID, ok := h.authorizeWorkspaceAdmin(w, r)
+	if !ok {
+		return
+	}
+	user, ok := RequireAuth(w, r)
+	if !ok {
+		return
+	}
+	bindingID, ok := requireIDParam(w, r, "bindingId")
+	if !ok {
+		return
+	}
+	if !h.writeBindingResult(w, r, h.bindings.DeleteForWorkspace(r.Context(), user.ID, workspaceID, bindingID)) {
+		return
+	}
+	respondJSONOK(w, map[string]bool{"deleted": true})
+}
+
+// ListTeamWorkspaceBindings returns the workspaces bound to a team.
+func (h *SLAHandler) ListTeamWorkspaceBindings(w http.ResponseWriter, r *http.Request) {
+	teamID, ok := h.authorizeTeamAdmin(w, r)
+	if !ok {
+		return
+	}
+	bindings, err := h.bindings.ListForTeam(r.Context(), teamID)
+	if err != nil {
+		respondError(w, r, slaInternal(err))
+		return
+	}
+	respondJSONOK(w, bindings)
+}
+
+// CreateTeamWorkspaceBinding binds a workspace to a team after both sides
+// consent.
+func (h *SLAHandler) CreateTeamWorkspaceBinding(w http.ResponseWriter, r *http.Request) {
+	teamID, ok := h.authorizeTeamAdmin(w, r)
+	if !ok {
+		return
+	}
+	user, ok := RequireAuth(w, r)
+	if !ok {
+		return
+	}
+	request, ok := decodeJSON[slaBindingRequest](w, r)
+	if !ok {
+		return
+	}
+	binding, err := h.bindings.Create(r.Context(), user.ID, teamID, request.WorkspaceID)
+	if !h.writeBindingResult(w, r, err) {
+		return
+	}
+	respondJSONCreated(w, binding)
+}
+
+// DeleteTeamWorkspaceBinding removes a team-scoped binding after both sides
+// consent.
+func (h *SLAHandler) DeleteTeamWorkspaceBinding(w http.ResponseWriter, r *http.Request) {
+	teamID, ok := h.authorizeTeamAdmin(w, r)
+	if !ok {
+		return
+	}
+	user, ok := RequireAuth(w, r)
+	if !ok {
+		return
+	}
+	bindingID, ok := requireIDParam(w, r, "bindingId")
+	if !ok {
+		return
+	}
+	if !h.writeBindingResult(w, r, h.bindings.DeleteForTeam(r.Context(), user.ID, teamID, bindingID)) {
+		return
+	}
+	respondJSONOK(w, map[string]bool{"deleted": true})
+}
+
+// writeBindingResult maps binding errors to responses. It returns true when
+// the caller should write the success body.
+func (h *SLAHandler) writeBindingResult(w http.ResponseWriter, r *http.Request, err error) bool {
+	switch {
+	case err == nil:
+		return true
+	case errors.Is(err, services.ErrSLABindingForbidden):
+		respondError(w, r, restapi.NewAPIError(http.StatusForbidden, restapi.ErrCodeForbidden, err.Error()))
+	case errors.Is(err, repository.ErrDuplicateEntry):
+		respondError(w, r, restapi.NewAPIError(http.StatusConflict, restapi.ErrCodeConflict, "team is already bound to this workspace"))
+	case errors.Is(err, repository.ErrNotFound):
+		respondNotFound(w, r, "binding")
+	case errors.Is(err, repository.ErrSLAInUse):
+		respondError(w, r, restapi.NewAPIError(http.StatusConflict, restapi.ErrCodeConflict, err.Error()))
+	default:
+		respondError(w, r, slaInternal(err))
+	}
+	return false
 }
 
 // ---------------------------------------------------------------------------

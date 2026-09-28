@@ -191,39 +191,79 @@ func (r *SLARepository) DeleteCalendar(ctx context.Context, id int) error {
 // Team-workspace bindings
 // ---------------------------------------------------------------------------
 
-// CreateTeamWorkspaceBinding inserts a team-to-workspace consent row.
+// CreateTeamWorkspaceBinding inserts a team-to-workspace consent row. It
+// returns ErrDuplicateEntry when the two sides are already bound.
 func (r *SLARepository) CreateTeamWorkspaceBinding(ctx context.Context, binding *models.TeamWorkspaceBinding) (int, error) {
 	var id int
 	err := r.db.QueryRowContext(ctx, `INSERT INTO team_workspace_bindings (team_id, workspace_id, created_by)
 		VALUES (?, ?, ?) RETURNING id`, binding.TeamID, binding.WorkspaceID, nullableInt(binding.CreatedBy)).Scan(&id)
 	if err != nil {
+		if database.IsUniqueConstraintError(err) {
+			return 0, ErrDuplicateEntry
+		}
 		return 0, fmt.Errorf("create team workspace binding: %w", err)
 	}
 	return id, nil
 }
 
-// ListTeamWorkspaceBindings returns bindings for a workspace.
+const teamWorkspaceBindingColumns = `b.id, b.team_id, b.workspace_id, b.created_by, b.created_at, b.updated_at, t.name, w.name`
+
+const teamWorkspaceBindingFrom = `FROM team_workspace_bindings b
+		JOIN teams t ON t.id = b.team_id
+		JOIN workspaces w ON w.id = b.workspace_id`
+
+// GetTeamWorkspaceBinding returns one binding with team and workspace names.
+func (r *SLARepository) GetTeamWorkspaceBinding(ctx context.Context, bindingID int) (*models.TeamWorkspaceBinding, error) {
+	binding, err := scanTeamWorkspaceBinding(r.db.QueryRowContext(ctx,
+		`SELECT `+teamWorkspaceBindingColumns+` `+teamWorkspaceBindingFrom+` WHERE b.id = ?`, bindingID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get team workspace binding: %w", err)
+	}
+	return binding, nil
+}
+
+// ListTeamWorkspaceBindings returns bindings whose workspace is workspaceID.
 func (r *SLARepository) ListTeamWorkspaceBindings(ctx context.Context, workspaceID int) ([]models.TeamWorkspaceBinding, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT id, team_id, workspace_id, created_by, created_at, updated_at
-		FROM team_workspace_bindings WHERE workspace_id = ? ORDER BY id`, workspaceID)
+	return r.listTeamWorkspaceBindings(ctx, "b.workspace_id", workspaceID)
+}
+
+// ListTeamWorkspaceBindingsForTeam returns bindings whose team is teamID.
+func (r *SLARepository) ListTeamWorkspaceBindingsForTeam(ctx context.Context, teamID int) ([]models.TeamWorkspaceBinding, error) {
+	return r.listTeamWorkspaceBindings(ctx, "b.team_id", teamID)
+}
+
+func (r *SLARepository) listTeamWorkspaceBindings(ctx context.Context, column string, id int) ([]models.TeamWorkspaceBinding, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT `+teamWorkspaceBindingColumns+` `+teamWorkspaceBindingFrom+` WHERE `+column+` = ? ORDER BY b.id`, id)
 	if err != nil {
 		return nil, fmt.Errorf("list team workspace bindings: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 	var bindings []models.TeamWorkspaceBinding
 	for rows.Next() {
-		var binding models.TeamWorkspaceBinding
-		var createdBy sql.NullInt64
-		if err := rows.Scan(&binding.ID, &binding.TeamID, &binding.WorkspaceID, &createdBy, &binding.CreatedAt, &binding.UpdatedAt); err != nil {
+		binding, err := scanTeamWorkspaceBinding(rows)
+		if err != nil {
 			return nil, fmt.Errorf("scan binding: %w", err)
 		}
-		if createdBy.Valid {
-			value := int(createdBy.Int64)
-			binding.CreatedBy = &value
-		}
-		bindings = append(bindings, binding)
+		bindings = append(bindings, *binding)
 	}
 	return bindings, rows.Err()
+}
+
+func scanTeamWorkspaceBinding(row rowScanner) (*models.TeamWorkspaceBinding, error) {
+	var binding models.TeamWorkspaceBinding
+	var createdBy sql.NullInt64
+	if err := row.Scan(&binding.ID, &binding.TeamID, &binding.WorkspaceID, &createdBy, &binding.CreatedAt, &binding.UpdatedAt, &binding.TeamName, &binding.WorkspaceName); err != nil {
+		return nil, err
+	}
+	if createdBy.Valid {
+		value := int(createdBy.Int64)
+		binding.CreatedBy = &value
+	}
+	return &binding, nil
 }
 
 // DeleteTeamWorkspaceBinding removes a binding. It refuses when an SLA goal

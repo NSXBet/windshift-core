@@ -37485,6 +37485,66 @@
         ],
         "type": "object"
       },
+      "GetWorkspacesWorkspaceIdTeamBindingsResult": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "created_at": {
+                  "description": "The created at value.",
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "created_by": {
+                  "description": "The created by value.",
+                  "nullable": true,
+                  "type": "integer"
+                },
+                "id": {
+                  "description": "The id value.",
+                  "type": "integer"
+                },
+                "team_id": {
+                  "description": "The team id value.",
+                  "type": "integer"
+                },
+                "team_name": {
+                  "description": "The team name value.",
+                  "type": "string"
+                },
+                "updated_at": {
+                  "description": "The updated at value.",
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "workspace_id": {
+                  "description": "The workspace id value.",
+                  "type": "integer"
+                },
+                "workspace_name": {
+                  "description": "The workspace name value.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "created_at",
+                "id",
+                "team_id",
+                "updated_at",
+                "workspace_id"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
       "GetWorkspacesWorkspaceIdTestCasesResult": {
         "additionalProperties": false,
         "properties": {
@@ -87244,6 +87304,77 @@
         ],
         "type": "object"
       },
+      "PostWorkspacesWorkspaceIdTeamBindingsPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "team_id": {
+            "description": "The team id value.",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "team_id"
+        ],
+        "type": "object"
+      },
+      "PostWorkspacesWorkspaceIdTeamBindingsResult": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": false,
+            "nullable": true,
+            "properties": {
+              "created_at": {
+                "description": "The created at value.",
+                "format": "date-time",
+                "type": "string"
+              },
+              "created_by": {
+                "description": "The created by value.",
+                "nullable": true,
+                "type": "integer"
+              },
+              "id": {
+                "description": "The id value.",
+                "type": "integer"
+              },
+              "team_id": {
+                "description": "The team id value.",
+                "type": "integer"
+              },
+              "team_name": {
+                "description": "The team name value.",
+                "type": "string"
+              },
+              "updated_at": {
+                "description": "The updated at value.",
+                "format": "date-time",
+                "type": "string"
+              },
+              "workspace_id": {
+                "description": "The workspace id value.",
+                "type": "integer"
+              },
+              "workspace_name": {
+                "description": "The workspace name value.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "created_at",
+              "id",
+              "team_id",
+              "updated_at",
+              "workspace_id"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
       "PostWorkspacesWorkspaceIdTestCasesImportFeaturePayload": {
         "type": "string"
       },
@@ -117629,6 +117760,197 @@
         ],
         "x-required-scopes": [
           "workspaces:read"
+        ]
+      }
+    },
+    "/workspaces/{workspace_id}/team-bindings": {
+      "get": {
+        "description": "List team bindings. Results include only resources visible to the authenticated caller; collections use their documented stable order and bounds.",
+        "operationId": "getWorkspacesWorkspaceIdTeamBindings",
+        "parameters": [
+          {
+            "description": "The workspace identifier.",
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetWorkspacesWorkspaceIdTeamBindingsResult"
+                }
+              }
+            },
+            "description": "List team bindings response."
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationError"
+          },
+          "403": {
+            "$ref": "#/components/responses/PermissionError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimitError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "List team bindings",
+        "tags": [
+          "Workspace configuration"
+        ],
+        "x-required-scopes": [
+          "workspaces:read"
+        ]
+      },
+      "post": {
+        "description": "Create team binding. The server validates resource ownership and command preconditions before persisting changes. Unknown JSON fields are rejected when the operation accepts a body.",
+        "operationId": "postWorkspacesWorkspaceIdTeamBindings",
+        "parameters": [
+          {
+            "description": "The workspace identifier.",
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostWorkspacesWorkspaceIdTeamBindingsPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostWorkspacesWorkspaceIdTeamBindingsResult"
+                }
+              }
+            },
+            "description": "Create team binding response."
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationError"
+          },
+          "403": {
+            "$ref": "#/components/responses/PermissionError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLargeError"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaTypeError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimitError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Create team binding",
+        "tags": [
+          "Workspace configuration"
+        ],
+        "x-required-scopes": [
+          "workspaces:write"
+        ]
+      }
+    },
+    "/workspaces/{workspace_id}/team-bindings/{binding_id}": {
+      "delete": {
+        "description": "Delete team binding. The server verifies resource ownership and deletion preconditions before removing the resource.",
+        "operationId": "deleteWorkspacesWorkspaceIdTeamBindingsBindingId",
+        "parameters": [
+          {
+            "description": "The workspace identifier.",
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The team-workspace binding identifier.",
+            "in": "path",
+            "name": "binding_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Request completed successfully with no response body."
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationError"
+          },
+          "403": {
+            "$ref": "#/components/responses/PermissionError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimitError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Delete team binding",
+        "tags": [
+          "Workspace configuration"
+        ],
+        "x-required-scopes": [
+          "workspaces:write"
         ]
       }
     },

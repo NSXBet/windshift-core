@@ -612,6 +612,9 @@ type Deps struct {
 	// SLASettings serves SLA warning-threshold configuration. Optional: nil
 	// keeps the routes registered but answering not-found.
 	SLASettings *services.SLASettingsService
+	// SLATeamBindings serves team-workspace consent bindings. Optional: nil
+	// keeps the routes registered but answering not-found.
+	SLATeamBindings *services.SLATeamBindingService
 }
 
 // RegisterRoutes validates dependencies and mounts the canonical inventory twice.
@@ -844,6 +847,7 @@ func buildRoutes(deps Deps) []route {
 	registerSLARoutes(&builder, deps)
 	registerSLACalendarRoutes(&builder, deps)
 	registerSLAWarningThresholdRoutes(&builder, deps)
+	registerSLATeamBindingRoutes(&builder, deps)
 	registerTicketImportRoutes(&builder, deps.TicketImport)
 	applyEmbeddedContractMetadata(builder.routes, contractMetadataJSON)
 	return builder.routes

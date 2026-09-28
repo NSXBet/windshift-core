@@ -13722,6 +13722,101 @@
         ]
       }
     },
+    "/workspaces/{workspace_id}/team-bindings": {
+      "get": {
+        "description": "List team bindings. Results include only resources visible to the authenticated caller; collections use their documented stable order and bounds.",
+        "parameters": [
+          {
+            "Name": "workspace_id",
+            "In": "path",
+            "Description": "The workspace identifier.",
+            "Required": true,
+            "Schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "401": {},
+          "403": {},
+          "404": {},
+          "429": {},
+          "500": {}
+        },
+        "summary": "List team bindings",
+        "tags": [
+          "Workspace configuration"
+        ]
+      },
+      "post": {
+        "description": "Create team binding. The server validates resource ownership and command preconditions before persisting changes. Unknown JSON fields are rejected when the operation accepts a body.",
+        "parameters": [
+          {
+            "Name": "workspace_id",
+            "In": "path",
+            "Description": "The workspace identifier.",
+            "Required": true,
+            "Schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "400": {},
+          "401": {},
+          "403": {},
+          "404": {},
+          "413": {},
+          "415": {},
+          "429": {},
+          "500": {}
+        },
+        "summary": "Create team binding",
+        "tags": [
+          "Workspace configuration"
+        ]
+      }
+    },
+    "/workspaces/{workspace_id}/team-bindings/{binding_id}": {
+      "delete": {
+        "description": "Delete team binding. The server verifies resource ownership and deletion preconditions before removing the resource.",
+        "parameters": [
+          {
+            "Name": "workspace_id",
+            "In": "path",
+            "Description": "The workspace identifier.",
+            "Required": true,
+            "Schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "Name": "binding_id",
+            "In": "path",
+            "Description": "The team-workspace binding identifier.",
+            "Required": true,
+            "Schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "401": {},
+          "403": {},
+          "404": {},
+          "429": {},
+          "500": {}
+        },
+        "summary": "Delete team binding",
+        "tags": [
+          "Workspace configuration"
+        ]
+      }
+    },
     "/workspaces/{workspace_id}/test-cases": {
       "get": {
         "description": "List test cases. Results include only resources visible to the authenticated caller; collections use their documented stable order and bounds.",
