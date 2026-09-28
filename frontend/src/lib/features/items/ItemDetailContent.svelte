@@ -8,6 +8,7 @@
   import ItemDetailHeader from '../items/ItemDetailHeader.svelte';
   import ItemDetailDescription from '../items/ItemDetailDescription.svelte';
   import ItemIncidentPanel from '../items/ItemIncidentPanel.svelte';
+  import ItemSLAPanel from '../items/ItemSLAPanel.svelte';
   import ItemDetailLinks from './ItemDetailLinks.svelte';
   import ItemDetailTabs from '../items/ItemDetailTabs.svelte';
   import ItemDetailSidebar from '../items/ItemDetailSidebar.svelte';
@@ -396,6 +397,8 @@
           />
 
           <ItemIncidentPanel itemId={item.id} {item} {canEdit} />
+
+          <ItemSLAPanel itemId={item.id} />
 
           <ItemDetailLinks
             {item}
