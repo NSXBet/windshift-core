@@ -9,8 +9,10 @@ import (
 	"windshift/internal/models"
 )
 
-// LLMUsageRepository persists per-call LLM token usage + cost, metered at the
-// broker. One row per chat-completion; per-run totals are aggregated on read.
+// LLMUsageRepository persists metered LLM token usage + cost. The broker writes
+// one row per provider call, while a chat turn writes one aggregated row whose
+// Calls records how many round-trips it took; per-run totals are aggregated on
+// read.
 type LLMUsageRepository struct {
 	db database.Database
 }
@@ -20,10 +22,13 @@ func NewLLMUsageRepository(db database.Database) *LLMUsageRepository {
 	return &LLMUsageRepository{db: db}
 }
 
-// LLMUsageRecord is one metered chat-completion call. CostUSD is nil when the
-// provider catalog carries no pricing (tokens metered, cost unknown).
+// LLMUsageRecord is one metered unit of provider work. CostUSD is nil when the
+// provider catalog carries no pricing (tokens metered, cost unknown). Calls is
+// how many provider round-trips the row accounts for; it defaults to one so a
+// broker's per-call rows and a chat turn's aggregated row aggregate alike.
 type LLMUsageRecord struct {
 	RunID            int
+	Calls            int
 	Model            string
 	PromptTokens     int
 	CompletionTokens int
@@ -40,13 +45,17 @@ type LLMUsageRecord struct {
 
 // Insert records one metered call.
 func (r *LLMUsageRepository) Insert(ctx context.Context, rec LLMUsageRecord) error {
+	calls := rec.Calls
+	if calls < 1 {
+		calls = 1
+	}
 	_, err := r.db.ExecWriteContext(ctx, `
 		INSERT INTO llm_usage
-			(run_id, model, prompt_tokens, completion_tokens, total_tokens,
+			(run_id, calls, model, prompt_tokens, completion_tokens, total_tokens,
 			 cache_read_tokens, cache_write_tokens, reasoning_tokens, cost_usd, cost_source)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
-		rec.RunID, rec.Model, rec.PromptTokens, rec.CompletionTokens, rec.TotalTokens,
+		rec.RunID, calls, rec.Model, rec.PromptTokens, rec.CompletionTokens, rec.TotalTokens,
 		rec.CacheReadTokens, rec.CacheWriteTokens, rec.ReasoningTokens,
 		nullFloatArg(rec.CostUSD), rec.CostSource,
 	)
@@ -79,7 +88,7 @@ func (r *LLMUsageRepository) TotalsForRun(ctx context.Context, runID int) (RunUs
 			COALESCE(SUM(cache_write_tokens), 0),
 			COALESCE(SUM(reasoning_tokens), 0),
 			SUM(cost_usd),
-			COUNT(*)
+			COALESCE(SUM(calls), 0)
 		FROM llm_usage WHERE run_id = ?
 	`, runID).Scan(&model, &prompt, &completion, &total, &cacheRead, &cacheWrite, &reasoning, &cost, &calls)
 	if err != nil {

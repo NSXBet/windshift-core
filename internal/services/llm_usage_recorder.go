@@ -58,7 +58,7 @@ func RecordLLMCall(
 		return repository.RunUsageTotals{}, nil
 	}
 	record := repository.LLMUsageRecord{
-		RunID: runID, Model: descriptor.Model,
+		RunID: runID, Calls: metered.Calls, Model: descriptor.Model,
 		PromptTokens: metered.Usage.PromptTokens, CompletionTokens: metered.Usage.CompletionTokens,
 		TotalTokens: metered.Usage.TotalTokens, CacheReadTokens: metered.Usage.CacheReadTokens,
 		CacheWriteTokens: metered.Usage.CacheWriteTokens, ReasoningTokens: metered.Usage.ReasoningTokens,

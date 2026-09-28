@@ -1701,6 +1701,14 @@ var Catalog = []Migration{
 		SQLite:        "ALTER TABLE item_history ADD COLUMN agent_run_id INTEGER",
 		Postgres:      "ALTER TABLE item_history ADD COLUMN IF NOT EXISTS agent_run_id INTEGER",
 	},
+	{
+		Version:       "20260931_llm_usage_calls",
+		Name:          "Count provider round-trips on metered LLM usage rows",
+		CheckSQLite:   sqliteColumnCheck("llm_usage", "calls"),
+		CheckPostgres: pgColumnCheck("llm_usage", "calls"),
+		SQLite:        "ALTER TABLE llm_usage ADD COLUMN calls INTEGER NOT NULL DEFAULT 1",
+		Postgres:      "ALTER TABLE llm_usage ADD COLUMN IF NOT EXISTS calls INTEGER NOT NULL DEFAULT 1",
+	},
 }
 
 func applySQLitePersonalLabelsPerUserUnique(db Database) (retErr error) {
