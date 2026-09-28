@@ -1982,6 +1982,19 @@ func (g *SQLGenerator) mapItemFieldName(fieldName string) (expr string, args []a
 	case "itemtypename":
 		return prefix + "it.name", nil, nil
 
+	// Request type fields. Resolved with correlated subqueries so the hot item
+	// list query does not have to join these tables on every page.
+	case "requesttype", "requesttypename", "request_type", "request_type_name":
+		return "(SELECT rt.name FROM request_types rt WHERE rt.id = " + prefix + "i.request_type_id)", nil, nil
+	case "requesttypeid", "request_type_id":
+		return prefix + "i.request_type_id", nil, nil
+
+	// Customer organization fields (the item's creator portal customer's org).
+	case "customerorganisation", "customerorganization", "customerorganisationname", "customerorganizationname", "organisation", "organization", "organisationname", "organizationname":
+		return "(SELECT co.name FROM portal_customers pc JOIN customer_organisations co ON co.id = pc.customer_organisation_id WHERE pc.id = " + prefix + "i.creator_portal_customer_id)", nil, nil
+	case "customerorganisationid", "customerorganizationid", "organisationid", "organizationid":
+		return "(SELECT pc.customer_organisation_id FROM portal_customers pc WHERE pc.id = " + prefix + "i.creator_portal_customer_id)", nil, nil
+
 	// Hierarchy fields
 	case "parent", "parent_id", "parentid":
 		return prefix + "i.parent_id", nil, nil

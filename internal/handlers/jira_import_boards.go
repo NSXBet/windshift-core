@@ -188,63 +188,22 @@ func translateJQLToWindshiftQL(jql string, workspaceID int) (ql string, unsuppor
 		unsupported = append(unsupported, strings.TrimSpace(match))
 		jql = strings.TrimSpace(jqlOrderByPattern.ReplaceAllString(jql, ""))
 	}
-	clauses := splitJQLAndClauses(jql)
-	qlClauses := []string{base}
-	for _, clause := range clauses {
-		clause = strings.TrimSpace(clause)
-		if clause == "" {
-			continue
-		}
-		if translated, ok := translateJQLClause(clause); ok {
-			if translated != "" {
-				qlClauses = append(qlClauses, translated)
-			}
-			continue
-		}
-		unsupported = append(unsupported, clause)
+	expr, err := parseJQLExpression(jql)
+	if err != nil {
+		// Preserve the whole expression when the grammar is not understood;
+		// callers surface this as an unsupported clause rather than guessing.
+		return base, append(unsupported, jql)
 	}
-	return strings.Join(qlClauses, " AND "), unsupported
+	translated, clauseUnsupported := translateJQLBoolean(expr)
+	unsupported = append(unsupported, clauseUnsupported...)
+	if translated == "" {
+		return base, unsupported
+	}
+	return base + " AND (" + translated + ")", unsupported
 }
 
-func splitJQLAndClauses(jql string) []string {
-	var clauses []string
-	var current strings.Builder
-	quote := rune(0)
-	depth := 0
-	runes := []rune(jql)
-	for i := 0; i < len(runes); i++ {
-		r := runes[i]
-		if quote != 0 {
-			current.WriteRune(r)
-			if r == quote {
-				quote = 0
-			}
-			continue
-		}
-		switch r {
-		case '\'', '"':
-			quote = r
-			current.WriteRune(r)
-		case '(':
-			depth++
-			current.WriteRune(r)
-		case ')':
-			if depth > 0 {
-				depth--
-			}
-			current.WriteRune(r)
-		default:
-			if depth == 0 && hasJQLKeywordAt(runes, i, "AND") {
-				clauses = append(clauses, current.String())
-				current.Reset()
-				i += len("AND") - 1
-				continue
-			}
-			current.WriteRune(r)
-		}
-	}
-	clauses = append(clauses, current.String())
-	return clauses
+func isJQLBoundary(r rune) bool {
+	return r == ' ' || r == '\t' || r == '\n' || r == '\r' || r == '(' || r == ')'
 }
 
 func hasJQLKeywordAt(runes []rune, idx int, keyword string) bool {
@@ -260,10 +219,6 @@ func hasJQLKeywordAt(runes []rune, idx int, keyword string) bool {
 	afterIdx := idx + len(keyword)
 	afterOK := afterIdx >= len(runes) || isJQLBoundary(runes[afterIdx])
 	return beforeOK && afterOK
-}
-
-func isJQLBoundary(r rune) bool {
-	return r == ' ' || r == '\t' || r == '\n' || r == '\r' || r == '(' || r == ')'
 }
 
 func containsTopLevelJQLKeyword(value, keyword string) bool {
@@ -313,7 +268,9 @@ func translateJQLClause(clause string) (string, bool) {
 
 	if field == "project" {
 		if op == "=" || op == "IN" {
-			return "", true // represented by workspace_id in every imported collection
+			// Represented by workspace_id in every imported collection. A
+			// tautology keeps an OR group from silently narrowing.
+			return "1 = 1", true
 		}
 		return "", false
 	}
@@ -377,6 +334,10 @@ func jqlFieldMapping(field string) (qlField string, valueMapper func(string) (st
 		return "priority", func(v string) (string, bool) { return jira.SuggestPriorityMapping(v), strings.TrimSpace(v) != "" }, true
 	case "issuetype", "type":
 		return "itemtypename", identity, true
+	case "requesttype", "customerrequesttype", "requesttypename":
+		return "requesttypename", identity, true
+	case "organization", "organizations", "organisation", "customerorganization", "customerorganisation":
+		return "customerorganisation", identity, true
 	case "summary":
 		return "title", identity, true
 	case "description":
