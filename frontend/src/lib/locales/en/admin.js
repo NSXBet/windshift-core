@@ -247,6 +247,7 @@ export default {
       addRule: 'Add Rule',
       noEventRulesConfigured: 'No event rules configured',
       noEventRulesDesc: 'Add rules to define when notifications should be sent',
+      configureSlaWarningThresholds: 'Configure SLA warning thresholds',
       rule: 'Rule',
       eventType: 'Event Type',
       selectEventType: 'Select event type...',

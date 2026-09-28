@@ -820,6 +820,7 @@ export default {
       tabs: {
         calendars: 'Working Calendars',
         metrics: 'Metrics',
+        warnings: 'Warnings',
       },
       metricsTitle: 'SLA Metrics',
       metricsSubtitle:
@@ -874,6 +875,24 @@ export default {
       fallback: 'Fallback',
       duration: 'Duration',
       units: { minutes: 'minutes', hours: 'hours', days: 'days' },
+      thresholdsTitle: 'SLA Warning Thresholds',
+      thresholdsSubtitle:
+        'Percent-of-goal thresholds that fire sla.warning events for notification and automation rules.',
+      createThreshold: 'New threshold',
+      editThreshold: 'Edit threshold',
+      deleteThreshold: 'Delete threshold',
+      deleteThresholdConfirm: 'Delete the threshold “{label}”? This cannot be undone.',
+      thresholdCreated: 'Threshold created',
+      thresholdUpdated: 'Threshold updated',
+      thresholdDeleted: 'Threshold deleted',
+      loadThresholdsFailed: 'Failed to load warning thresholds',
+      percentRange: 'Percent must be between 1 and 99.',
+      scope: 'Scope',
+      percent: 'Percent',
+      allMetrics: 'All metrics',
+      noThresholds: 'No warning thresholds yet.',
+      thresholdLabelPlaceholder: 'e.g. Approaching',
+      thresholdActive: 'Threshold is active',
       calendarsTitle: 'Working Calendars',
       calendarsSubtitle:
         'Business-hours calendars that SLA goals count time against. Team calendars shared with this workspace appear read-only.',

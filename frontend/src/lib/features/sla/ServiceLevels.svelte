@@ -1,7 +1,8 @@
 <script>
   import SlaCalendarsTab from './SlaCalendarsTab.svelte';
   import SlaMetricsTab from './SlaMetricsTab.svelte';
-  import { Calendar, Gauge } from '@lucide/svelte';
+  import SlaWarningThresholdsTab from './SlaWarningThresholdsTab.svelte';
+  import { BellRing, Calendar, Gauge } from '@lucide/svelte';
   import { t } from '../../stores/i18n.svelte.js';
 
   let { workspaceId = null } = $props();
@@ -21,9 +22,21 @@
       icon: Gauge,
       component: SlaMetricsTab,
     },
+    {
+      id: 'warnings',
+      labelKey: 'workspaceSettings.serviceLevels.tabs.warnings',
+      icon: BellRing,
+      component: SlaWarningThresholdsTab,
+    },
   ];
 
-  let active = $state(tabs[0].id);
+  function initialTab() {
+    if (typeof window === 'undefined') return tabs[0].id;
+    const requested = new URLSearchParams(window.location.search).get('subtab');
+    return tabs.some((tab) => tab.id === requested) ? requested : tabs[0].id;
+  }
+
+  let active = $state(initialTab());
 </script>
 
 <div class="space-y-4" data-testid="service-levels">

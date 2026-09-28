@@ -294,6 +294,7 @@ export default {
       addRule: 'Добавить правило',
       noEventRulesConfigured: 'Правила событий не настроены',
       noEventRulesDesc: 'Добавьте правила, определяющие, когда отправлять уведомления',
+      configureSlaWarningThresholds: 'Настроить пороги предупреждений SLA',
       rule: 'Правило',
       eventType: 'Тип события',
       selectEventType: 'Выберите тип события…',
