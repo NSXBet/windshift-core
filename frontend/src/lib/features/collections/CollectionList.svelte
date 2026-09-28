@@ -106,11 +106,6 @@
     });
   });
 
-  // Computed: Calculate total grid columns (sum of widths + 1 for actions)
-  let totalGridColumns = $derived(
-    listColumns.reduce((sum, col) => sum + col.width, 0) + 1
-  );
-
   // Computed: Generate grid-template-columns CSS
   // Per-column baselines (rem) — what "M" looks like today.
   // S/L/XL scale around this so the size picker has visible effect.
@@ -128,20 +123,45 @@
   // width values: 1=S, 2=M, 3=L, 4=XL
   const widthScale = { 1: 0.75, 2: 1, 3: 1.5, 4: 2 };
 
+  // Fixed columns may shrink down to their S size when a row is tight. Without
+  // a floor they hold their configured width and squeeze the flexible Title
+  // track until its text spills over the next cell.
+  const minFixedScale = 0.75;
+  const minTitleWidth = 16;
+  const minFlexibleWidth = 10;
+
   function columnTrack(col) {
     if (col.field_identifier === 'key') return 'max-content';
+
     const base = baseFixedWidths[col.field_identifier];
     if (base !== undefined) {
-      const scale = widthScale[col.width] ?? 1;
-      return `${base * scale}rem`;
+      const min = base * minFixedScale;
+      const max = base * (widthScale[col.width] ?? 1);
+      return max > min ? `minmax(${min}rem, ${max}rem)` : `${min}rem`;
     }
-    return `${col.width}fr`;
+
+    const min = col.field_identifier === 'title' ? minTitleWidth : minFlexibleWidth;
+    const fr = Number(col.width) || 2;
+    return `minmax(${min}rem, ${fr}fr)`;
+  }
+
+  // Floor for the whole row. When it exceeds the viewport the list scrolls
+  // horizontally instead of letting columns collapse into each other.
+  function columnMinWidth(col) {
+    if (col.field_identifier === 'key') return 5;
+    const base = baseFixedWidths[col.field_identifier];
+    if (base !== undefined) return base * minFixedScale;
+    return col.field_identifier === 'title' ? minTitleWidth : minFlexibleWidth;
   }
 
   let gridTemplateColumns = $derived(
     listColumns.map(columnTrack).join(' ') + ' auto'
   );
 
+  // 2.5rem covers the actions track, plus gap-4 (1rem) between every track.
+  let gridMinWidth = $derived(
+    `${listColumns.reduce((sum, col) => sum + columnMinWidth(col), 0) + 2.5 + listColumns.length}rem`
+  );
 
   useEventListener(() => window, 'refresh-work-items', async (/** @type {CustomEvent} */ event) => {
     const item = event.detail?.item;
@@ -378,10 +398,11 @@
           />
         {/if}
       {:else}
-        <div class="rounded-xl border shadow-sm overflow-hidden" style="{styles.tableStyle(12)} border-color: var(--ctx-border, var(--ds-border));">
+        <div class="rounded-xl border shadow-sm overflow-x-auto" style="{styles.tableStyle(12)} border-color: var(--ctx-border, var(--ds-border));">
           <!-- Table Header -->
           <TableHeaderBar
             columns={gridTemplateColumns}
+            minWidth={gridMinWidth}
             style={styles.tableHeaderStyle}
           >
             {#each listColumns as column (column.field_identifier)}
@@ -415,10 +436,10 @@
                   {#snippet children()}
                     <div
                       class="grid gap-4 items-center"
-                      style="grid-template-columns: {gridTemplateColumns};"
+                      style="grid-template-columns: {gridTemplateColumns}; min-width: {gridMinWidth};"
                     >
                       {#each listColumns as column (column.field_identifier)}
-                        <div class="min-w-0">
+                        <div class="min-w-0 overflow-hidden">
                           <ListCellRenderer
                             {item}
                             {column}

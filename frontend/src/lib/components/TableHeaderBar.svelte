@@ -1,5 +1,5 @@
 <script>
-  let { columns = '', class: className = '', style: customStyle = '', children } = $props();
+  let { columns = '', minWidth = '', class: className = '', style: customStyle = '', children } = $props();
 </script>
 
 <div
@@ -9,7 +9,7 @@
 >
   <div
     class="header-grid grid gap-4 items-center text-xs font-semibold tracking-wide"
-    style="grid-template-columns: {columns}; color: var(--ds-text);"
+    style="grid-template-columns: {columns}; {minWidth ? `min-width: ${minWidth};` : ''} color: var(--ds-text);"
   >
     {@render children()}
   </div>
