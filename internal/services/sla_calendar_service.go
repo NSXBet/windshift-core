@@ -164,7 +164,38 @@ func (s *SLACalendarService) UpdateTeam(ctx context.Context, teamID, calendarID 
 	if err := s.repo.UpdateCalendar(ctx, calendar); err != nil {
 		return nil, err
 	}
+	if input.ApplyToOngoing {
+		if err := s.recalculateCalendar(ctx, calendarID); err != nil {
+			return nil, err
+		}
+	}
 	return calendar, nil
+}
+
+// recalculateCalendar enqueues recalculation for every metric that targets the
+// calendar, across all bound workspaces.
+func (s *SLACalendarService) recalculateCalendar(ctx context.Context, calendarID int) error {
+	metricIDs, err := s.repo.MetricIDsReferencingCalendar(ctx, calendarID)
+	if err != nil {
+		return err
+	}
+	if len(metricIDs) == 0 {
+		return nil
+	}
+	now := time.Now().UTC()
+	err = database.WithTx(s.db, func(tx database.Tx) error {
+		for _, id := range metricIDs {
+			metric := id
+			if err := s.repo.UpsertJob(ctx, tx, &models.SLAJob{Kind: models.SLAJobRecalcMetric, MetricID: &metric, DueAt: now}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err == nil && s.engine != nil {
+		s.engine.Wake()
+	}
+	return err
 }
 
 // DeleteTeam deletes a team-shared calendar, refusing while a goal target

@@ -122,6 +122,30 @@ func collectCalendars(rows *sql.Rows) ([]models.WorkingCalendar, error) {
 	return calendars, rows.Err()
 }
 
+// MetricIDsReferencingCalendar returns the metrics whose goals target the
+// calendar. It is the recalculation set for a calendar edit that applies to
+// ongoing cycles.
+func (r *SLARepository) MetricIDsReferencingCalendar(ctx context.Context, calendarID int) ([]int, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT DISTINCT m.id
+		FROM sla_metrics m
+		JOIN sla_goals g ON g.metric_id = m.id
+		JOIN sla_goal_targets t ON t.goal_id = g.id
+		WHERE t.calendar_id = ?`, calendarID)
+	if err != nil {
+		return nil, fmt.Errorf("list metrics referencing calendar: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var ids []int
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan metric referencing calendar: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 // GetCalendar loads one calendar, returning ErrNotFound when absent.
 func (r *SLARepository) GetCalendar(ctx context.Context, id int) (*models.WorkingCalendar, error) {
 	row := r.db.QueryRowContext(ctx, `SELECT `+calendarColumns+` FROM working_calendars WHERE id = ?`, id)

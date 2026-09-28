@@ -83,6 +83,7 @@
     { key: 'timezone', label: t('workspaceSettings.serviceLevels.timezone') },
     { key: 'owner', label: t('workspaceSettings.serviceLevels.owner'), width: '140px', slot: 'owner' },
     { key: 'is_default', label: t('common.default'), width: '100px', slot: 'is_default' },
+    { key: 'actions', label: t('common.actions') },
   ]);
 
   function ownerLabel(calendar) {

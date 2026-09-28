@@ -136,6 +136,7 @@
     { key: 'scope', label: t('workspaceSettings.serviceLevels.scope'), width: '180px', slot: 'scope' },
     { key: 'percent', label: t('workspaceSettings.serviceLevels.percent'), width: '100px', slot: 'percent' },
     { key: 'is_active', label: t('common.active'), width: '110px', slot: 'is_active' },
+    { key: 'actions', label: t('common.actions') },
   ]);
 
   function buildActions(threshold) {

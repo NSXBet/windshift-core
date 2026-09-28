@@ -162,6 +162,7 @@
     { key: 'display_format', label: t('workspaceSettings.serviceLevels.displayFormat'), width: '140px' },
     { key: 'conditions', label: t('workspaceSettings.serviceLevels.conditions'), width: '120px', slot: 'conditions' },
     { key: 'is_active', label: t('common.active'), width: '120px', slot: 'is_active' },
+    { key: 'actions', label: t('common.actions') },
   ]);
 
   function conditionCount(metric) {
