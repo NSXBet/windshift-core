@@ -127,6 +127,20 @@ func Build() (*Catalog, error) {
 		return nil, err
 	}
 	if err := registerTrigger[models.ActionTriggerConfig](c, triggerSpec{
+		Type:        models.ActionTriggerSLABreached,
+		Label:       "SLA: breached",
+		Description: "Fires when an SLA cycle misses its goal. The {{sla.metric}} variable carries the metric name.",
+	}); err != nil {
+		return nil, err
+	}
+	if err := registerTrigger[models.ActionTriggerConfig](c, triggerSpec{
+		Type:        models.ActionTriggerSLAWarning,
+		Label:       "SLA: warning",
+		Description: "Fires when an SLA cycle reaches a configured percent-of-goal warning threshold.",
+	}); err != nil {
+		return nil, err
+	}
+	if err := registerTrigger[models.ActionTriggerConfig](c, triggerSpec{
 		Type:        models.ActionTriggerManual,
 		Label:       "Manual",
 		Description: "Action does not auto-fire — it must be invoked explicitly via the execute endpoint. Useful for human-in-the-loop or scripted automations.",
