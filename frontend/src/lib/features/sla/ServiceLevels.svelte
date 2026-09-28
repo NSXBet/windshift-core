@@ -2,7 +2,8 @@
   import SlaCalendarsTab from './SlaCalendarsTab.svelte';
   import SlaMetricsTab from './SlaMetricsTab.svelte';
   import SlaWarningThresholdsTab from './SlaWarningThresholdsTab.svelte';
-  import { BellRing, Calendar, Gauge } from '@lucide/svelte';
+  import SlaRecalculationTab from './SlaRecalculationTab.svelte';
+  import { BellRing, Calendar, Gauge, RefreshCw } from '@lucide/svelte';
   import { t } from '../../stores/i18n.svelte.js';
 
   let { workspaceId = null } = $props();
@@ -27,6 +28,12 @@
       labelKey: 'workspaceSettings.serviceLevels.tabs.warnings',
       icon: BellRing,
       component: SlaWarningThresholdsTab,
+    },
+    {
+      id: 'recalculations',
+      labelKey: 'workspaceSettings.serviceLevels.tabs.recalculations',
+      icon: RefreshCw,
+      component: SlaRecalculationTab,
     },
   ];
 
