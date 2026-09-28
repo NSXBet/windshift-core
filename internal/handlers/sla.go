@@ -747,7 +747,7 @@ func (h *SLAHandler) GetReport(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	report, err := h.repo.SLAReport(r.Context(), workspaceID, from, to)
+	report, err := h.engine.Report(r.Context(), workspaceID, from, to)
 	if err != nil {
 		respondError(w, r, slaInternal(err))
 		return
