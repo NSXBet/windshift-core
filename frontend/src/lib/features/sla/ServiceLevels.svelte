@@ -1,6 +1,7 @@
 <script>
   import SlaCalendarsTab from './SlaCalendarsTab.svelte';
-  import { Calendar } from '@lucide/svelte';
+  import SlaMetricsTab from './SlaMetricsTab.svelte';
+  import { Calendar, Gauge } from '@lucide/svelte';
   import { t } from '../../stores/i18n.svelte.js';
 
   let { workspaceId = null } = $props();
@@ -13,6 +14,12 @@
       labelKey: 'workspaceSettings.serviceLevels.tabs.calendars',
       icon: Calendar,
       component: SlaCalendarsTab,
+    },
+    {
+      id: 'metrics',
+      labelKey: 'workspaceSettings.serviceLevels.tabs.metrics',
+      icon: Gauge,
+      component: SlaMetricsTab,
     },
   ];
 
