@@ -119,6 +119,7 @@ export default {
       recalculating: 'Recalculating',
       dueOn: 'Due {date}',
       breached: 'Breached',
+      warning: 'Warning',
       paused: 'Paused',
       withinHours: 'Within service hours',
       elapsedOfGoal: '{elapsed} elapsed of {goal} goal',
