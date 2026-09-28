@@ -841,6 +841,8 @@ export default {
       targetRequired: 'Every goal needs at least one target.',
       targetCalendarRequired: 'Every target needs a calendar.',
       targetDurationRequired: 'Every target needs a positive duration.',
+      targetPriorityRequired: 'Priority targets need a priority.',
+      goalQueryInvalid: 'One or more goal queries are invalid.',
       displayFormat: 'Display format',
       displayFormats: { time: 'Time remaining', dueDate: 'Due date' },
       order: 'Order',

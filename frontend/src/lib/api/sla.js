@@ -1,4 +1,17 @@
-import { fetchAPI } from './core.js';
+import { fetchAPI, fetchV2Data } from './core.js';
+
+// Extract a readable message from an API error whose body is often JSON.
+function readableError(err) {
+  const raw = err?.message || '';
+  try {
+    const parsed = JSON.parse(raw);
+    const payload = parsed?.error && typeof parsed.error === 'object' ? parsed.error : parsed;
+    if (payload?.message) return payload.message;
+  } catch {
+    // Body was not JSON; fall through to the raw message.
+  }
+  return raw || 'Invalid query';
+}
 
 // Service-level-agreement configuration and read surfaces. All calls use the
 // internal cookie-auth API; the frontend has no v2/bearer path.
@@ -81,6 +94,20 @@ export const sla = {
 
   // --- Item state ---
   getItemSLA: (itemId) => fetchAPI(`/items/${itemId}/sla`),
+
+  // Validate a goal QL by parsing it through the item query endpoint.
+  validateGoalQuery: async (workspaceId, ql) => {
+    const trimmed = (ql || '').trim();
+    if (!trimmed) return null;
+    const params = new URLSearchParams({ ql: trimmed, page_size: '1' });
+    if (workspaceId) params.set('workspace_id', String(workspaceId));
+    try {
+      await fetchV2Data(`/items?${params.toString()}`);
+      return null;
+    } catch (err) {
+      return readableError(err);
+    }
+  },
 
   // --- Team service-hours calendars ---
   getTeamCalendars: (teamId) => fetchAPI(`${teamBase(teamId)}/working-calendars`),

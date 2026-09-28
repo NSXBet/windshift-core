@@ -260,6 +260,7 @@
 <SlaMetricEditor
   bind:isOpen={showEditor}
   metric={editing}
+  {workspaceId}
   {calendars}
   {statuses}
   {statusCategories}

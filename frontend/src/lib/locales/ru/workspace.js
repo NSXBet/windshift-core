@@ -89,6 +89,8 @@ export default {
       targetRequired: 'Для каждой цели требуется хотя бы один порог.',
       targetCalendarRequired: 'Для каждого порога нужен календарь.',
       targetDurationRequired: 'Для каждого порога нужна положительная длительность.',
+      targetPriorityRequired: 'Для приоритетных порогов нужно выбрать приоритет.',
+      goalQueryInvalid: 'Один или несколько запросов целей некорректны.',
       displayFormat: 'Формат отображения',
       displayFormats: { time: 'Оставшееся время', dueDate: 'Срок' },
       order: 'Порядок',

@@ -8,12 +8,15 @@
   import Toggle from '../../components/Toggle.svelte';
   import Textarea from '../../components/Textarea.svelte';
   import CategoryMultiSelect from '../../pickers/CategoryMultiSelect.svelte';
+  import QlQueryBar from '../shared/QlQueryBar.svelte';
+  import { api } from '../../api.js';
   import { Plus, Trash2, ArrowUp, ArrowDown } from '@lucide/svelte';
   import { t } from '../../stores/i18n.svelte.js';
 
   let {
     isOpen = $bindable(false),
     metric = null,
+    workspaceId = null,
     calendars = [],
     statuses = [],
     statusCategories = [],
@@ -60,7 +63,7 @@
   }
 
   function blankGoal() {
-    return { ql_query: '', targets: [blankTarget()] };
+    return { ql_query: '', error: null, targets: [blankTarget()] };
   }
 
   function blankForm() {
@@ -102,6 +105,7 @@
     }
     const goals = (source.goals ?? []).map((goal) => ({
       ql_query: goal.ql_query ?? '',
+      error: null,
       targets: (goal.targets ?? []).map((target) => ({
         is_fallback: !!target.is_fallback,
         priority_id: target.priority_id ?? null,
@@ -211,9 +215,10 @@
     };
   }
 
-  function validate() {
+  async function validate() {
     if (!formData.name.trim()) return t('workspaceSettings.serviceLevels.nameRequired');
     for (const goal of formData.goals) {
+      goal.error = null;
       if (!goal.ql_query.trim()) return t('workspaceSettings.serviceLevels.goalQueryRequired');
       if (goal.targets.length === 0) return t('workspaceSettings.serviceLevels.targetRequired');
       for (const target of goal.targets) {
@@ -221,13 +226,24 @@
         if (unitToMs(target.value, target.unit) <= 0) {
           return t('workspaceSettings.serviceLevels.targetDurationRequired');
         }
+        if (!target.is_fallback && !target.priority_id) {
+          return t('workspaceSettings.serviceLevels.targetPriorityRequired');
+        }
+      }
+    }
+    // Validate each goal's QL against the item query parser before saving.
+    for (const goal of formData.goals) {
+      const queryError = await api.sla.validateGoalQuery(workspaceId, goal.ql_query);
+      if (queryError) {
+        goal.error = queryError;
+        return t('workspaceSettings.serviceLevels.goalQueryInvalid');
       }
     }
     return null;
   }
 
   async function submit() {
-    const validationError = validate();
+    const validationError = await validate();
     if (validationError) {
       error = validationError;
       return;
@@ -362,12 +378,22 @@
           <div class="mb-3 rounded border p-3" style="border-color: var(--ds-border)">
             <div class="flex items-start gap-2">
               <div class="flex-1">
-                <Textarea
-                  bind:value={goal.ql_query}
-                  rows={2}
+                <QlQueryBar
+                  query={goal.ql_query}
+                  mode="raw"
+                  compact
+                  editorTestId="sla-goal-query-{goalIndex}"
                   placeholder={t('workspaceSettings.serviceLevels.goalQueryPlaceholder')}
-                  dataTestid="sla-goal-query-{goalIndex}"
+                  onquerychange={(value) => {
+                    goal.ql_query = value;
+                    goal.error = null;
+                  }}
                 />
+                {#if goal.error}
+                  <div class="text-xs mt-1" style="color: var(--ds-text-danger)" data-testid="sla-goal-error-{goalIndex}">
+                    {goal.error}
+                  </div>
+                {/if}
               </div>
               <Button
                 variant="default"
