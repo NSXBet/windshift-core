@@ -240,7 +240,7 @@ func (s *ConditionSetApplicationService) attachGatedTransitions(items []models.C
 		placeholders[i] = "?"
 		args[i] = items[i].ID
 	}
-	query := fmt.Sprintf(`SELECT cst.condition_set_id, cst.transition_id, fs.name, ts.name FROM condition_set_transitions cst JOIN workflow_transitions wt ON wt.id = cst.transition_id LEFT JOIN statuses fs ON fs.id = wt.from_status_id JOIN statuses ts ON ts.id = wt.to_status_id WHERE cst.condition_set_id IN (%s) ORDER BY cst.condition_set_id, cst.id`, strings.Join(placeholders, ","))
+	query := fmt.Sprintf(`SELECT cst.condition_set_id, cst.transition_id, wt.from_all_statuses, fs.name, ts.name FROM condition_set_transitions cst JOIN workflow_transitions wt ON wt.id = cst.transition_id LEFT JOIN statuses fs ON fs.id = wt.from_status_id JOIN statuses ts ON ts.id = wt.to_status_id WHERE cst.condition_set_id IN (%s) ORDER BY cst.condition_set_id, cst.id`, strings.Join(placeholders, ","))
 	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return err
@@ -250,7 +250,7 @@ func (s *ConditionSetApplicationService) attachGatedTransitions(items []models.C
 		var setID int
 		var summary models.ConditionSetTransitionSummary
 		var from sql.NullString
-		if err := rows.Scan(&setID, &summary.TransitionID, &from, &summary.ToStatusName); err != nil {
+		if err := rows.Scan(&setID, &summary.TransitionID, &summary.FromAllStatuses, &from, &summary.ToStatusName); err != nil {
 			return err
 		}
 		summary.FromStatusName = from.String
