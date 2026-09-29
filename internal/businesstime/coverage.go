@@ -25,7 +25,7 @@ func (c *Calendar) OpenIntervals(from, to time.Time) []span {
 	for cursor.Before(to) {
 		local := cursor.In(c.location)
 		day := dayAtMidnight(local)
-		dayEnd := day.AddDate(0, 0, 1)
+		dayEnd := startOfNextDay(day)
 		if !dayEnd.After(cursor) {
 			dayEnd = cursor.Add(time.Second)
 		}
