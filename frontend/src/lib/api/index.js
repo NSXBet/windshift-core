@@ -93,6 +93,7 @@ import {
 import { oauth } from './oauth.js';
 import { objectTranslations } from './objectTranslations.js';
 import { onCallSchedules } from './oncall.js';
+import { packs } from './packs.js';
 import { pageLabels, pages } from './pages.js';
 import { groups, permissions } from './permissions.js';
 import {
@@ -160,6 +161,7 @@ export const api = {
   customFields,
   workspaces,
   workspaceRoles,
+  packs,
   screens,
   items,
   itemIncidents,

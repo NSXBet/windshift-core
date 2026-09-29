@@ -146,10 +146,12 @@ func (s *WorkspaceBundleImportService) ImportWithOptions(ctx context.Context, ac
 		if err != nil {
 			return nil, fmt.Errorf("embedded configuration set: %w", err)
 		}
-		// Attach: replace any existing workspace assignment (delete + insert,
+		// Attach: replace this workspace's assignment (delete + insert,
 		// matching SaveWorkspaceAssignments semantics) without a transaction
-		// wrapper — the config-set import has already committed.
-		if _, err := s.db.ExecContext(ctx, `DELETE FROM workspace_configuration_sets WHERE configuration_set_id = ?`, configSetID); err != nil {
+		// wrapper — the config-set import has already committed. Scoping the
+		// delete to configuration_set_id would detach the set from every other
+		// workspace sharing it.
+		if _, err := s.db.ExecContext(ctx, `DELETE FROM workspace_configuration_sets WHERE workspace_id = ?`, workspaceID); err != nil {
 			return nil, fmt.Errorf("attach embedded configuration set: %w", err)
 		}
 		if _, err := s.db.ExecContext(ctx, `

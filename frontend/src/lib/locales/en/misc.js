@@ -774,6 +774,9 @@ export default {
     workspaceTemplateLoading: 'Loading templates...',
     workspaceTemplateError: 'Failed to load workspace templates',
     workspaceTemplateMeta: '{templates} templates · {items} items',
+    workspacePackTemplate: 'Built-in pack',
+    workspacePackMeta: 'v{version} · configuration set + content',
+    workspacePackError: 'Failed to load built-in packs',
     // Field labels
     type: 'Type',
     template: 'Template',

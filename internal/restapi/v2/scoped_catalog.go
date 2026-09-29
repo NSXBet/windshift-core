@@ -113,6 +113,7 @@ type workspaceCreateRequest struct {
 	AvatarURL           *string `json:"avatar_url"`
 	DefaultView         string  `json:"default_view"`
 	TemplateWorkspaceID *int    `json:"template_workspace_id"`
+	TemplatePack        string  `json:"template_pack"`
 }
 
 type workspacePatchRequest struct {
@@ -209,7 +210,7 @@ func createWorkspace(workspaces workspaceApplication) jsonOperation[workspaceCre
 			Name: input.Name, Key: input.Key, Description: input.Description, Active: input.Active,
 			TimeProjectID: input.TimeProjectID, IsPersonal: input.IsPersonal, OwnerID: input.OwnerID,
 			Icon: input.Icon, Color: input.Color, AvatarURL: input.AvatarURL, DefaultView: input.DefaultView,
-			TemplateWorkspaceID: input.TemplateWorkspaceID,
+			TemplateWorkspaceID: input.TemplateWorkspaceID, TemplatePack: input.TemplatePack,
 		})
 		if err != nil {
 			return workspaceDTO{}, workspaceMutationError(err)
@@ -278,6 +279,10 @@ func workspaceMutationError(err error) error {
 	case errors.Is(err, services.ErrInvalidWorkspaceTemplate), errors.Is(err, services.ErrWorkspaceTemplateTooLarge), errors.Is(err, services.ErrPersonalWorkspaceTemplate),
 		errors.Is(err, services.ErrPersonalWorkspaceDeactivation), errors.Is(err, services.ErrWorkspaceKeyImmutable):
 		return newError(http.StatusUnprocessableEntity, "unprocessable_entity", err.Error())
+	case errors.Is(err, services.ErrWorkspacePackNotFound):
+		return newError(http.StatusUnprocessableEntity, "unknown_pack", "Template pack was not found")
+	case errors.Is(err, services.ErrWorkspacePackProvisioning):
+		return newError(http.StatusUnprocessableEntity, "pack_provisioning_failed", err.Error())
 	default:
 		return internalError(err)
 	}

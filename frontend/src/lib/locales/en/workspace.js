@@ -122,6 +122,7 @@ export default {
       warning: 'Warning',
       paused: 'Paused',
       withinHours: 'Within service hours',
+      outsideHours: 'Outside service hours',
       elapsedOfGoal: '{elapsed} elapsed of {goal} goal',
       notRunning: 'No running cycle',
       completedCycles: 'Completed cycles ({count})',

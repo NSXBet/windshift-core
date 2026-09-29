@@ -175,45 +175,60 @@ func parsePackArchive(data []byte, maxTotalBytes, maxEntryBytes int64) (*PackArc
 	if err := json.Unmarshal(manifestRaw, manifest); err != nil {
 		return nil, fmt.Errorf("pack: manifest is not valid JSON: %w", err)
 	}
+	if err := validatePackManifest(manifest, files); err != nil {
+		return nil, err
+	}
+
+	return &PackArchive{Manifest: manifest, Files: files}, nil
+}
+
+// validatePackManifest applies the manifest contract shared by uploaded tar
+// archives and packs assembled from embedded assets: kind, schema version,
+// name, semver, and every declared file reference must resolve. The caller
+// supplies the archive-relative file map; the check never reads the archive
+// itself.
+func validatePackManifest(manifest *PackManifest, files map[string][]byte) error {
+	if manifest == nil {
+		return errors.New("pack: manifest is required")
+	}
 	if manifest.Kind != PackKind {
-		return nil, fmt.Errorf("pack: unsupported kind %q (want %q)", manifest.Kind, PackKind)
+		return fmt.Errorf("pack: unsupported kind %q (want %q)", manifest.Kind, PackKind)
 	}
 	if manifest.SchemaVersion != PackSchemaVersion {
-		return nil, fmt.Errorf("pack: unsupported schema_version %d (want %d)", manifest.SchemaVersion, PackSchemaVersion)
+		return fmt.Errorf("pack: unsupported schema_version %d (want %d)", manifest.SchemaVersion, PackSchemaVersion)
 	}
 	if strings.TrimSpace(manifest.Name) == "" {
-		return nil, errors.New("pack: manifest name is required")
+		return errors.New("pack: manifest name is required")
 	}
 	if !packSemverPattern.MatchString(manifest.Version) {
-		return nil, fmt.Errorf("pack: version %q is not a semver (want major.minor.patch)", manifest.Version)
+		return fmt.Errorf("pack: version %q is not a semver (want major.minor.patch)", manifest.Version)
 	}
 	if manifest.Schema.ConfigurationSet == "" {
-		return nil, errors.New("pack: schema.configuration_set is required")
+		return errors.New("pack: schema.configuration_set is required")
 	}
 	for _, ref := range manifest.Plugins {
 		if strings.TrimSpace(ref.Name) == "" {
-			return nil, errors.New("pack: plugin reference name is required")
+			return errors.New("pack: plugin reference name is required")
 		}
 		if !packSemverPattern.MatchString(ref.MinVersion) {
-			return nil, fmt.Errorf("pack: plugin %q min_version %q is not a semver", ref.Name, ref.MinVersion)
+			return fmt.Errorf("pack: plugin %q min_version %q is not a semver", ref.Name, ref.MinVersion)
 		}
 	}
 	// Dangling file references.
 	if _, ok := files[manifest.Schema.ConfigurationSet]; !ok {
-		return nil, fmt.Errorf("pack: schema file %q is not in the archive", manifest.Schema.ConfigurationSet)
+		return fmt.Errorf("pack: schema file %q is not in the archive", manifest.Schema.ConfigurationSet)
 	}
 	if manifest.Content != nil && manifest.Content.WorkspaceBundle != "" {
 		if _, ok := files[manifest.Content.WorkspaceBundle]; !ok {
-			return nil, fmt.Errorf("pack: content file %q is not in the archive", manifest.Content.WorkspaceBundle)
+			return fmt.Errorf("pack: content file %q is not in the archive", manifest.Content.WorkspaceBundle)
 		}
 	}
 	if manifest.Conformance != nil && manifest.Conformance.ConfigurationSet != "" {
 		if _, ok := files[manifest.Conformance.ConfigurationSet]; !ok {
-			return nil, fmt.Errorf("pack: conformance file %q is not in the archive", manifest.Conformance.ConfigurationSet)
+			return fmt.Errorf("pack: conformance file %q is not in the archive", manifest.Conformance.ConfigurationSet)
 		}
 	}
-
-	return &PackArchive{Manifest: manifest, Files: files}, nil
+	return nil
 }
 
 // compareSemver compares dotted numeric versions. Missing components count

@@ -124,25 +124,20 @@ func (s *PackApplyService) Apply(ctx context.Context, req PackApplyRequest) (*Pa
 	if err != nil {
 		return nil, err
 	}
-	fail := func(stage, detail string) (*PackApplyReport, error) {
-		s.appendStage(report, stage, PackStageStatusFailed, detail)
-		report.Status = PackApplyStatusFailed
-		return report, nil
-	}
 
 	// Stage 1: plugins, before anything is written (AC: a missing plugin
 	// leaves schema and content unapplied).
 	plugins, satisfied := s.checkPlugins(req.Archive.Manifest.Plugins)
 	report.Plugins = plugins
 	if !satisfied {
-		return fail(PackStagePlugins, "plugin requirements are not satisfied")
+		return s.failReport(report, PackStagePlugins, "plugin requirements are not satisfied")
 	}
 	s.appendStage(report, PackStagePlugins, PackStageStatusOK, "plugin requirements satisfied")
 
 	// Stage 2: create-or-target the workspace.
 	workspaceID, created, err := s.resolveWorkspace(ctx, req)
 	if err != nil {
-		return fail(PackStageWorkspace, err.Error())
+		return s.failReport(report, PackStageWorkspace, err.Error())
 	}
 	report.WorkspaceID = workspaceID
 	report.WorkspaceCreated = created
@@ -152,15 +147,37 @@ func (s *PackApplyService) Apply(ctx context.Context, req PackApplyRequest) (*Pa
 		s.appendStage(report, PackStageWorkspace, PackStageStatusOK, "targeting existing workspace")
 	}
 
+	return s.applyWorkspaceStages(ctx, req, report)
+}
+
+// ApplyToWorkspace runs the schema, content, and conformance stages against an
+// already-existing workspace. The caller owns workspace creation and plugin
+// verification; this is the shared tail of Apply and create-from-template-pack.
+func (s *PackApplyService) ApplyToWorkspace(ctx context.Context, actor AuditActor, workspaceID int, archive *PackArchive) (*PackApplyReport, error) {
+	req := PackApplyRequest{Archive: archive, Actor: actor}
+	report, err := s.newReport(req)
+	if err != nil {
+		return nil, err
+	}
+	report.WorkspaceID = workspaceID
+	s.appendStage(report, PackStageWorkspace, PackStageStatusSkipped, "workspace already exists")
+	return s.applyWorkspaceStages(ctx, req, report)
+}
+
+// applyWorkspaceStages runs stages 3-5 and leaves report.Status set to applied
+// or failed. Stage failures are reported in the result, not as an error.
+func (s *PackApplyService) applyWorkspaceStages(ctx context.Context, req PackApplyRequest, report *PackApplyReport) (*PackApplyReport, error) {
+	workspaceID := report.WorkspaceID
+
 	// Stage 3: schema — import the configuration-set template unless this
 	// pack's configuration set is already attached (idempotent re-run).
 	schemaTemplate, err := req.Archive.ConfigurationSetTemplate()
 	if err != nil {
-		return fail(PackStageSchema, err.Error())
+		return s.failReport(report, PackStageSchema, err.Error())
 	}
 	configSetID, reused, err := s.importOrReuseConfigurationSet(ctx, workspaceID, schemaTemplate)
 	if err != nil {
-		return fail(PackStageSchema, err.Error())
+		return s.failReport(report, PackStageSchema, err.Error())
 	}
 	report.ConfigSetID = configSetID
 	if reused {
@@ -172,17 +189,17 @@ func (s *PackApplyService) Apply(ctx context.Context, req PackApplyRequest) (*Pa
 	// Stage 4: content.
 	bundle, hasContent, err := req.Archive.WorkspaceBundleFile()
 	if err != nil {
-		return fail(PackStageContent, err.Error())
+		return s.failReport(report, PackStageContent, err.Error())
 	}
 	if hasContent {
 		contentBundle := &WorkspaceBundle{}
 		if err := decodeBundle(bundle, contentBundle); err != nil {
-			return fail(PackStageContent, err.Error())
+			return s.failReport(report, PackStageContent, err.Error())
 		}
 		importer := s.bundleImport
 		result, err := importer.ImportWithOptions(ctx, req.Actor, workspaceID, contentBundle, &WorkspaceBundleImportOptions{Idempotent: true})
 		if err != nil {
-			return fail(PackStageContent, err.Error())
+			return s.failReport(report, PackStageContent, err.Error())
 		}
 		s.appendStage(report, PackStageContent, PackStageStatusOK,
 			fmt.Sprintf("pages %d, items %d, links %d", result.PagesImported, result.ItemsImported, result.ItemLinksImported))
@@ -193,16 +210,45 @@ func (s *PackApplyService) Apply(ctx context.Context, req PackApplyRequest) (*Pa
 	// Stage 5: conformance — the schema template must match the live set.
 	conformance, err := s.conformance.Check(ctx, configSetID, schemaTemplate)
 	if err != nil {
-		return fail(PackStageConformance, err.Error())
+		return s.failReport(report, PackStageConformance, err.Error())
 	}
 	report.Conformance = conformance
 	if !conformance.Conformant {
-		return fail(PackStageConformance, fmt.Sprintf("conformance check reports %d drift rows", conformance.DriftCount))
+		return s.failReport(report, PackStageConformance, fmt.Sprintf("conformance check reports %d drift rows", conformance.DriftCount))
 	}
 	s.appendStage(report, PackStageConformance, PackStageStatusOK, "conformance check passed")
 
 	report.Status = PackApplyStatusApplied
 	return report, nil
+}
+
+// failReport records a failed stage and returns the report without an error,
+// matching Apply's "failures are reported in the result" contract.
+func (s *PackApplyService) failReport(report *PackApplyReport, stage, detail string) (*PackApplyReport, error) {
+	s.appendStage(report, stage, PackStageStatusFailed, detail)
+	report.Status = PackApplyStatusFailed
+	return report, nil
+}
+
+// VerifyBuiltinPack resolves an embedded pack and validates its manifest and
+// plugin requirements without writing anything. Implements
+// WorkspacePackProvisioner.
+func (s *PackApplyService) VerifyBuiltinPack(ctx context.Context, name string) (*PackApplyReport, error) {
+	archive, err := BuiltinPackArchive(name)
+	if err != nil {
+		return nil, err
+	}
+	return s.Verify(ctx, PackApplyRequest{Archive: archive})
+}
+
+// ApplyBuiltinPackToWorkspace resolves an embedded pack and applies it to an
+// already-created workspace. Implements WorkspacePackProvisioner.
+func (s *PackApplyService) ApplyBuiltinPackToWorkspace(ctx context.Context, actor AuditActor, name string, workspaceID int) (*PackApplyReport, error) {
+	archive, err := BuiltinPackArchive(name)
+	if err != nil {
+		return nil, err
+	}
+	return s.ApplyToWorkspace(ctx, actor, workspaceID, archive)
 }
 
 // ---- stages -----------------------------------------------------------------
@@ -314,9 +360,10 @@ func (s *PackApplyService) importOrReuseConfigurationSet(ctx context.Context, wo
 	if importErr != nil {
 		return 0, false, fmt.Errorf("import configuration set: %w", importErr)
 	}
-	// Attach: replace the workspace's assignment (matching the assignment
-	// endpoint's semantics).
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM workspace_configuration_sets WHERE configuration_set_id = ?`, importedID); err != nil {
+	// Attach: replace this workspace's assignment (matching the assignment
+	// endpoint's semantics). Scoping the delete to configuration_set_id would
+	// detach the set from every other workspace sharing it.
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM workspace_configuration_sets WHERE workspace_id = ?`, workspaceID); err != nil {
 		return 0, false, fmt.Errorf("attach configuration set: %w", err)
 	}
 	if _, err := s.db.ExecContext(ctx, `

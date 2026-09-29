@@ -25,6 +25,27 @@ var ErrPersonalWorkspaceDeactivation = errors.New("personal workspaces cannot be
 // (item keys, integrations) rely on them.
 var ErrWorkspaceKeyImmutable = errors.New("workspace key can only be changed for personal workspaces")
 
+// Create-from-template-pack errors. The pack is verified before the workspace
+// exists, and a provisioning failure after creation compensates by deleting
+// the just-created workspace so callers never see a half-provisioned result.
+var (
+	ErrWorkspacePackUnavailable  = errors.New("workspace pack provisioning is not available")
+	ErrWorkspacePackNotFound     = errors.New("workspace pack not found")
+	ErrWorkspacePackProvisioning = errors.New("workspace pack provisioning failed")
+)
+
+// WorkspacePackProvisioner provisions an embedded pack into a workspace the
+// service just created. Implemented by PackApplyService; a nil provisioner
+// refuses TemplatePack.
+type WorkspacePackProvisioner interface {
+	// VerifyBuiltinPack validates the named built-in pack (manifest and plugin
+	// requirements) without writing anything.
+	VerifyBuiltinPack(ctx context.Context, name string) (*PackApplyReport, error)
+	// ApplyBuiltinPackToWorkspace runs the schema, content, and conformance
+	// stages against an already-created workspace.
+	ApplyBuiltinPackToWorkspace(ctx context.Context, actor AuditActor, name string, workspaceID int) (*PackApplyReport, error)
+}
+
 // WorkspaceService encapsulates workspace business logic used by both HTTP handlers
 // and other services.
 type WorkspaceService struct {
@@ -35,6 +56,14 @@ type WorkspaceService struct {
 	templates             *repository.WorkspaceTemplateRepository
 	integrationLinkGuards *IntegrationLinkGuards
 	access                WorkspaceSourceAccess
+	packProvisioner       WorkspacePackProvisioner
+}
+
+// SetPackProvisioner installs the optional create-from-template-pack
+// provisioner. Called after construction because PackApplyService depends on
+// this service for name-based workspace creation.
+func (s *WorkspaceService) SetPackProvisioner(provisioner WorkspacePackProvisioner) {
+	s.packProvisioner = provisioner
 }
 
 // NewWorkspaceService creates a new WorkspaceService.
@@ -171,6 +200,10 @@ type CreateWorkspaceParams struct {
 	DefaultView   string
 
 	TemplateWorkspaceID *int
+	// TemplatePack, when set, is a built-in pack name whose configuration set,
+	// content, and conformance are applied to the new workspace. Mutually
+	// exclusive with TemplateWorkspaceID.
+	TemplatePack string
 }
 
 // CreateWorkspaceResult contains the result of creating a workspace. The
@@ -195,6 +228,23 @@ func (s *WorkspaceService) Create(ctx context.Context, params CreateWorkspacePar
 	}
 	if params.IsPersonal && params.TemplateWorkspaceID != nil {
 		return nil, fmt.Errorf("%w: personal workspaces cannot be created from a template", ErrInvalidWorkspaceTemplate)
+	}
+	if params.TemplatePack != "" && params.TemplateWorkspaceID != nil {
+		return nil, fmt.Errorf("%w: template_pack and template_workspace_id are mutually exclusive", ErrWorkspacePackProvisioning)
+	}
+	if params.TemplatePack != "" {
+		if s.packProvisioner == nil {
+			return nil, ErrWorkspacePackUnavailable
+		}
+		// Resolve and verify the pack before the workspace exists, so an unknown
+		// or unsatisfiable pack never creates an orphan.
+		report, err := s.packProvisioner.VerifyBuiltinPack(ctx, params.TemplatePack)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %q: %w", ErrWorkspacePackNotFound, params.TemplatePack, err)
+		}
+		if report == nil || report.Status != PackVerifyStatusVerified {
+			return nil, fmt.Errorf("%w: pack %q requirements are not satisfied", ErrWorkspacePackProvisioning, params.TemplatePack)
+		}
 	}
 
 	key := strings.ToUpper(params.Key)
@@ -243,9 +293,42 @@ func (s *WorkspaceService) Create(ctx context.Context, params CreateWorkspacePar
 			repository.InvalidateItemListCountCache(s.db, result.Workspace.ID)
 			logWorkspaceCloneResult(result, time.Since(started))
 		}
+		if params.TemplatePack != "" {
+			if err := s.provisionTemplatePack(ctx, params, result); err != nil {
+				return nil, err
+			}
+		}
 		return result, nil
 	}
 	return nil, fmt.Errorf("workspace creation failed after retries: %w", lastErr)
+}
+
+// provisionTemplatePack applies the pack's schema, content, and conformance to
+// a freshly committed workspace. No single transaction spans workspace
+// creation, configuration-set import, and bundle import, so a provisioning
+// failure compensates by deleting the workspace the caller just asked for.
+func (s *WorkspaceService) provisionTemplatePack(ctx context.Context, params CreateWorkspaceParams, result *CreateWorkspaceResult) error {
+	// PostgreSQL item numbering needs the per-workspace sequence; content import
+	// may create items. The application layer also ensures this, idempotently.
+	if err := s.repo.CreateItemSequence(int64(result.Workspace.ID)); err != nil {
+		slog.Warn("failed to create item sequence before pack provisioning",
+			"workspace_id", result.Workspace.ID, "error", err)
+	}
+	report, provisionErr := s.packProvisioner.ApplyBuiltinPackToWorkspace(ctx, AuditActor{UserID: params.CreatorID}, params.TemplatePack, result.Workspace.ID)
+	if provisionErr == nil && report != nil && report.Status == PackApplyStatusApplied {
+		return nil
+	}
+	detail := "provisioning did not complete"
+	if provisionErr != nil {
+		detail = provisionErr.Error()
+	} else if report != nil {
+		detail = report.Status
+	}
+	if delErr := s.Delete(result.Workspace.ID); delErr != nil {
+		slog.Error("failed to roll back workspace after pack provisioning failure",
+			"workspace_id", result.Workspace.ID, "pack", params.TemplatePack, "error", delErr)
+	}
+	return fmt.Errorf("%w: pack %q: %s", ErrWorkspacePackProvisioning, params.TemplatePack, detail)
 }
 
 // NullableUpdate distinguishes an omitted field from an explicit null.

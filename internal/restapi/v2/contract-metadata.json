@@ -7990,6 +7990,22 @@
         ]
       }
     },
+    "/packs": {
+      "get": {
+        "description": "List built-in framework packs. Results include only resources visible to the authenticated caller; collections use their documented stable order and bounds.",
+        "parameters": [],
+        "responses": {
+          "401": {},
+          "403": {},
+          "429": {},
+          "500": {}
+        },
+        "summary": "List built-in framework packs",
+        "tags": [
+          "Workspace configuration"
+        ]
+      }
+    },
     "/packs/apply": {
       "post": {
         "description": "Apply a framework pack. The server validates resource ownership and command preconditions before persisting changes. Unknown JSON fields are rejected when the operation accepts a body.",
@@ -8023,6 +8039,68 @@
           "500": {}
         },
         "summary": "Verify a framework pack",
+        "tags": [
+          "Workspace configuration"
+        ]
+      }
+    },
+    "/packs/{name}/apply": {
+      "post": {
+        "description": "Apply a built-in framework pack. The server validates resource ownership and command preconditions before persisting changes. Unknown JSON fields are rejected when the operation accepts a body.",
+        "parameters": [
+          {
+            "Name": "name",
+            "In": "path",
+            "Description": "Built-in pack name.",
+            "Required": true,
+            "Schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "400": {},
+          "401": {},
+          "403": {},
+          "404": {},
+          "413": {},
+          "415": {},
+          "429": {},
+          "500": {}
+        },
+        "summary": "Apply a built-in framework pack",
+        "tags": [
+          "Workspace configuration"
+        ]
+      }
+    },
+    "/packs/{name}/verify": {
+      "post": {
+        "description": "Verify a built-in framework pack. The server validates resource ownership and command preconditions before persisting changes. Unknown JSON fields are rejected when the operation accepts a body.",
+        "parameters": [
+          {
+            "Name": "name",
+            "In": "path",
+            "Description": "Built-in pack name.",
+            "Required": true,
+            "Schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "400": {},
+          "401": {},
+          "403": {},
+          "404": {},
+          "413": {},
+          "415": {},
+          "429": {},
+          "500": {}
+        },
+        "summary": "Verify a built-in framework pack",
         "tags": [
           "Workspace configuration"
         ]

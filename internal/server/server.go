@@ -305,6 +305,11 @@ func (s *Server) initialize() error {
 	if err = database.ValidateCanonicalSchemaCheckpoint(s.db); err != nil {
 		return fmt.Errorf("database startup refused: %w", err)
 	}
+	// Shipped framework packs are embedded assets; a malformed one is a build
+	// defect, so refuse to start rather than fail at first apply.
+	if err = services.ValidateBuiltinPacks(); err != nil {
+		return fmt.Errorf("built-in packs startup refused: %w", err)
+	}
 	objectTranslationService := objecttranslation.NewService(s.db)
 	if err := objectTranslationService.SyncSystem(context.Background(), objecttranslation.ShippedSystemTranslations()); err != nil {
 		return fmt.Errorf("sync shipped object translations: %w", err)
@@ -1733,6 +1738,33 @@ func (s *Server) initialize() error {
 		pluginRouter.RegisterRoutes(mux)
 	}
 
+	// Workspace creation wiring: the v2 application service, the v1 and
+	// session create handlers, and the pack apply service share one
+	// create-from-template-pack provisioner. PackApplyService depends on the
+	// application service for name-based workspace creation, so it is wired
+	// after construction.
+	v2Access := authz.New(s.db, permService)
+	workspaceAppService := services.NewWorkspaceApplicationService(s.db, v2Access, authorizationCacheInvalidator)
+	workspaceBundleImportService := services.NewWorkspaceBundleImportService(
+		s.db,
+		repository.NewConfigurationSetRepository(s.db),
+		repository.NewItemTypeRepository(s.db),
+		repository.NewLabelRepository(s.db),
+		pageApplication,
+		pageLabelService,
+		itemHandler.ItemCreationService(),
+		itemLinkService,
+		permService,
+	)
+	packApplyService := services.NewPackApplyService(
+		s.db,
+		workspaceAppService,
+		repository.NewConfigurationSetRepository(s.db),
+		services.NewConfigSetConformanceService(s.db, repository.NewConfigurationSetRepository(s.db)),
+		workspaceBundleImportService,
+	)
+	workspaceAppService.SetPackProvisioner(packApplyService)
+
 	// REST API v1
 	restapi.SetupRoutes(restapi.Deps{
 		Mux:                            mux,
@@ -1752,6 +1784,7 @@ func (s *Server) initialize() error {
 		PageDiagramService:             pageDiagramService,
 		ObjectTranslationService:       objectTranslationService,
 		AuthorizationCacheInvalidator:  authorizationCacheInvalidator,
+		PackProvisioner:                packApplyService,
 		AI:                             aiHandler,
 		AIRateLimiter:                  s.aiRateLimiter,
 	}, v1.RegisterRoutes)
@@ -1759,7 +1792,6 @@ func (s *Server) initialize() error {
 	if !cfg.DisableCSRF {
 		v2CSRF = middleware.NewCSRFValidator(csrfOrigins)
 	}
-	v2Access := authz.New(s.db, permService)
 	planningCredentialResolver := scm.NewCredentialResolver(s.db, scmProviderHandler.GetEncryption())
 	planningApplication := services.NewPlanningApplicationService(
 		milestonePlanningService,
@@ -1808,7 +1840,6 @@ func (s *Server) initialize() error {
 		WithStoryPointRollups(repository.NewItemRepository(s.db))
 	catalogMutations := services.NewCatalogMutationService(s.db, permService, workflowService)
 	governanceApplication := services.NewGovernanceApplicationService(s.db, permService, approvalSetService, approvalService)
-	workspaceAppService := services.NewWorkspaceApplicationService(s.db, v2Access, authorizationCacheInvalidator)
 	if err := v2.RegisterRoutes(v2.Deps{
 		Mux:                mux,
 		Tokens:             tokenManager,
@@ -1837,86 +1868,60 @@ func (s *Server) initialize() error {
 		ConfigurationSetExport:       services.NewConfigSetExportService(s.db, repository.NewConfigurationSetRepository(s.db)),
 		ConfigSetConformance:         services.NewConfigSetConformanceService(s.db, repository.NewConfigurationSetRepository(s.db)),
 		WorkspaceBundleExport:        services.NewWorkspaceBundleExportService(s.db, services.NewConfigSetExportService(s.db, repository.NewConfigurationSetRepository(s.db))),
-		PackApply: services.NewPackApplyService(
-			s.db,
-			workspaceAppService,
-			repository.NewConfigurationSetRepository(s.db),
-			services.NewConfigSetConformanceService(s.db, repository.NewConfigurationSetRepository(s.db)),
-			services.NewWorkspaceBundleImportService(
-				s.db,
-				repository.NewConfigurationSetRepository(s.db),
-				repository.NewItemTypeRepository(s.db),
-				repository.NewLabelRepository(s.db),
-				pageApplication,
-				pageLabelService,
-				itemHandler.ItemCreationService(),
-				itemLinkService,
-				permService,
-			),
-		),
-		WorkspaceBundleImport: services.NewWorkspaceBundleImportService(
-			s.db,
-			repository.NewConfigurationSetRepository(s.db),
-			repository.NewItemTypeRepository(s.db),
-			repository.NewLabelRepository(s.db),
-			pageApplication,
-			pageLabelService,
-			itemHandler.ItemCreationService(),
-			itemLinkService,
-			permService,
-		),
-		StoryPointRollup:  repository.NewItemRepository(s.db),
-		HierarchyLevels:   hierarchyLevelEnumService,
-		Workspaces:        workspaceAppService,
-		ItemTemplates:     services.NewItemTemplateApplicationService(s.db, v2Access),
-		Labels:            services.NewLabelApplicationService(s.db),
-		Items:             repository.NewItemRepository(s.db),
-		Access:            v2Access,
-		Preferences:       userPreferencesService,
-		Recurrence:        recurrenceService,
-		ItemDiagrams:      itemDiagramService,
-		Pages:             pageService,
-		PageApplication:   pageApplication,
-		PageDiagrams:      pageDiagramService,
-		PageAccess:        pagePermissionService,
-		PageLabels:        pageLabelService,
-		PagePublication:   knowledgePublication,
-		Worklogs:          timeWorklogService,
-		TimeAccess:        timePermissionService,
-		TimeProjects:      services.NewTimeProjectApplicationService(s.db, timePermissionService, v2Access),
-		Timers:            timerService,
-		SystemAdmins:      permService,
-		GlobalPermission:  permService,
-		Groups:            groupHandler.Application(),
-		AdminUsers:        services.NewUserReadService(s.db),
-		AuditLogs:         repository.NewAuditLogRepository(s.db),
-		AdminTokens:       tokenManager,
-		AdminAuditor:      logger.NewAuditor(s.db),
-		AdminTranslations: objectTranslationService,
-		Comments:          commentService,
-		CommentAccess:     permService,
-		Attachments:       services.NewItemAttachmentService(s.db, cfg.AttachmentPath, permService),
-		PageAttachments:   services.NewPageAttachmentUploadService(s.db, cfg.AttachmentPath, permService, pagePermissionService),
-		Collections:       services.NewCollectionApplicationService(s.db, permService),
-		Planning:          planningApplication,
-		Links:             itemLinkService,
-		AgentRuns:         agentRunApplication,
-		AgentSkills:       services.NewAgentSkillApplicationService(s.db, permService),
-		ConditionSets:     services.NewConditionSetApplicationService(s.db, permService),
-		Governance:        governanceApplication,
-		Actions:           actionApplication,
-		TestManagement:    services.NewTestManagementApplicationService(s.db, permService),
-		Assets:            assetApplication,
-		ItemApplication:   itemApplication,
-		ItemDetail:        itemDetailApplication,
-		ItemLifecycle:     services.NewItemLifecycleService(s.db, permService),
-		TicketImport:      services.NewTicketImportService(s.db, permService, cfg.AttachmentPath),
-		SessionMiddleware: authMiddleware.OptionalAuth,
-		SearchAllowed:     s.searchLimiter.AllowRequest,
-		DBRequestTimeout:  s.config.DB.RequestTimeout,
-		CORS:              v2.NewCORS(csrfOrigins, cfg.DisableCSRF, !cfg.DisableCSRF),
-		CSRF:              v2CSRF,
-		Concurrency:       s.userConcurrency,
+		PackApply:                    packApplyService,
+		WorkspaceBundleImport:        workspaceBundleImportService,
+		StoryPointRollup:             repository.NewItemRepository(s.db),
+		HierarchyLevels:              hierarchyLevelEnumService,
+		Workspaces:                   workspaceAppService,
+		ItemTemplates:                services.NewItemTemplateApplicationService(s.db, v2Access),
+		Labels:                       services.NewLabelApplicationService(s.db),
+		Items:                        repository.NewItemRepository(s.db),
+		Access:                       v2Access,
+		Preferences:                  userPreferencesService,
+		Recurrence:                   recurrenceService,
+		ItemDiagrams:                 itemDiagramService,
+		Pages:                        pageService,
+		PageApplication:              pageApplication,
+		PageDiagrams:                 pageDiagramService,
+		PageAccess:                   pagePermissionService,
+		PageLabels:                   pageLabelService,
+		PagePublication:              knowledgePublication,
+		Worklogs:                     timeWorklogService,
+		TimeAccess:                   timePermissionService,
+		TimeProjects:                 services.NewTimeProjectApplicationService(s.db, timePermissionService, v2Access),
+		Timers:                       timerService,
+		SystemAdmins:                 permService,
+		GlobalPermission:             permService,
+		Groups:                       groupHandler.Application(),
+		AdminUsers:                   services.NewUserReadService(s.db),
+		AuditLogs:                    repository.NewAuditLogRepository(s.db),
+		AdminTokens:                  tokenManager,
+		AdminAuditor:                 logger.NewAuditor(s.db),
+		AdminTranslations:            objectTranslationService,
+		Comments:                     commentService,
+		CommentAccess:                permService,
+		Attachments:                  services.NewItemAttachmentService(s.db, cfg.AttachmentPath, permService),
+		PageAttachments:              services.NewPageAttachmentUploadService(s.db, cfg.AttachmentPath, permService, pagePermissionService),
+		Collections:                  services.NewCollectionApplicationService(s.db, permService),
+		Planning:                     planningApplication,
+		Links:                        itemLinkService,
+		AgentRuns:                    agentRunApplication,
+		AgentSkills:                  services.NewAgentSkillApplicationService(s.db, permService),
+		ConditionSets:                services.NewConditionSetApplicationService(s.db, permService),
+		Governance:                   governanceApplication,
+		Actions:                      actionApplication,
+		TestManagement:               services.NewTestManagementApplicationService(s.db, permService),
+		Assets:                       assetApplication,
+		ItemApplication:              itemApplication,
+		ItemDetail:                   itemDetailApplication,
+		ItemLifecycle:                services.NewItemLifecycleService(s.db, permService),
+		TicketImport:                 services.NewTicketImportService(s.db, permService, cfg.AttachmentPath),
+		SessionMiddleware:            authMiddleware.OptionalAuth,
+		SearchAllowed:                s.searchLimiter.AllowRequest,
+		DBRequestTimeout:             s.config.DB.RequestTimeout,
+		CORS:                         v2.NewCORS(csrfOrigins, cfg.DisableCSRF, !cfg.DisableCSRF),
+		CSRF:                         v2CSRF,
+		Concurrency:                  s.userConcurrency,
 	}); err != nil {
 		return fmt.Errorf("register REST API v2: %w", err)
 	}
