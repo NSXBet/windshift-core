@@ -400,13 +400,19 @@ func (c *Calendar) holidaySeconds(start, end time.Time) time.Duration {
 // transitions in [start, end). A working interval that spans a transition
 // contains one hour less real time on a spring-forward and one hour more on a
 // fall-back. Transitions are found by sampling every seven days and binary
-// searching; modern zones have at most two transitions a year.
+// searching; modern zones have at most two transitions a year. The final
+// sample is clamped to end so a transition in the trailing partial week is
+// not missed.
 func (c *Calendar) dstAdjustment(start, end time.Time) time.Duration {
 	const step = 7 * 24 * time.Hour
 	var total time.Duration
 	cursor := start
 	_, previousOffset := cursor.In(c.location).Zone()
-	for next := cursor.Add(step); next.Before(end); next = next.Add(step) {
+	for cursor.Before(end) {
+		next := cursor.Add(step)
+		if next.After(end) {
+			next = end
+		}
 		_, offset := next.In(c.location).Zone()
 		if offset != previousOffset {
 			lo, hi := cursor, next
@@ -422,9 +428,9 @@ func (c *Calendar) dstAdjustment(start, end time.Time) time.Duration {
 			if c.WithinCalendarHours(hi.Add(-time.Second)) && c.WithinCalendarHours(hi) {
 				total -= delta
 			}
+			previousOffset = offset
 		}
 		cursor = next
-		previousOffset = offset
 	}
 	return total
 }
