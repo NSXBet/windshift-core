@@ -11,6 +11,7 @@ import (
 	"windshift/internal/database"
 	"windshift/internal/itemevents"
 	"windshift/internal/models"
+	"windshift/internal/repository"
 )
 
 // DefaultRecalcPageSize is the number of items reconciled per transaction.
@@ -124,7 +125,7 @@ func (e *Engine) reconcileMetric(ctx context.Context, tx database.Tx, config *co
 	}
 	switch {
 	case cycle.Paused && !pause:
-		if err := e.resumeCycle(ctx, tx, config, metric, workspaceID, cycle, effective); err != nil {
+		if err := e.resumeCycle(ctx, tx, config, metric, workspaceID, cycle, target, effective); err != nil {
 			return err
 		}
 	case !cycle.Paused && pause:
@@ -212,6 +213,66 @@ func (e *Engine) recalcMetricPageTx(ctx context.Context, tx database.Tx, metricI
 		return "", true, nil
 	}
 	return strconv.Itoa(ids[len(ids)-1]), false, nil
+}
+
+func (e *Engine) recalcCalendarPageTx(ctx context.Context, tx database.Tx, metricID, calendarID int, cursor int64, pageSize int) (nextCursor int64, complete bool, err error) {
+	metric, err := e.repo.GetMetric(ctx, metricID)
+	if err != nil {
+		return 0, false, err
+	}
+	ids, err := e.repo.OngoingCycleIDsForCalendarTx(ctx, tx, metricID, calendarID, cursor, pageSize)
+	if err != nil {
+		return 0, false, err
+	}
+	if len(ids) == 0 {
+		return 0, true, nil
+	}
+	generations, err := e.repo.GenerationsForWorkspacesTx(ctx, tx, []int{metric.WorkspaceID})
+	if err != nil {
+		return 0, false, err
+	}
+	generation, ok := generations[metric.WorkspaceID]
+	if !ok {
+		return 0, true, nil
+	}
+	config, err := e.configuration(ctx, metric.WorkspaceID, generation)
+	if err != nil {
+		return 0, false, err
+	}
+	compiledMetric := config.metricsByID[metric.ID]
+	if compiledMetric == nil {
+		return 0, true, nil
+	}
+	effectiveAt := e.clock.Now()
+	for _, id := range ids {
+		cycle, err := e.repo.GetCycleForUpdate(ctx, tx, id)
+		if errors.Is(err, repository.ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			return 0, false, err
+		}
+		if cycle.Status != models.SLACycleOngoing || cycle.Paused || cycle.CalendarID == nil || *cycle.CalendarID != calendarID {
+			continue
+		}
+		resolved, err := e.resolveGoals(ctx, tx, config, compiledMetric, []int{cycle.ItemID}, effectiveAt)
+		if err != nil {
+			return 0, false, err
+		}
+		if err := e.advanceCycle(config, cycle, effectiveAt); err != nil {
+			return 0, false, err
+		}
+		if err := e.reGoalCycle(ctx, tx, config, compiledMetric, metric.WorkspaceID, cycle, resolved[cycle.ItemID], effectiveAt); err != nil {
+			return 0, false, err
+		}
+		if err := e.repo.UpdateCycle(ctx, tx, cycle); err != nil {
+			return 0, false, err
+		}
+		if err := e.syncCycleJobs(ctx, tx, config, compiledMetric, cycle, effectiveAt); err != nil {
+			return 0, false, err
+		}
+	}
+	return ids[len(ids)-1], false, nil
 }
 
 func loadItemSnapshotTx(ctx context.Context, tx database.Tx, itemID int) (itemevents.ItemSnapshot, error) {

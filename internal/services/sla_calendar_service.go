@@ -102,14 +102,8 @@ func (s *SLACalendarService) UpdateWorkspace(ctx context.Context, workspaceID, c
 	}
 	calendar.ID = calendarID
 	calendar.WorkspaceID = &workspaceID
-	if err := s.repo.UpdateCalendar(ctx, calendar); err != nil {
+	if err := s.updateCalendar(ctx, calendar, input.ApplyToOngoing); err != nil {
 		return nil, err
-	}
-	s.engine.InvalidateWorkspace(workspaceID)
-	if input.ApplyToOngoing {
-		if err := s.recalculateWorkspace(ctx, workspaceID); err != nil {
-			return nil, err
-		}
 	}
 	return calendar, nil
 }
@@ -161,38 +155,50 @@ func (s *SLACalendarService) UpdateTeam(ctx context.Context, teamID, calendarID 
 	}
 	calendar.ID = calendarID
 	calendar.TeamID = &teamID
-	if err := s.repo.UpdateCalendar(ctx, calendar); err != nil {
+	if err := s.updateCalendar(ctx, calendar, input.ApplyToOngoing); err != nil {
 		return nil, err
-	}
-	if input.ApplyToOngoing {
-		if err := s.recalculateCalendar(ctx, calendarID); err != nil {
-			return nil, err
-		}
 	}
 	return calendar, nil
 }
 
 // recalculateCalendar enqueues recalculation for every metric that targets the
 // calendar, across all bound workspaces.
-func (s *SLACalendarService) recalculateCalendar(ctx context.Context, calendarID int) error {
-	metricIDs, err := s.repo.MetricIDsReferencingCalendar(ctx, calendarID)
-	if err != nil {
-		return err
-	}
-	if len(metricIDs) == 0 {
-		return nil
-	}
-	now := time.Now().UTC()
-	err = database.WithTx(s.db, func(tx database.Tx) error {
+func (s *SLACalendarService) updateCalendar(ctx context.Context, calendar *models.WorkingCalendar, applyToOngoing bool) error {
+	queued := false
+	err := database.WithTx(s.db, func(tx database.Tx) error {
+		if err := s.repo.UpdateCalendarTx(ctx, tx, calendar); err != nil {
+			return err
+		}
+		workspaceIDs, err := s.repo.WorkspaceIDsForCalendarTx(ctx, tx, calendar.ID)
+		if err != nil {
+			return err
+		}
+		for _, workspaceID := range workspaceIDs {
+			if s.engine != nil {
+				if _, err := s.engine.BumpConfigGeneration(ctx, tx, workspaceID); err != nil {
+					return err
+				}
+			}
+		}
+		if !applyToOngoing {
+			return nil
+		}
+		metricIDs, err := s.repo.MetricIDsReferencingCalendarTx(ctx, tx, calendar.ID)
+		if err != nil {
+			return err
+		}
 		for _, id := range metricIDs {
-			metric := id
-			if err := s.repo.UpsertJob(ctx, tx, &models.SLAJob{Kind: models.SLAJobRecalcMetric, MetricID: &metric, DueAt: now}); err != nil {
+			metricID := id
+			if err := s.repo.UpsertJob(ctx, tx, &models.SLAJob{
+				Kind: models.SLAJobRecalcCalendar, ThresholdKey: fmt.Sprintf("%d", calendar.ID), MetricID: &metricID, DueAt: time.Now().UTC(),
+			}); err != nil {
 				return err
 			}
+			queued = true
 		}
 		return nil
 	})
-	if err == nil && s.engine != nil {
+	if err == nil && queued && s.engine != nil {
 		s.engine.Wake()
 	}
 	return err
@@ -317,28 +323,4 @@ func buildSLACalendar(input SLACalendarInput) (*models.WorkingCalendar, error) {
 		Holidays:        holidays,
 		IsDefault:       input.IsDefault,
 	}, nil
-}
-
-func (s *SLACalendarService) recalculateWorkspace(ctx context.Context, workspaceID int) error {
-	metrics, err := s.repo.ListMetrics(ctx, workspaceID)
-	if err != nil {
-		return err
-	}
-	if len(metrics) == 0 {
-		return nil
-	}
-	now := time.Now().UTC()
-	err = database.WithTx(s.db, func(tx database.Tx) error {
-		for _, metric := range metrics {
-			metricID := metric.ID
-			if err := s.repo.UpsertJob(ctx, tx, &models.SLAJob{Kind: models.SLAJobRecalcMetric, MetricID: &metricID, DueAt: now}); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-	if err == nil && s.engine != nil {
-		s.engine.Wake()
-	}
-	return err
 }

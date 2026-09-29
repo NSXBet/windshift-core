@@ -18,13 +18,20 @@ import (
 
 // PortalService encapsulates database logic for portal requests
 type PortalService struct {
-	db    database.Database
-	items *repository.ItemRepository
+	db       database.Database
+	items    *repository.ItemRepository
+	comments *CommentService
 }
 
 // NewPortalService creates a new PortalService
 func NewPortalService(db database.Database) *PortalService {
 	return &PortalService{db: db, items: repository.NewItemRepository(db)}
+}
+
+// SetCommentService wires the application comment service so portal replies
+// run the standard side-effect pipeline (notifications, mentions, webhooks).
+func (s *PortalService) SetCommentService(cs *CommentService) {
+	s.comments = cs
 }
 
 // GetCustomerIDForUser returns the portal customer linked to an internal user.
@@ -99,21 +106,26 @@ func (s *PortalService) CreateRequestComment(ctx context.Context, itemID int, co
 	now := time.Now()
 	out := &CreatedPortalComment{ItemID: itemID, Content: content, CreatedAt: now, UpdatedAt: now}
 
-	// Route through CommentService — the single comment-write chokepoint, which
-	// publishes the item-change (WI-483). Portal request comments stay silent
-	// (no internal notifications/webhooks), matching prior behavior.
+	// Route through the wired CommentService — the single comment-write
+	// chokepoint — so customer replies notify assignee, creator, and watchers
+	// and dispatch comment webhooks. The email reply consumer skips
+	// portal-customer authors, so customers never receive an echo of their own
+	// reply. Use a bare service only when the caller did not wire one (tests).
+	commentService := s.comments
+	if commentService == nil {
+		commentService = NewCommentService(s.db)
+	}
 	params := CreateCommentParams{
-		ItemID:                itemID,
-		Content:               content,
-		CreatedAt:             &now,
-		SuppressNotifications: true,
+		ItemID:    itemID,
+		Content:   content,
+		CreatedAt: &now,
 	}
 	if internalUserID != nil {
 		params.AuthorID = *internalUserID
 	} else if portalCustomerID != nil {
 		params.PortalCustomerID = portalCustomerID
 	}
-	res, err := NewCommentService(s.db).Create(params)
+	res, err := commentService.Create(params)
 	if err != nil {
 		return nil, err
 	}

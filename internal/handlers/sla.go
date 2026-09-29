@@ -720,6 +720,10 @@ func (h *SLAHandler) StartRecalculation(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	enqueued, err := h.metrics.EnqueueRecalculation(r.Context(), workspaceID, request.MetricID)
+	if errors.Is(err, repository.ErrNotFound) {
+		respondNotFound(w, r, "metric")
+		return
+	}
 	if err != nil {
 		respondError(w, r, slaInternal(err))
 		return

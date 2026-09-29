@@ -1,7 +1,8 @@
 <script>
+  import { useEventListener } from 'runed';
   import Lozenge from '../../components/Lozenge.svelte';
   import { t } from '../../stores/i18n.svelte.js';
-  import { formatDate } from '../../utils/dateFormatter.js';
+  import { formatInstant } from '../../utils/dateFormatter.js';
   import { getItemSLA, getSLAThresholds } from './slaState.js';
 
   let { itemId = null, workspaceId = null } = $props();
@@ -9,21 +10,29 @@
   let states = $state([]);
   let thresholds = $state([]);
   let loaded = $state(false);
+  let requestGeneration = 0;
+
+  async function load(id, workspace) {
+    if (!id) return;
+    const generation = ++requestGeneration;
+    loaded = false;
+    const [stateList, thresholdList] = await Promise.all([getItemSLA(id), getSLAThresholds(workspace)]);
+    if (generation !== requestGeneration) return;
+    states = stateList ?? [];
+    thresholds = thresholdList ?? [];
+    loaded = true;
+  }
 
   $effect(() => {
     const id = itemId;
-    if (!id) return;
-    let active = true;
-    Promise.all([getItemSLA(id), getSLAThresholds(workspaceId)]).then(([stateList, thresholdList]) => {
-      if (!active) return;
-      states = stateList ?? [];
-      thresholds = thresholdList ?? [];
-      loaded = true;
-    });
+    const workspace = workspaceId;
+    void load(id, workspace);
     return () => {
-      active = false;
+      requestGeneration++;
     };
   });
+
+  useEventListener(() => window, 'refresh-work-items', () => void load(itemId, workspaceId));
 
   function formatDuration(ms) {
     if (ms == null) return '';
@@ -48,7 +57,17 @@
         threshold.is_active !== false && (threshold.metric_id == null || threshold.metric_id === metricId)
     );
     if (applicable.length === 0) return null;
-    return Math.max(...applicable.map((threshold) => threshold.percent));
+    return Math.min(...applicable.map((threshold) => threshold.percent));
+  }
+
+  function formatDeadline(cycle) {
+    return formatInstant(cycle.next_deadline_at, cycle.calendar_timezone || 'UTC', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
   }
 
   // Pick the single worst ongoing cycle so a row never shows more than one badge.
@@ -59,19 +78,21 @@
       if (!cycle) continue;
       const breached = !!cycle.breached;
       const paused = !!cycle.paused;
+      const outsideHours = !paused && cycle.within_calendar_hours === false;
       const percent = warningPercentFor(state.metric_id);
       const warning =
         !breached &&
         percent != null &&
         cycle.goal_duration_ms > 0 &&
         cycle.elapsed_ms >= (cycle.goal_duration_ms * percent) / 100;
-      const rank = breached ? 3 : paused ? 2 : warning ? 1 : 0;
+      const rank = breached ? 4 : paused ? 3 : warning ? 2 : outsideHours ? 1 : 0;
       if (!result || rank > result.rank) {
         result = {
           rank,
           breached,
           paused,
           warning,
+          outsideHours,
           displayFormat: state.display_format,
           cycle,
         };
@@ -88,9 +109,11 @@
     <Lozenge color="yellow" text={t('items.sla.paused')} />
   {:else if signal.warning}
     <Lozenge color="yellow" text={t('items.sla.warning')} />
+  {:else if signal.outsideHours}
+    <Lozenge color="blue" text={t('items.sla.outsideHours')} />
   {:else if signal.displayFormat === 'due_date' && signal.cycle.next_deadline_at}
     <span class="text-xs" style="color: var(--ds-text-subtle)">
-      {t('items.sla.dueOn', { date: formatDate(signal.cycle.next_deadline_at) })}
+      {t('items.sla.dueOn', { date: formatDeadline(signal.cycle) })}
     </span>
   {:else if signal.cycle.remaining_ms != null}
     <span class="text-xs" style="color: var(--ds-text-subtle)">

@@ -8,6 +8,7 @@
 package sla
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -30,6 +31,10 @@ func Derive(cycle *models.ItemSLACycle, now time.Time) (models.DerivedSLACycle, 
 		Paused:         cycle.PauseStartedAt != nil,
 		PauseStartedAt: cycle.PauseStartedAt,
 		NextDeadlineAt: cycle.NextDeadlineAt,
+	}
+	var calendar businesstime.RawCalendar
+	if err := json.Unmarshal(cycle.CalendarSnapshot, &calendar); err == nil {
+		derived.CalendarTimezone = calendar.Timezone
 	}
 
 	elapsed := time.Duration(cycle.ElapsedMs) * time.Millisecond

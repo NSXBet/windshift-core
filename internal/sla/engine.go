@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"strings"
 	"time"
 
 	"windshift/internal/businesstime"
+	"windshift/internal/cql"
 	"windshift/internal/database"
 	"windshift/internal/events"
 	"windshift/internal/itemevents"
@@ -271,6 +273,29 @@ func (e *Engine) evaluateWorkspace(ctx context.Context, tx database.Tx, workspac
 	return nil
 }
 
+func (e *Engine) ValidateGoalQL(ctx context.Context, workspaceID int, query string) error {
+	ast, err := parseQLL(query)
+	if err != nil {
+		return err
+	}
+	workspaceKey, err := e.repo.WorkspaceKey(ctx, workspaceID)
+	if err != nil {
+		return err
+	}
+	customFields, err := e.items.GetCQLCustomFieldMapContext(ctx)
+	if err != nil {
+		return err
+	}
+	workspaceMap := map[string]int{}
+	if workspaceKey != "" {
+		workspaceMap[strings.ToLower(workspaceKey)] = workspaceID
+	}
+	generator := cql.NewSQLGenerator(workspaceMap, customFields, e.db.GetDriverName())
+	generator.EnableLegacyCustomFieldNameFallback()
+	_, _, err = generator.GenerateSQLAt(ast, e.clock.Now())
+	return err
+}
+
 func (e *Engine) configuration(ctx context.Context, workspaceID, generation int) (*compiledConfig, error) {
 	if config, ok := e.cache.get(workspaceID, generation); ok {
 		return config, nil
@@ -312,7 +337,7 @@ func (e *Engine) applyFact(ctx context.Context, tx database.Tx, config *compiled
 
 	switch {
 	case cycle.Paused && metric.pauseRelevant(fact) && !pause:
-		if err := e.resumeCycle(ctx, tx, config, metric, workspaceID, cycle, effective); err != nil {
+		if err := e.resumeCycle(ctx, tx, config, metric, workspaceID, cycle, target, effective); err != nil {
 			return nil, err
 		}
 	case !cycle.Paused && metric.pauseRelevant(fact) && pause:
@@ -435,10 +460,14 @@ func (e *Engine) pauseCycle(ctx context.Context, tx database.Tx, workspaceID int
 	return e.appendLifecycle(ctx, tx, workspaceID, cycle, eventPaused, effective)
 }
 
-func (e *Engine) resumeCycle(ctx context.Context, tx database.Tx, config *compiledConfig, metric *compiledMetric, workspaceID int, cycle *models.ItemSLACycle, effective time.Time) error {
+func (e *Engine) resumeCycle(ctx context.Context, tx database.Tx, config *compiledConfig, metric *compiledMetric, workspaceID int, cycle *models.ItemSLACycle, target goalTarget, effective time.Time) error {
 	cycle.Paused = false
 	cycle.PauseStartedAt = nil
+	cycle.RemainingAtPauseMs = nil
 	e.armDeadline(config, cycle, effective)
+	if err := e.reGoalCycle(ctx, tx, config, metric, workspaceID, cycle, target, effective); err != nil {
+		return err
+	}
 	if err := e.repo.UpdateCycle(ctx, tx, cycle); err != nil {
 		return err
 	}
@@ -452,14 +481,30 @@ func (e *Engine) resumeCycle(ctx context.Context, tx database.Tx, config *compil
 // deadline ("freeze and forward"). Completed cycles are never regoaled.
 func (e *Engine) reGoalCycle(ctx context.Context, tx database.Tx, config *compiledConfig, metric *compiledMetric, workspaceID int, cycle *models.ItemSLACycle, target goalTarget, effective time.Time) error {
 	newGoalID := (*int)(nil)
+	newDurationMs := int64(0)
+	newCalendarID := (*int)(nil)
+	newCalendarSnapshot := json.RawMessage(nil)
 	if target.matched && target.target != nil {
 		goalID := target.goalID
+		calendarID := target.target.CalendarID
 		newGoalID = &goalID
+		newCalendarID = &calendarID
+		newDurationMs = target.target.TargetMs
+		if calendar := config.calendars[calendarID]; calendar != nil {
+			if encoded, err := json.Marshal(calendar.raw); err == nil {
+				newCalendarSnapshot = encoded
+			}
+		}
 	}
-	if equalOptionalInt(cycle.GoalID, newGoalID) && target.query == cycle.GoalQuerySnapshot {
+	changed := !equalOptionalInt(cycle.GoalID, newGoalID) || target.query != cycle.GoalQuerySnapshot || cycle.GoalDurationMs != newDurationMs || !equalOptionalInt(cycle.CalendarID, newCalendarID)
+	if len(newCalendarSnapshot) > 0 && string(newCalendarSnapshot) != string(cycle.CalendarSnapshot) {
+		changed = true
+	}
+	if !changed {
 		return nil
 	}
 	e.applyTarget(cycle, config, target, effective)
+	cycle.GoalQuerySnapshot = target.query
 	if err := e.syncCycleJobs(ctx, tx, config, metric, cycle, effective); err != nil {
 		return err
 	}
@@ -471,11 +516,15 @@ func (e *Engine) reGoalCycle(ctx context.Context, tx database.Tx, config *compil
 func (e *Engine) applyTarget(cycle *models.ItemSLACycle, config *compiledConfig, target goalTarget, effective time.Time) {
 	if !target.matched || target.target == nil {
 		cycle.GoalID = nil
+		cycle.CalendarID = nil
 		cycle.GoalDurationMs = 0
 		cycle.RemainingMs = 0
 		cycle.NextDeadlineAt = nil
 		cycle.BreachTime = nil
 		cycle.BreachedAt = nil
+		cycle.CalendarSnapshot = defaultCalendarSnapshot()
+		cycle.WithinCalendarHours = false
+		cycle.GoalQuerySnapshot = target.query
 		return
 	}
 	goalID := target.goalID

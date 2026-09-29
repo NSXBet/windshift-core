@@ -25,10 +25,11 @@ const (
 
 // SLA job kinds.
 const (
-	SLAJobBreach       = "breach"
-	SLAJobWarning      = "warning"
-	SLAJobRecalcItem   = "recalc_item"
-	SLAJobRecalcMetric = "recalc_metric"
+	SLAJobBreach         = "breach"
+	SLAJobWarning        = "warning"
+	SLAJobRecalcItem     = "recalc_item"
+	SLAJobRecalcMetric   = "recalc_metric"
+	SLAJobRecalcCalendar = "recalc_calendar"
 )
 
 // TeamWorkspaceBinding authorizes a workspace to reference a team's service
@@ -110,15 +111,16 @@ type SLAGoal struct {
 
 // SLAGoalTarget is a priority-scoped or fallback duration target.
 type SLAGoalTarget struct {
-	ID            int     `json:"id"`
-	GoalID        int     `json:"goal_id"`
-	Position      int     `json:"position"`
-	PriorityID    *int    `json:"priority_id,omitempty"`
-	IsFallback    bool    `json:"is_fallback"`
-	TargetMs      int64   `json:"target_ms"`
-	CalendarID    int     `json:"calendar_id"`
-	SourceID      *string `json:"source_id,omitempty"`
-	SourcePayload *string `json:"source_payload,omitempty"`
+	ID               int     `json:"id"`
+	GoalID           int     `json:"goal_id"`
+	Position         int     `json:"position"`
+	PriorityID       *int    `json:"priority_id,omitempty"`
+	IsFallback       bool    `json:"is_fallback"`
+	TargetMs         int64   `json:"target_ms"`
+	CalendarID       int     `json:"calendar_id"`
+	SourceID         *string `json:"source_id,omitempty"`
+	SourcePayload    *string `json:"source_payload,omitempty"`
+	CalendarSourceID string  `json:"-"`
 }
 
 // SLAWorkspaceState tracks the configuration generation for a workspace.
@@ -196,6 +198,7 @@ type DerivedSLACycle struct {
 	WithinCalendarHours bool         `json:"within_calendar_hours"`
 	PauseStartedAt      *time.Time   `json:"pause_started_at,omitempty"`
 	NextDeadlineAt      *time.Time   `json:"next_deadline_at,omitempty"`
+	CalendarTimezone    string       `json:"calendar_timezone,omitempty"`
 	Coverage            *SLACoverage `json:"coverage,omitempty"`
 }
 

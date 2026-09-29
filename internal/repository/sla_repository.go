@@ -125,8 +125,9 @@ func collectCalendars(rows *sql.Rows) ([]models.WorkingCalendar, error) {
 // MetricIDsReferencingCalendar returns the metrics whose goals target the
 // calendar. It is the recalculation set for a calendar edit that applies to
 // ongoing cycles.
-func (r *SLARepository) MetricIDsReferencingCalendar(ctx context.Context, calendarID int) ([]int, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT DISTINCT m.id
+
+func (r *SLARepository) MetricIDsReferencingCalendarTx(ctx context.Context, tx database.Tx, calendarID int) ([]int, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT DISTINCT m.id
 		FROM sla_metrics m
 		JOIN sla_goals g ON g.metric_id = m.id
 		JOIN sla_goal_targets t ON t.goal_id = g.id
@@ -245,6 +246,16 @@ func (r *SLARepository) ItemIDByWorkspaceNumber(ctx context.Context, workspaceID
 		return 0, fmt.Errorf("resolve item number: %w", err)
 	}
 	return id, nil
+}
+
+// ItemBelongsToWorkspace reports whether an item is owned by the workspace.
+func (r *SLARepository) ItemBelongsToWorkspace(ctx context.Context, workspaceID, itemID int) (bool, error) {
+	var belongs bool
+	err := r.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM items WHERE id = ? AND workspace_id = ?)`, itemID, workspaceID).Scan(&belongs)
+	if err != nil {
+		return false, fmt.Errorf("check item workspace: %w", err)
+	}
+	return belongs, nil
 }
 
 // PriorityIDByName resolves a priority by its display name.
@@ -520,29 +531,35 @@ func scanTeamWorkspaceBinding(row rowScanner) (*models.TeamWorkspaceBinding, err
 // target still references one of the team's calendars, so a promise can never
 // depend on an unauthorized calendar.
 func (r *SLARepository) DeleteTeamWorkspaceBinding(ctx context.Context, workspaceID, bindingID int) error {
-	var teamID int
-	if err := r.db.QueryRowContext(ctx, `SELECT team_id FROM team_workspace_bindings WHERE id = ? AND workspace_id = ?`, bindingID, workspaceID).Scan(&teamID); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return ErrNotFound
+	return database.WithTx(r.db, func(tx database.Tx) error {
+		query := `SELECT team_id FROM team_workspace_bindings WHERE id = ? AND workspace_id = ?`
+		if database.IsPostgresDriver(r.db.GetDriverName()) {
+			query += ` FOR UPDATE`
 		}
-		return fmt.Errorf("load binding: %w", err)
-	}
-	var targets int
-	if err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sla_goal_targets t
-		JOIN working_calendars c ON c.id = t.calendar_id
-		JOIN sla_goals g ON g.id = t.goal_id
-		JOIN sla_metrics m ON m.id = g.metric_id
-		WHERE c.team_id = ? AND m.workspace_id = ?`, teamID, workspaceID).Scan(&targets); err != nil {
-		return fmt.Errorf("count binding targets: %w", err)
-	}
-	if targets > 0 {
-		return fmt.Errorf("%w: %d SLA goal target(s) still reference this team's calendars", ErrSLAInUse, targets)
-	}
-	result, err := r.db.ExecContext(ctx, `DELETE FROM team_workspace_bindings WHERE id = ?`, bindingID)
-	if err != nil {
-		return fmt.Errorf("delete binding: %w", err)
-	}
-	return requireAffected(result)
+		var teamID int
+		if err := tx.QueryRowContext(ctx, query, bindingID, workspaceID).Scan(&teamID); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return ErrNotFound
+			}
+			return fmt.Errorf("load binding: %w", err)
+		}
+		var targets int
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM sla_goal_targets t
+			JOIN working_calendars c ON c.id = t.calendar_id
+			JOIN sla_goals g ON g.id = t.goal_id
+			JOIN sla_metrics m ON m.id = g.metric_id
+			WHERE c.team_id = ? AND m.workspace_id = ?`, teamID, workspaceID).Scan(&targets); err != nil {
+			return fmt.Errorf("count binding targets: %w", err)
+		}
+		if targets > 0 {
+			return fmt.Errorf("%w: %d SLA goal target(s) still reference this team's calendars", ErrSLAInUse, targets)
+		}
+		result, err := tx.ExecContext(ctx, `DELETE FROM team_workspace_bindings WHERE id = ?`, bindingID)
+		if err != nil {
+			return fmt.Errorf("delete binding: %w", err)
+		}
+		return requireAffected(result)
+	})
 }
 
 // ListBoundTeamIDs returns the teams bound to a workspace.
@@ -563,6 +580,27 @@ func (r *SLARepository) ListBoundTeamIDs(ctx context.Context, workspaceID int) (
 	return ids, rows.Err()
 }
 
+func (r *SLARepository) WorkspaceIDsForCalendarTx(ctx context.Context, tx database.Tx, calendarID int) ([]int, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT workspace_id FROM working_calendars WHERE id = ? AND workspace_id IS NOT NULL
+		UNION
+		SELECT b.workspace_id FROM team_workspace_bindings b
+		JOIN working_calendars c ON c.team_id = b.team_id
+		WHERE c.id = ? ORDER BY workspace_id`, calendarID, calendarID)
+	if err != nil {
+		return nil, fmt.Errorf("list calendar workspaces: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var workspaceIDs []int
+	for rows.Next() {
+		var workspaceID int
+		if err := rows.Scan(&workspaceID); err != nil {
+			return nil, fmt.Errorf("scan calendar workspace: %w", err)
+		}
+		workspaceIDs = append(workspaceIDs, workspaceID)
+	}
+	return workspaceIDs, rows.Err()
+}
+
 // CalendarAccessibleToWorkspace reports whether a workspace may reference a
 // calendar: it owns it, or a bound team owns it.
 func (r *SLARepository) CalendarAccessibleToWorkspace(ctx context.Context, workspaceID, calendarID int) (bool, error) {
@@ -577,6 +615,35 @@ func (r *SLARepository) CalendarAccessibleToWorkspace(ctx context.Context, works
 		return false, fmt.Errorf("check calendar access: %w", err)
 	}
 	return accessible, nil
+}
+
+func (r *SLARepository) CalendarAccessibleToWorkspaceTx(ctx context.Context, tx database.Tx, workspaceID, calendarID int) (bool, error) {
+	var ownerWorkspaceID, teamID sql.NullInt64
+	if err := tx.QueryRowContext(ctx, `SELECT workspace_id, team_id FROM working_calendars WHERE id = ?`, calendarID).Scan(&ownerWorkspaceID, &teamID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, fmt.Errorf("load calendar owner: %w", err)
+	}
+	if ownerWorkspaceID.Valid && int(ownerWorkspaceID.Int64) == workspaceID {
+		return true, nil
+	}
+	if !teamID.Valid {
+		return false, nil
+	}
+	query := `SELECT 1 FROM team_workspace_bindings WHERE team_id = ? AND workspace_id = ?`
+	if database.IsPostgresDriver(r.db.GetDriverName()) {
+		query += ` FOR KEY SHARE`
+	}
+	var found int
+	err := tx.QueryRowContext(ctx, query, int(teamID.Int64), workspaceID).Scan(&found)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("lock calendar binding: %w", err)
+	}
+	return true, nil
 }
 
 // CompletedCycleCoverage is one completed cycle's stored scheduling snapshot
@@ -1257,6 +1324,46 @@ func (r *SLARepository) GetCycle(ctx context.Context, cycleID int64) (*models.It
 	return &cycle, nil
 }
 
+func (r *SLARepository) OngoingCycleIDsForCalendarTx(ctx context.Context, tx database.Tx, metricID, calendarID int, afterID int64, limit int) ([]int64, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT id FROM item_sla_cycles
+		WHERE metric_id = ? AND calendar_id = ? AND status = 'ongoing' AND paused = false AND id > ?
+		ORDER BY id LIMIT ?`, metricID, calendarID, afterID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("page ongoing calendar cycles: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan ongoing calendar cycle ID: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+func (r *SLARepository) LockItemForCycle(ctx context.Context, tx database.Tx, cycleID int64) error {
+	var itemID int
+	if err := tx.QueryRowContext(ctx, `SELECT item_id FROM item_sla_cycles WHERE id = ?`, cycleID).Scan(&itemID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		return fmt.Errorf("load cycle item: %w", err)
+	}
+	query := `SELECT id FROM items WHERE id = ?`
+	if database.IsPostgresDriver(r.db.GetDriverName()) {
+		query += ` FOR UPDATE`
+	}
+	if err := tx.QueryRowContext(ctx, query, itemID).Scan(&itemID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		return fmt.Errorf("lock cycle item: %w", err)
+	}
+	return nil
+}
+
 // GetCycleForUpdate loads a cycle under a row lock inside the caller's
 // transaction, ordering job execution with inline evaluation.
 func (r *SLARepository) GetCycleForUpdate(ctx context.Context, tx database.Tx, cycleID int64) (*models.ItemSLACycle, error) {
@@ -1312,15 +1419,15 @@ func (r *SLARepository) InsertCycle(ctx context.Context, tx database.Tx, cycle *
 // UpdateCycle persists all mutable cycle fields in the caller's transaction.
 func (r *SLARepository) UpdateCycle(ctx context.Context, tx database.Tx, cycle *models.ItemSLACycle) error {
 	result, err := tx.ExecContext(ctx, `UPDATE item_sla_cycles SET
-		goal_id = ?, calendar_id = ?, status = ?, stopped_at = ?, breach_time = ?, goal_duration_ms = ?,
+		item_id = ?, metric_id = ?, cycle_no = ?, goal_id = ?, calendar_id = ?, status = ?, stopped_at = ?, breach_time = ?, goal_duration_ms = ?,
 		elapsed_ms = ?, remaining_ms = ?, paused = ?, within_calendar_hours = ?, breached = ?,
 		pause_started_at = ?, next_deadline_at = ?, last_calculated_at = ?, remaining_at_pause_ms = ?,
-		breached_at = ?, origin = ?, abandon_reason = ?, calendar_snapshot = ?, goal_query_snapshot = ?, source_id = ?, updated_at = CURRENT_TIMESTAMP
+		breached_at = ?, origin = ?, abandon_reason = ?, calendar_snapshot = ?, goal_query_snapshot = ?, source_id = ?, source_payload = ?, updated_at = CURRENT_TIMESTAMP
 		WHERE id = ?`,
-		nullableInt(cycle.GoalID), nullableInt(cycle.CalendarID), cycle.Status, cycle.StoppedAt, cycle.BreachTime,
+		cycle.ItemID, cycle.MetricID, cycle.CycleNo, nullableInt(cycle.GoalID), nullableInt(cycle.CalendarID), cycle.Status, cycle.StoppedAt, cycle.BreachTime,
 		cycle.GoalDurationMs, cycle.ElapsedMs, cycle.RemainingMs, cycle.Paused, cycle.WithinCalendarHours,
 		cycle.Breached, cycle.PauseStartedAt, cycle.NextDeadlineAt, cycle.LastCalculatedAt, cycle.RemainingAtPauseMs,
-		cycle.BreachedAt, cycle.Origin, cycle.AbandonReason, string(cycle.CalendarSnapshot), cycle.GoalQuerySnapshot, cycle.SourceID, cycle.ID)
+		cycle.BreachedAt, cycle.Origin, cycle.AbandonReason, string(cycle.CalendarSnapshot), cycle.GoalQuerySnapshot, cycle.SourceID, cycle.SourcePayload, cycle.ID)
 	if err != nil {
 		return fmt.Errorf("update cycle: %w", err)
 	}

@@ -7,6 +7,7 @@ const TTL_MS = 30_000;
 const stateCache = new Map();
 const inFlight = new Map();
 const thresholdsCache = new Map();
+let cacheGeneration = 0;
 
 export async function getItemSLA(itemId) {
   if (!itemId || !api.sla?.getItemSLA) return [];
@@ -15,14 +16,20 @@ export async function getItemSLA(itemId) {
   if (cached && now - cached.at < TTL_MS) return cached.value;
   if (inFlight.has(itemId)) return inFlight.get(itemId);
 
-  const request = api.sla
+  const generation = cacheGeneration;
+  let request;
+  request = api.sla
     .getItemSLA(itemId)
     .then((value) => {
-      stateCache.set(itemId, { value: value ?? [], at: Date.now() });
+      if (generation === cacheGeneration) {
+        stateCache.set(itemId, { value: value ?? [], at: Date.now() });
+      }
       return value ?? [];
     })
     .catch(() => [])
-    .finally(() => inFlight.delete(itemId));
+    .finally(() => {
+      if (inFlight.get(itemId) === request) inFlight.delete(itemId);
+    });
 
   inFlight.set(itemId, request);
   return request;
@@ -32,13 +39,16 @@ export async function getSLAThresholds(workspaceId) {
   if (!workspaceId || !api.sla?.getWarningThresholds) return [];
   const cached = thresholdsCache.get(workspaceId);
   if (cached && Date.now() - cached.at < TTL_MS) return cached.value;
+  const generation = cacheGeneration;
   const value = (await api.sla.getWarningThresholds(workspaceId).catch(() => [])) ?? [];
-  thresholdsCache.set(workspaceId, { value, at: Date.now() });
+  if (generation === cacheGeneration) thresholdsCache.set(workspaceId, { value, at: Date.now() });
   return value;
 }
 
 // Drop cached state when an item changes so the next render re-derives it.
 export function invalidateSLAState() {
+  cacheGeneration++;
+  inFlight.clear();
   stateCache.clear();
   thresholdsCache.clear();
 }

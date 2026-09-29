@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"windshift/internal/businesstime"
+	"windshift/internal/cql"
 	"windshift/internal/database"
 	"windshift/internal/jira"
 	"windshift/internal/models"
@@ -42,6 +43,7 @@ type SLAImportDocument struct {
 
 type SLAImportCalendar struct {
 	SourceID        string                                  `json:"source_id"`
+	SourcePayload   json.RawMessage                         `json:"source_payload,omitempty"`
 	Name            string                                  `json:"name"`
 	Description     string                                  `json:"description"`
 	Timezone        string                                  `json:"timezone"`
@@ -52,6 +54,7 @@ type SLAImportCalendar struct {
 
 type SLAImportMetric struct {
 	SourceID      string               `json:"source_id"`
+	SourcePayload json.RawMessage      `json:"source_payload,omitempty"`
 	Name          string               `json:"name"`
 	DisplayFormat string               `json:"display_format"`
 	IsActive      *bool                `json:"is_active"`
@@ -61,45 +64,53 @@ type SLAImportMetric struct {
 
 type SLAImportCondition struct {
 	SourceID      string          `json:"source_id"`
+	SourcePayload json.RawMessage `json:"source_payload,omitempty"`
 	Phase         string          `json:"phase"`
 	ConditionType string          `json:"condition_type"`
 	Config        json.RawMessage `json:"config"`
 }
 
 type SLAImportGoal struct {
-	SourceID string            `json:"source_id"`
-	Position int               `json:"position"`
-	JQL      string            `json:"jql"`
-	QL       string            `json:"ql,omitempty"`
-	Targets  []SLAImportTarget `json:"targets"`
+	SourceID      string            `json:"source_id"`
+	SourcePayload json.RawMessage   `json:"source_payload,omitempty"`
+	Position      int               `json:"position"`
+	JQL           string            `json:"jql"`
+	QL            string            `json:"ql,omitempty"`
+	Targets       []SLAImportTarget `json:"targets"`
 }
 
 type SLAImportTarget struct {
-	SourceID         string `json:"source_id"`
-	Position         int    `json:"position"`
-	Priority         string `json:"priority"`
-	IsFallback       bool   `json:"is_fallback"`
-	TargetMs         int64  `json:"target_ms"`
-	CalendarSourceID string `json:"calendar_source_id"`
+	SourceID         string          `json:"source_id"`
+	SourcePayload    json.RawMessage `json:"source_payload,omitempty"`
+	Position         int             `json:"position"`
+	Priority         string          `json:"priority"`
+	IsFallback       bool            `json:"is_fallback"`
+	TargetMs         int64           `json:"target_ms"`
+	CalendarSourceID string          `json:"calendar_source_id"`
 }
 
 type SLAImportCycle struct {
-	SourceID         string     `json:"source_id"`
-	MetricSourceID   string     `json:"metric_source_id"`
-	ItemID           int        `json:"item_id"`
-	ItemKey          string     `json:"item_key"`
-	GoalSourceID     string     `json:"goal_source_id"`
-	CalendarSourceID string     `json:"calendar_source_id"`
-	CycleNo          int        `json:"cycle_no"`
-	Status           string     `json:"status"`
-	StartedAt        time.Time  `json:"started_at"`
-	StoppedAt        *time.Time `json:"stopped_at"`
-	ElapsedMs        int64      `json:"elapsed_ms"`
-	GoalDurationMs   int64      `json:"goal_duration_ms"`
-	BreachedAt       *time.Time `json:"breached_at"`
-	BreachTime       *time.Time `json:"breach_time"`
-	Paused           bool       `json:"paused"`
-	PauseStartedAt   *time.Time `json:"pause_started_at"`
+	SourceID            string          `json:"source_id"`
+	SourcePayload       json.RawMessage `json:"source_payload,omitempty"`
+	RemainingMs         *int64          `json:"remaining_ms,omitempty"`
+	RemainingAtPauseMs  *int64          `json:"remaining_at_pause_ms,omitempty"`
+	WithinCalendarHours *bool           `json:"within_calendar_hours,omitempty"`
+	Breached            *bool           `json:"breached,omitempty"`
+	MetricSourceID      string          `json:"metric_source_id"`
+	ItemID              int             `json:"item_id"`
+	ItemKey             string          `json:"item_key"`
+	GoalSourceID        string          `json:"goal_source_id"`
+	CalendarSourceID    string          `json:"calendar_source_id"`
+	CycleNo             int             `json:"cycle_no"`
+	Status              string          `json:"status"`
+	StartedAt           time.Time       `json:"started_at"`
+	StoppedAt           *time.Time      `json:"stopped_at"`
+	ElapsedMs           int64           `json:"elapsed_ms"`
+	GoalDurationMs      int64           `json:"goal_duration_ms"`
+	BreachedAt          *time.Time      `json:"breached_at"`
+	BreachTime          *time.Time      `json:"breach_time"`
+	Paused              bool            `json:"paused"`
+	PauseStartedAt      *time.Time      `json:"pause_started_at"`
 }
 
 // SLAImportCounts summarizes planned or applied writes.
@@ -185,6 +196,7 @@ func (s *SLAImportService) Import(ctx context.Context, workspaceID int, document
 
 	metricIDs := map[string]int{}
 	goalIDsByMetric := map[string]map[string]int{}
+	goalQueriesByMetric := map[string]map[string]string{}
 	err = database.WithTx(s.db, func(tx database.Tx) error {
 		for _, resolved := range metrics {
 			id, goalIDs, err := s.persistMetric(ctx, tx, resolved, calendarIDs)
@@ -192,7 +204,12 @@ func (s *SLAImportService) Import(ctx context.Context, workspaceID int, document
 				return err
 			}
 			metricIDs[valueOrEmpty(resolved.metric.SourceID)] = id
-			goalIDsByMetric[valueOrEmpty(resolved.metric.SourceID)] = goalIDs
+			sourceID := valueOrEmpty(resolved.metric.SourceID)
+			goalIDsByMetric[sourceID] = goalIDs
+			goalQueriesByMetric[sourceID] = make(map[string]string, len(resolved.metric.Goals))
+			for _, goal := range resolved.metric.Goals {
+				goalQueriesByMetric[sourceID][valueOrEmpty(goal.SourceID)] = goal.QLQuery
+			}
 			if _, err := s.engine.BumpConfigGeneration(ctx, tx, workspaceID); err != nil {
 				return err
 			}
@@ -225,6 +242,7 @@ func (s *SLAImportService) Import(ctx context.Context, workspaceID int, document
 		itemID     int
 		calendarID int
 		goalID     int
+		goalQuery  string
 		snapshot   json.RawMessage
 		existingID int64
 	}
@@ -233,15 +251,24 @@ func (s *SLAImportService) Import(ctx context.Context, workspaceID int, document
 		cycle := &cycles[i]
 		metricID := metricIDs[cycle.MetricSourceID]
 		if metricID == 0 {
-			result.Warnings = append(result.Warnings, SLAImportIssue{Entity: "cycle", SourceID: cycle.SourceID, Message: "metric was not imported"})
-			result.Cycles.Skip++
 			continue
 		}
 		itemID, err := s.resolveItemID(ctx, workspaceID, cycle.ItemID, cycle.ItemKey)
 		if err != nil {
-			result.NeedsAttention = append(result.NeedsAttention, SLAImportIssue{Entity: "cycle", SourceID: cycle.SourceID, Message: err.Error()})
-			result.Cycles.Skip++
 			continue
+		}
+		calendarID := calendarIDs[cycle.CalendarSourceID]
+		snapshot := snapshots[cycle.CalendarSourceID]
+		if cycle.CalendarSourceID != "" && calendarID == 0 {
+			calendar, err := s.repo.GetCalendarBySourceID(ctx, workspaceID, cycle.CalendarSourceID)
+			if err != nil {
+				continue
+			}
+			calendarID = calendar.ID
+			snapshot, err = importCalendarSnapshot(calendar)
+			if err != nil {
+				return nil, err
+			}
 		}
 		existingID := int64(0)
 		if existing, err := s.repo.GetCycleBySourceID(ctx, metricID, cycle.SourceID); err == nil {
@@ -253,21 +280,17 @@ func (s *SLAImportService) Import(ctx context.Context, workspaceID int, document
 			cycle:      cycle,
 			metricID:   metricID,
 			itemID:     itemID,
-			calendarID: calendarIDs[cycle.CalendarSourceID],
+			calendarID: calendarID,
 			goalID:     goalIDsByMetric[cycle.MetricSourceID][cycle.GoalSourceID],
-			snapshot:   snapshots[cycle.CalendarSourceID],
+			goalQuery:  goalQueriesByMetric[cycle.MetricSourceID][cycle.GoalSourceID],
+			snapshot:   snapshot,
 			existingID: existingID,
 		})
 	}
 	err = database.WithTx(s.db, func(tx database.Tx) error {
 		for _, write := range writes {
-			if err := s.writeCycle(ctx, tx, write.metricID, write.itemID, write.calendarID, write.goalID, write.snapshot, write.existingID, write.cycle); err != nil {
+			if err := s.writeCycle(ctx, tx, write.metricID, write.itemID, write.calendarID, write.goalID, write.goalQuery, write.snapshot, write.existingID, write.cycle); err != nil {
 				return err
-			}
-			if write.existingID == 0 {
-				result.Cycles.Create++
-			} else {
-				result.Cycles.Update++
 			}
 		}
 		return nil
@@ -289,6 +312,9 @@ func (s *SLAImportService) Import(ctx context.Context, workspaceID int, document
 
 // resolve builds the persisted shapes and the preview counts without writing.
 func (s *SLAImportService) resolve(ctx context.Context, workspaceID int, document SLAImportDocument) (*SLAImportResult, []*models.WorkingCalendar, []resolvedMetric, []SLAImportCycle, error) {
+	if err := validateSLAImportIdentities(document); err != nil {
+		return nil, nil, nil, nil, err
+	}
 	result := &SLAImportResult{Warnings: []SLAImportIssue{}, NeedsAttention: []SLAImportIssue{}}
 
 	calendars := make([]*models.WorkingCalendar, 0, len(document.Calendars))
@@ -312,6 +338,7 @@ func (s *SLAImportService) resolve(ctx context.Context, workspaceID int, documen
 	}
 
 	metrics := make([]resolvedMetric, 0, len(document.Metrics))
+	metricsBySource := map[string]resolvedMetric{}
 	for i := range document.Metrics {
 		metric, issues := s.resolveMetric(ctx, workspaceID, document.Metrics[i], calendarBySource)
 		result.NeedsAttention = append(result.NeedsAttention, issues...)
@@ -324,27 +351,69 @@ func (s *SLAImportService) resolve(ctx context.Context, workspaceID int, documen
 			return nil, nil, nil, nil, err
 		}
 		if !metric.exercisable {
-			active := false
-			metric.metric.IsActive = active
+			metric.metric.IsActive = false
 		}
 		metrics = append(metrics, metric)
+		metricsBySource[document.Metrics[i].SourceID] = metric
 	}
 
-	// Cycles are validated during import once metric/calendar ids are known;
-	// the preview reports only structural issues here.
 	for i := range document.Cycles {
 		cycle := document.Cycles[i]
-		if strings.TrimSpace(cycle.SourceID) == "" {
-			result.NeedsAttention = append(result.NeedsAttention, SLAImportIssue{Entity: "cycle", Message: "cycle has no source_id"})
+		metric, exists := metricsBySource[cycle.MetricSourceID]
+		if !exists {
+			result.NeedsAttention = append(result.NeedsAttention, SLAImportIssue{Entity: "cycle", SourceID: cycle.SourceID, Message: "metric was not included in the import"})
 			result.Cycles.Skip++
 			continue
 		}
-		if strings.TrimSpace(cycle.MetricSourceID) == "" {
-			result.NeedsAttention = append(result.NeedsAttention, SLAImportIssue{Entity: "cycle", SourceID: cycle.SourceID, Message: "cycle has no metric_source_id"})
+		if _, err := s.resolveItemID(ctx, workspaceID, cycle.ItemID, cycle.ItemKey); err != nil {
+			result.NeedsAttention = append(result.NeedsAttention, SLAImportIssue{Entity: "cycle", SourceID: cycle.SourceID, Message: err.Error()})
 			result.Cycles.Skip++
 			continue
 		}
-		result.Cycles.Create++
+		if cycle.Status != "" && cycle.Status != models.SLACycleOngoing && cycle.Status != models.SLACycleCompleted && cycle.Status != models.SLACycleAbandoned {
+			result.NeedsAttention = append(result.NeedsAttention, SLAImportIssue{Entity: "cycle", SourceID: cycle.SourceID, Message: "unsupported cycle status: " + cycle.Status})
+			result.Cycles.Skip++
+			continue
+		}
+		if cycle.GoalSourceID != "" {
+			goalFound := false
+			for _, sourceGoal := range document.Metrics {
+				if sourceGoal.SourceID != cycle.MetricSourceID {
+					continue
+				}
+				for _, goal := range sourceGoal.Goals {
+					goalFound = goalFound || goal.SourceID == cycle.GoalSourceID
+				}
+			}
+			if !goalFound {
+				result.NeedsAttention = append(result.NeedsAttention, SLAImportIssue{Entity: "cycle", SourceID: cycle.SourceID, Message: "goal was not found in the imported metric"})
+				result.Cycles.Skip++
+				continue
+			}
+		}
+		if cycle.CalendarSourceID != "" {
+			if _, ok := calendarBySource[cycle.CalendarSourceID]; !ok {
+				if _, err := s.repo.GetCalendarBySourceID(ctx, workspaceID, cycle.CalendarSourceID); err != nil {
+					result.NeedsAttention = append(result.NeedsAttention, SLAImportIssue{Entity: "cycle", SourceID: cycle.SourceID, Message: "calendar was not found: " + cycle.CalendarSourceID})
+					result.Cycles.Skip++
+					continue
+				}
+			}
+		}
+		existingID := int64(0)
+		if metric.metric.ID != 0 {
+			existing, err := s.repo.GetCycleBySourceID(ctx, metric.metric.ID, cycle.SourceID)
+			if err == nil {
+				existingID = existing.ID
+			} else if !errors.Is(err, repository.ErrNotFound) {
+				return nil, nil, nil, nil, err
+			}
+		}
+		if existingID == 0 {
+			result.Cycles.Create++
+		} else {
+			result.Cycles.Update++
+		}
 	}
 
 	return result, calendars, metrics, document.Cycles, nil
@@ -359,6 +428,7 @@ func (s *SLAImportService) resolveMetric(ctx context.Context, workspaceID int, s
 		ImportStatus:  "ready",
 		Source:        stringPtr(SLAImportSource),
 		SourceID:      stringPtr(source.SourceID),
+		SourcePayload: rawPayloadString(source.SourcePayload),
 	}
 	if metric.DisplayFormat == "" {
 		metric.DisplayFormat = "time"
@@ -380,15 +450,32 @@ func (s *SLAImportService) resolveMetric(ctx context.Context, workspaceID int, s
 			Position:      i,
 			ConditionType: condition.ConditionType,
 			Config:        config,
-			SourcePayload: stringPtr(string(config)),
+			SourcePayload: rawPayloadString(condition.SourcePayload),
 		})
 	}
 	metric.Conditions = conditions
+	if err := validateSLAConditions(metric.Conditions); err != nil {
+		exercisable = false
+		issues = append(issues, SLAImportIssue{Entity: "condition", SourceID: source.SourceID, Message: err.Error()})
+	}
 
 	for i, goal := range source.Goals {
 		ql := strings.TrimSpace(goal.QL)
 		status := "ready"
-		if ql == "" {
+		if ql != "" {
+			tokens, err := cql.NewTokenizer(ql).Tokenize()
+			if err == nil {
+				_, err = cql.NewParser(tokens).Parse()
+			}
+			if err == nil && s.engine != nil {
+				err = s.engine.ValidateGoalQL(ctx, workspaceID, ql)
+			}
+			if err != nil {
+				status = "needs_attention"
+				exercisable = false
+				issues = append(issues, SLAImportIssue{Entity: "goal", SourceID: goal.SourceID, Message: "invalid Windshift QL: " + err.Error()})
+			}
+		} else {
 			translated, unsupported := jira.TranslateJQLToWindshiftQL(goal.JQL, workspaceID)
 			if len(unsupported) > 0 {
 				status = "needs_attention"
@@ -405,23 +492,33 @@ func (s *SLAImportService) resolveMetric(ctx context.Context, workspaceID int, s
 			ql = "1 = 0"
 		}
 		resolvedGoal := models.SLAGoal{
-			Position:     i,
-			QLQuery:      ql,
-			ImportStatus: status,
-			SourceID:     stringPtr(goal.SourceID),
+			Position:      i,
+			QLQuery:       ql,
+			ImportStatus:  status,
+			SourceID:      stringPtr(goal.SourceID),
+			SourcePayload: rawPayloadString(goal.SourcePayload),
 		}
 		if status == "needs_attention" {
 			resolvedGoal.OriginalJQL = stringPtr(goal.JQL)
 		}
 		for j, target := range goal.Targets {
 			resolvedTarget := models.SLAGoalTarget{
-				Position:   j,
-				IsFallback: target.IsFallback,
-				TargetMs:   target.TargetMs,
-				SourceID:   stringPtr(target.SourceID),
+				Position:         j,
+				IsFallback:       target.IsFallback,
+				TargetMs:         target.TargetMs,
+				SourceID:         stringPtr(target.SourceID),
+				SourcePayload:    rawPayloadString(target.SourcePayload),
+				CalendarSourceID: target.CalendarSourceID,
 			}
 			if !target.IsFallback && strings.TrimSpace(target.Priority) != "" {
-				if priorityID, err := s.repo.PriorityIDByName(ctx, target.Priority); err == nil {
+				priorityName := strings.TrimSpace(target.Priority)
+				switch strings.ToLower(priorityName) {
+				case "highest":
+					priorityName = "Critical"
+				case "lowest":
+					priorityName = "Low"
+				}
+				if priorityID, err := s.repo.PriorityIDByName(ctx, priorityName); err == nil {
 					resolvedTarget.PriorityID = &priorityID
 				} else {
 					exercisable = false
@@ -434,7 +531,7 @@ func (s *SLAImportService) resolveMetric(ctx context.Context, workspaceID int, s
 				if calendar.ID == 0 {
 					// New calendar; resolve after persistence. Keep the source
 					// id so import can remap it.
-					resolvedTarget.SourcePayload = stringPtr("calendar_source_id:" + target.CalendarSourceID)
+					resolvedTarget.CalendarSourceID = target.CalendarSourceID
 				}
 			} else {
 				exercisable = false
@@ -472,10 +569,9 @@ func (s *SLAImportService) persistMetric(ctx context.Context, tx database.Tx, re
 	for i := range metric.Goals {
 		for j := range metric.Goals[i].Targets {
 			target := &metric.Goals[i].Targets[j]
-			if target.CalendarID == 0 && target.SourcePayload != nil {
-				sourceID := strings.TrimPrefix(*target.SourcePayload, "calendar_source_id:")
-				target.CalendarID = calendarIDs[sourceID]
-				target.SourcePayload = nil
+			if target.CalendarID == 0 && target.CalendarSourceID != "" {
+				target.CalendarID = calendarIDs[target.CalendarSourceID]
+				target.CalendarSourceID = ""
 			}
 		}
 	}
@@ -495,7 +591,7 @@ func (s *SLAImportService) persistMetric(ctx context.Context, tx database.Tx, re
 	return metricID, goalIDs, nil
 }
 
-func (s *SLAImportService) writeCycle(ctx context.Context, tx database.Tx, metricID, itemID, calendarID, goalID int, snapshot json.RawMessage, existingID int64, source *SLAImportCycle) error {
+func (s *SLAImportService) writeCycle(ctx context.Context, tx database.Tx, metricID, itemID, calendarID, goalID int, goalQuery string, snapshot json.RawMessage, existingID int64, source *SLAImportCycle) error {
 	status := source.Status
 	if status == "" {
 		status = models.SLACycleOngoing
@@ -505,24 +601,40 @@ func (s *SLAImportService) writeCycle(ctx context.Context, tx database.Tx, metri
 		cycleNo = 1
 	}
 	now := time.Now().UTC()
+	remaining := source.GoalDurationMs - source.ElapsedMs
+	if source.RemainingMs != nil {
+		remaining = *source.RemainingMs
+	}
+	breached := source.BreachedAt != nil
+	if source.Breached != nil {
+		breached = *source.Breached
+	}
+	withinCalendarHours := false
+	if source.WithinCalendarHours != nil {
+		withinCalendarHours = *source.WithinCalendarHours
+	}
 	cycle := &models.ItemSLACycle{
-		ItemID:           itemID,
-		MetricID:         metricID,
-		CycleNo:          cycleNo,
-		Status:           status,
-		StartedAt:        source.StartedAt,
-		StoppedAt:        source.StoppedAt,
-		BreachTime:       source.BreachTime,
-		BreachedAt:       source.BreachedAt,
-		GoalDurationMs:   source.GoalDurationMs,
-		ElapsedMs:        source.ElapsedMs,
-		RemainingMs:      source.GoalDurationMs - source.ElapsedMs,
-		Paused:           source.Paused,
-		PauseStartedAt:   source.PauseStartedAt,
-		Breached:         source.BreachedAt != nil,
-		LastCalculatedAt: now,
-		Origin:           models.SLAOriginImport,
-		SourceID:         stringPtr(source.SourceID),
+		ItemID:              itemID,
+		MetricID:            metricID,
+		CycleNo:             cycleNo,
+		Status:              status,
+		StartedAt:           source.StartedAt,
+		StoppedAt:           source.StoppedAt,
+		BreachTime:          source.BreachTime,
+		BreachedAt:          source.BreachedAt,
+		GoalDurationMs:      source.GoalDurationMs,
+		ElapsedMs:           source.ElapsedMs,
+		RemainingMs:         remaining,
+		RemainingAtPauseMs:  source.RemainingAtPauseMs,
+		Paused:              source.Paused,
+		WithinCalendarHours: withinCalendarHours,
+		PauseStartedAt:      source.PauseStartedAt,
+		Breached:            breached,
+		LastCalculatedAt:    now,
+		GoalQuerySnapshot:   goalQuery,
+		SourcePayload:       rawPayloadString(source.SourcePayload),
+		Origin:              models.SLAOriginImport,
+		SourceID:            stringPtr(source.SourceID),
 	}
 	if goalID != 0 {
 		cycle.GoalID = &goalID
@@ -535,7 +647,7 @@ func (s *SLAImportService) writeCycle(ctx context.Context, tx database.Tx, metri
 	} else {
 		cycle.CalendarSnapshot = json.RawMessage(`{"timezone":"UTC","weekly_intervals":{}}`)
 	}
-	if status == models.SLACycleOngoing {
+	if status == models.SLACycleOngoing && !cycle.Paused {
 		if calendar, err := businesstime.CompileJSON(string(cycle.CalendarSnapshot)); err == nil {
 			remaining := time.Duration(cycle.GoalDurationMs-cycle.ElapsedMs) * time.Millisecond
 			if remaining > 0 {
@@ -558,7 +670,10 @@ func (s *SLAImportService) writeCycle(ctx context.Context, tx database.Tx, metri
 			return err
 		}
 	}
-	if cycle.Status == models.SLACycleOngoing && cycle.NextDeadlineAt != nil {
+	if err := s.repo.DeleteJobsForCycle(ctx, tx, cycle.ID); err != nil {
+		return err
+	}
+	if cycle.Status == models.SLACycleOngoing && !cycle.Paused && cycle.NextDeadlineAt != nil {
 		deadline := *cycle.NextDeadlineAt
 		cycleRef := cycle.ID
 		job := &models.SLAJob{Kind: models.SLAJobBreach, CycleID: &cycleRef, DueAt: deadline, DeadlineAt: &deadline}
@@ -632,6 +747,13 @@ func (s *SLAImportService) reconcileReplace(ctx context.Context, workspaceID int
 
 func (s *SLAImportService) resolveItemID(ctx context.Context, workspaceID, itemID int, key string) (int, error) {
 	if itemID > 0 {
+		belongs, err := s.repo.ItemBelongsToWorkspace(ctx, workspaceID, itemID)
+		if err != nil {
+			return 0, err
+		}
+		if !belongs {
+			return 0, fmt.Errorf("item_id %d does not belong to the authorized workspace", itemID)
+		}
 		return itemID, nil
 	}
 	key = strings.TrimSpace(key)
@@ -686,6 +808,7 @@ func buildImportCalendar(workspaceID int, source SLAImportCalendar) *models.Work
 		IsDefault:       source.IsDefault,
 		Source:          stringPtr(SLAImportSource),
 		SourceID:        stringPtr(source.SourceID),
+		SourcePayload:   rawPayloadString(source.SourcePayload),
 	}
 }
 
@@ -706,6 +829,62 @@ func stringPtr(value string) *string {
 		return nil
 	}
 	return &value
+}
+
+func rawPayloadString(value json.RawMessage) *string {
+	if len(value) == 0 || string(value) == "null" {
+		return nil
+	}
+	return stringPtr(string(value))
+}
+
+func validateSLAImportIdentities(document SLAImportDocument) error {
+	validate := func(entity, sourceID string, seen map[string]struct{}) error {
+		sourceID = strings.TrimSpace(sourceID)
+		if sourceID == "" {
+			return fmt.Errorf("%w: %s has no source_id", ErrSLAImportInvalid, entity)
+		}
+		if _, exists := seen[sourceID]; exists {
+			return fmt.Errorf("%w: duplicate %s source_id %q", ErrSLAImportInvalid, entity, sourceID)
+		}
+		seen[sourceID] = struct{}{}
+		return nil
+	}
+
+	calendarIDs := map[string]struct{}{}
+	for _, calendar := range document.Calendars {
+		if err := validate("calendar", calendar.SourceID, calendarIDs); err != nil {
+			return err
+		}
+	}
+	metricIDs := map[string]struct{}{}
+	goalIDs := map[string]struct{}{}
+	targetIDs := map[string]struct{}{}
+	for _, metric := range document.Metrics {
+		if err := validate("metric", metric.SourceID, metricIDs); err != nil {
+			return err
+		}
+		for _, goal := range metric.Goals {
+			if err := validate("goal", goal.SourceID, goalIDs); err != nil {
+				return err
+			}
+			for _, target := range goal.Targets {
+				if err := validate("target", target.SourceID, targetIDs); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	cycleIDs := map[string]struct{}{}
+	for _, cycle := range document.Cycles {
+		if err := validate("cycle", cycle.SourceID, cycleIDs); err != nil {
+			return err
+		}
+		if strings.TrimSpace(cycle.MetricSourceID) == "" {
+			return fmt.Errorf("%w: cycle %q has no metric_source_id", ErrSLAImportInvalid, cycle.SourceID)
+		}
+	}
+	return nil
 }
 
 func valueOrEmpty(value *string) string {

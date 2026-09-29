@@ -3,6 +3,8 @@ package sla
 import (
 	"context"
 	"errors"
+	"strconv"
+	"time"
 
 	"windshift/internal/database"
 	"windshift/internal/models"
@@ -32,6 +34,8 @@ func (e *Engine) RunJob(ctx context.Context, job models.SLAJob) error {
 		return e.runRecalcItemJob(ctx, job)
 	case models.SLAJobRecalcMetric:
 		return e.runRecalcMetricJob(ctx, job)
+	case models.SLAJobRecalcCalendar:
+		return e.runRecalcCalendarJob(ctx, job)
 	default:
 		return e.repo.FailJob(ctx, job.ID, "unknown job kind "+job.Kind)
 	}
@@ -42,6 +46,11 @@ func (e *Engine) runBreachJob(ctx context.Context, job models.SLAJob) error {
 		return e.repo.FailJob(ctx, job.ID, "malformed SLA job")
 	}
 	return database.WithTx(e.db, func(tx database.Tx) error {
+		if err := e.repo.LockItemForCycle(ctx, tx, *job.CycleID); errors.Is(err, repository.ErrNotFound) {
+			return nil
+		} else if err != nil {
+			return err
+		}
 		cycle, err := e.repo.GetCycleForUpdate(ctx, tx, *job.CycleID)
 		if errors.Is(err, repository.ErrNotFound) {
 			return nil
@@ -54,6 +63,13 @@ func (e *Engine) runBreachJob(ctx context.Context, job models.SLAJob) error {
 		if cycle.Status != models.SLACycleOngoing || cycle.BreachedAt != nil ||
 			cycle.NextDeadlineAt == nil || !cycle.NextDeadlineAt.Equal(*job.DeadlineAt) {
 			return e.repo.DeleteJob(ctx, tx, job.Kind, job.ThresholdKey, job.CycleID, job.ItemID, job.MetricID)
+		}
+		config, workspaceID, stoppedAt, stopped, err := e.stopPrecedesDeadline(ctx, tx, cycle, *job.DeadlineAt)
+		if err != nil {
+			return err
+		}
+		if stopped {
+			return e.completeCycle(ctx, tx, config, workspaceID, cycle, stoppedAt)
 		}
 		deadline := *job.DeadlineAt
 		cycle.BreachedAt = &deadline
@@ -76,6 +92,40 @@ func (e *Engine) runBreachJob(ctx context.Context, job models.SLAJob) error {
 		}
 		return e.repo.DeleteJob(ctx, tx, job.Kind, job.ThresholdKey, job.CycleID, job.ItemID, job.MetricID)
 	})
+}
+
+func (e *Engine) stopPrecedesDeadline(ctx context.Context, tx database.Tx, cycle *models.ItemSLACycle, deadline time.Time) (config *compiledConfig, workspaceID int, stoppedAt time.Time, stopped bool, err error) {
+	var updatedAt time.Time
+	if err := tx.QueryRowContext(ctx, `SELECT updated_at FROM items WHERE id = ?`, cycle.ItemID).Scan(&updatedAt); err != nil {
+		return nil, 0, time.Time{}, false, err
+	}
+	if updatedAt.After(deadline) {
+		return nil, 0, time.Time{}, false, nil
+	}
+	snapshot, err := loadItemSnapshotTx(ctx, tx, cycle.ItemID)
+	if err != nil {
+		return nil, 0, time.Time{}, false, err
+	}
+	if snapshot.WorkspaceID == 0 {
+		return nil, 0, time.Time{}, false, nil
+	}
+	generations, err := e.repo.GenerationsForWorkspacesTx(ctx, tx, []int{snapshot.WorkspaceID})
+	if err != nil {
+		return nil, 0, time.Time{}, false, err
+	}
+	generation, ok := generations[snapshot.WorkspaceID]
+	if !ok {
+		return nil, 0, time.Time{}, false, nil
+	}
+	config, err = e.configuration(ctx, snapshot.WorkspaceID, generation)
+	if err != nil {
+		return nil, 0, time.Time{}, false, err
+	}
+	metric := config.metricsByID[cycle.MetricID]
+	if metric == nil || !metric.matchPhaseCurrent(models.SLAPhaseStop, snapshot, config) {
+		return nil, 0, time.Time{}, false, nil
+	}
+	return config, snapshot.WorkspaceID, updatedAt, true, nil
 }
 
 func (e *Engine) runWarningJob(ctx context.Context, job models.SLAJob) error {
@@ -123,6 +173,35 @@ func (e *Engine) runRecalcItemJob(ctx context.Context, job models.SLAJob) error 
 			return err
 		}
 		return e.repo.DeleteJob(ctx, tx, job.Kind, job.ThresholdKey, job.CycleID, job.ItemID, job.MetricID)
+	})
+}
+
+func (e *Engine) runRecalcCalendarJob(ctx context.Context, job models.SLAJob) error {
+	calendarID, err := strconv.Atoi(job.ThresholdKey)
+	if err != nil || calendarID <= 0 || job.MetricID == nil {
+		return e.repo.FailJob(ctx, job.ID, "malformed calendar recalculation job")
+	}
+	cursor := int64(0)
+	if job.Cursor != nil {
+		parsed, err := strconv.ParseInt(*job.Cursor, 10, 64)
+		if err != nil || parsed < 0 {
+			return e.repo.FailJob(ctx, job.ID, "malformed calendar recalculation cursor")
+		}
+		cursor = parsed
+	}
+	return database.WithTx(e.db, func(tx database.Tx) error {
+		next, done, err := e.recalcCalendarPageTx(ctx, tx, *job.MetricID, calendarID, cursor, DefaultRecalcPageSize)
+		if err != nil {
+			return err
+		}
+		if done {
+			return e.repo.DeleteJob(ctx, tx, job.Kind, job.ThresholdKey, job.CycleID, job.ItemID, job.MetricID)
+		}
+		nextCursor := strconv.FormatInt(next, 10)
+		return e.repo.UpsertJob(ctx, tx, &models.SLAJob{
+			Kind: models.SLAJobRecalcCalendar, ThresholdKey: job.ThresholdKey, MetricID: job.MetricID,
+			DueAt: e.clock.Now(), Cursor: &nextCursor,
+		})
 	})
 }
 

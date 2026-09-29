@@ -92,6 +92,12 @@ func (h *PortalHandler) SetApprovalService(s *services.ApprovalService) {
 	h.approvalService = s
 }
 
+// SetCommentService wires the application comment service so portal replies
+// notify staff and dispatch webhooks through the standard pipeline.
+func (h *PortalHandler) SetCommentService(cs *services.CommentService) {
+	h.portalService.SetCommentService(cs)
+}
+
 // SetEventCoordinator wires the shared item-created side-effect pipeline.
 func (h *PortalHandler) SetEventCoordinator(ec *services.EventCoordinator) {
 	h.eventCoordinator = ec

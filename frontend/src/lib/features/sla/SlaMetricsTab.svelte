@@ -52,38 +52,44 @@
     };
   }
 
-  async function loadMetrics() {
+  async function loadMetrics(workspace, generation) {
     try {
       loading = true;
       error = null;
-      metrics = (await api.sla.getMetrics(workspaceId)) ?? [];
+      const result = await api.sla.getMetrics(workspace);
+      if (generation === requestGeneration) metrics = result ?? [];
     } catch (err) {
-      error = err?.message || t('workspaceSettings.serviceLevels.loadMetricsFailed');
+      if (generation === requestGeneration) {
+        error = err?.message || t('workspaceSettings.serviceLevels.loadMetricsFailed');
+      }
     } finally {
-      loading = false;
+      if (generation === requestGeneration) loading = false;
     }
   }
 
-  async function loadReferenceData() {
+  async function loadReferenceData(workspace, generation) {
     const [calendarList, statusList, categoryList, priorityList] = await Promise.all([
-      api.sla.getAvailableCalendars(workspaceId).catch(() => []),
+      api.sla.getAvailableCalendars(workspace).catch(() => []),
       api.statuses.getAll().catch(() => []),
       api.statusCategories.getAll().catch(() => []),
       api.priorities.getAll().catch(() => []),
     ]);
+    if (generation !== requestGeneration) return;
     calendars = calendarList ?? [];
     statuses = statusList ?? [];
     statusCategories = categoryList ?? [];
     priorities = priorityList ?? [];
   }
 
-  // WorkspaceSettings keeps one component mounted across routes, so follow the
-  // workspace prop instead of loading once on mount.
-  let loadedWorkspaceId = null;
+  let requestGeneration = 0;
   $effect(() => {
-    if (!workspaceId || workspaceId === loadedWorkspaceId) return;
-    loadedWorkspaceId = workspaceId;
-    void Promise.all([loadMetrics(), loadReferenceData()]);
+    const workspace = workspaceId;
+    if (!workspace) return;
+    const generation = ++requestGeneration;
+    void Promise.all([loadMetrics(workspace, generation), loadReferenceData(workspace, generation)]);
+    return () => {
+      if (generation === requestGeneration) requestGeneration++;
+    };
   });
 
   function startCreate() {

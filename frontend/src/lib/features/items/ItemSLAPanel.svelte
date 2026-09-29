@@ -4,7 +4,7 @@
   import Lozenge from '../../components/Lozenge.svelte';
   import { Gauge, AlertTriangle, PauseCircle, Clock, CalendarClock } from '@lucide/svelte';
   import { t } from '../../stores/i18n.svelte.js';
-  import { formatDate } from '../../utils/dateFormatter.js';
+  import { formatInstant } from '../../utils/dateFormatter.js';
 
   let { itemId = null } = $props();
 
@@ -51,7 +51,14 @@
 
   function cycleRemaining(cycle) {
     if (cycle.display_format === 'due_date' && cycle.next_deadline_at) {
-      return t('items.sla.dueOn', { date: formatDate(cycle.next_deadline_at) });
+      const date = formatInstant(cycle.next_deadline_at, cycle.calendar_timezone || 'UTC', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+      });
+      return t('items.sla.dueOn', { date });
     }
     if (cycle.remaining_ms != null) {
       return formatDuration(cycle.remaining_ms);
@@ -94,6 +101,8 @@
               {/if}
               {#if cycle.within_calendar_hours}
                 <Lozenge color="green" text={t('items.sla.withinHours')} />
+              {:else if !cycle.paused}
+                <Lozenge color="blue" text={t('items.sla.outsideHours')} />
               {/if}
             </div>
             <div class="text-xs mt-1" style="color: var(--ds-text-subtle)">
