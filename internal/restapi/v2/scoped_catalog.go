@@ -84,6 +84,7 @@ type workspaceDTO struct {
 	Color                   string  `json:"color"`
 	AvatarURL               *string `json:"avatar_url"`
 	DefaultView             string  `json:"default_view"`
+	IsRestricted            bool    `json:"is_restricted,omitempty"`
 	ConfigurationSetID      *int64  `json:"configuration_set_id"`
 	CreatedAt               string  `json:"created_at"`
 	UpdatedAt               string  `json:"updated_at"`
@@ -685,7 +686,7 @@ func workspaceFromModel(workspace *models.Workspace) workspaceDTO {
 	return workspaceDTO{
 		ID: workspace.ID, Name: workspace.Name, Key: workspace.Key, Description: workspace.Description,
 		Active: workspace.Active, TimeProjectID: workspace.TimeProjectID, IsPersonal: workspace.IsPersonal,
-		OwnerID: workspace.OwnerID, IsTemplate: workspace.IsTemplate,
+		OwnerID: workspace.OwnerID, IsTemplate: workspace.IsTemplate, IsRestricted: workspace.IsRestricted,
 		InternalCommentsEnabled: workspace.InternalCommentsEnabled, Icon: workspace.Icon, Color: workspace.Color,
 		AvatarURL: workspace.AvatarURL, DefaultView: workspace.DefaultView, ConfigurationSetID: workspace.ConfigurationSetID,
 		CreatedAt: timestamp(workspace.CreatedAt), UpdatedAt: timestamp(workspace.UpdatedAt),

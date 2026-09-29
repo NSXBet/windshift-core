@@ -4,6 +4,7 @@ export default {
     subtitle: 'إدارة مساحات العمل والمشاريع',
     workspace: 'مساحة عمل',
     template: 'قالب',
+    restricted: 'مقيّد',
     workspaces_one: '{count} مساحة عمل',
     workspaces_other: '{count} مساحات عمل',
     createWorkspace: 'إنشاء مساحة عمل',

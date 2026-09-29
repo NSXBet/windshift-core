@@ -162,6 +162,37 @@ func (r *WorkspaceRepository) ListActiveIDs() ([]int, error) {
 	return ids, rows.Err()
 }
 
+// WorkspaceIDsWithViewerAssignments returns the set of workspace IDs where
+// the built-in Viewer role has at least one explicit user or group
+// assignment. That assignment is what flips a workspace into restricted
+// visibility: unassigned users lose the everyone-fallback permissions and the
+// workspace disappears from their directory.
+func (r *WorkspaceRepository) WorkspaceIDsWithViewerAssignments() (map[int]bool, error) {
+	rows, err := r.db.Query(`
+		SELECT DISTINCT uwr.workspace_id
+		FROM user_workspace_roles uwr
+		JOIN workspace_roles wr ON wr.id = uwr.role_id AND wr.builtin_key = ?
+		UNION
+		SELECT DISTINCT gwr.workspace_id
+		FROM group_workspace_roles gwr
+		JOIN workspace_roles wr ON wr.id = gwr.role_id AND wr.builtin_key = ?
+	`, models.RoleBuiltinViewer, models.RoleBuiltinViewer)
+	if err != nil {
+		return nil, fmt.Errorf("list workspace viewer assignments: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	ids := make(map[int]bool)
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan workspace viewer assignment: %w", err)
+		}
+		ids[id] = true
+	}
+	return ids, rows.Err()
+}
+
 // ListActiveIDKeys returns active workspace id+key pairs.
 func (r *WorkspaceRepository) ListActiveIDKeys() ([]IDKey, error) {
 	rows, err := r.db.Query("SELECT id, key FROM workspaces WHERE active = true")

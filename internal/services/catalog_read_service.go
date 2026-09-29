@@ -78,7 +78,7 @@ func (s *CatalogReadService) ListWorkspaces(userID int, page CatalogPageParams) 
 			visibleIDs = append(visibleIDs, candidate.ID)
 		}
 	}
-	return s.workspaceRepo.FindByIDsPage(repository.WorkspaceIDPageParams{
+	workspaces, total, err := s.workspaceRepo.FindByIDsPage(repository.WorkspaceIDPageParams{
 		IDs:    visibleIDs,
 		Search: page.Search,
 		Sort:   page.Sort,
@@ -86,6 +86,17 @@ func (s *CatalogReadService) ListWorkspaces(userID int, page CatalogPageParams) 
 		Limit:  page.Limit,
 		Offset: page.Offset,
 	})
+	if err != nil {
+		return nil, 0, err
+	}
+	restricted, err := s.workspaceRepo.WorkspaceIDsWithViewerAssignments()
+	if err != nil {
+		return nil, 0, err
+	}
+	for i := range workspaces {
+		workspaces[i].IsRestricted = restricted[workspaces[i].ID]
+	}
+	return workspaces, total, nil
 }
 
 func (s *CatalogReadService) ListWorkspaceTemplates(ctx context.Context, userID int) ([]models.WorkspaceTemplateSummary, error) {

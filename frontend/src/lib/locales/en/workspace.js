@@ -4,6 +4,7 @@ export default {
     subtitle: 'Manage your workspaces and projects',
     workspace: 'Workspace',
     template: 'Template',
+    restricted: 'Restricted',
     workspaces_one: '{count} workspace',
     workspaces_other: '{count} workspaces',
     createWorkspace: 'Create Workspace',

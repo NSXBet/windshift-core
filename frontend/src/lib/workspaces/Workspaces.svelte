@@ -194,6 +194,15 @@
                 {t('workspaces.template')}
               </span>
             {/if}
+            {#if workspace.is_restricted}
+              <span
+                data-testid={`workspace-restricted-badge-${workspace.id}`}
+                class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
+                style="background-color: var(--ds-accent-orange-subtle); color: var(--ds-text-accent-orange);"
+              >
+                {t('workspaces.restricted')}
+              </span>
+            {/if}
           </div>
           {#if workspace.description}
             <div class="text-sm mt-1" style="color: var(--ds-text-subtle);">{workspace.description}</div>

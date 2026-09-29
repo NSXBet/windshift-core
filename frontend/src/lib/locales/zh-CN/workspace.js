@@ -4,6 +4,7 @@ export default {
     subtitle: '管理您的工作区和项目',
     workspace: '工作区',
     template: '模板',
+    restricted: '受限',
     workspaces_one: '{count} 个工作区',
     workspaces_other: '{count} 个工作区',
     createWorkspace: '创建工作区',

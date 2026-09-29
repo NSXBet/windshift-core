@@ -8,6 +8,7 @@ export default {
     subtitle: 'Ihre Arbeitsbereiche und Projekte verwalten',
     workspace: 'Arbeitsbereich',
     template: 'Vorlage',
+    restricted: 'Eingeschränkt',
     workspaces_one: '{count} Arbeitsbereich',
     workspaces_other: '{count} Arbeitsbereiche',
     createWorkspace: 'Arbeitsbereich erstellen',

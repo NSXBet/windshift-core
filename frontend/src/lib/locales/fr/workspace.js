@@ -4,6 +4,7 @@ export default {
     subtitle: 'Gérez vos espaces de travail et vos projets',
     workspace: 'Espace de travail',
     template: 'Modèle',
+    restricted: 'Restreint',
     workspaces_one: '{count} espace de travail',
     workspaces_other: '{count} espaces de travail',
     createWorkspace: 'Créer un espace de travail',

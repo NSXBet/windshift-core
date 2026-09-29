@@ -4,6 +4,7 @@ export default {
     subtitle: 'Administrar sus espacios de trabajo y proyectos',
     workspace: 'Espacio de trabajo',
     template: 'Plantilla',
+    restricted: 'Restringido',
     workspaces_one: '{count} espacio de trabajo',
     workspaces_other: '{count} espacios de trabajo',
     createWorkspace: 'Crear espacio de trabajo',

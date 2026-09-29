@@ -32,6 +32,7 @@ type Workspace struct {
 	CreatedAt               time.Time `json:"created_at"`
 	UpdatedAt               time.Time `json:"updated_at"`
 	// Joined fields for API responses
+	IsRestricted          bool   `json:"is_restricted,omitempty"` // Explicit Viewer-role assignments gate this workspace to assigned users only
 	TimeProjectName       string `json:"time_project_name,omitempty"`
 	OwnerName             string `json:"owner_name,omitempty"` // Name of workspace owner for API responses
 	ConfigurationSetID    *int64 `json:"configuration_set_id,omitempty"`

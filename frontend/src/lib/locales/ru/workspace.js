@@ -4,7 +4,7 @@
 
 export default {
   workspaces: {
-    title: 'Рабочие пространства', subtitle: 'Рабочие пространства для проектов и команд', workspace: 'Рабочее пространство', template: 'Шаблон',
+    title: 'Рабочие пространства', subtitle: 'Рабочие пространства для проектов и команд', workspace: 'Рабочее пространство', template: 'Шаблон', restricted: 'Ограничено',
     workspaces_one: '{count} рабочее пространство', workspaces_few: '{count} рабочих пространства', workspaces_many: '{count} рабочих пространств', workspaces_other: '{count} рабочего пространства',
     createWorkspace: 'Создать рабочее пространство', editWorkspace: 'Изменить рабочее пространство', deleteWorkspace: 'Удалить рабочее пространство', switchWorkspace: 'Сменить рабочее пространство', workspaceName: 'Название рабочего пространства', workspaceKey: 'Ключ рабочего пространства', workspaceDescription: 'Описание', members: 'Участники', settings: 'Настройки рабочего пространства', noWorkspaces: 'Рабочие пространства не найдены', listSubtitle: 'Объединяйте проекты и команды в рабочих пространствах', empty: 'Рабочих пространств пока нет. Создайте первое, чтобы начать работу.', personal: 'Личное', confirmDelete: 'Удалить рабочее пространство «{name}»? Это затронет все связанные проекты.', selectWorkspace: 'Выберите рабочее пространство', currentWorkspace: 'Текущее рабочее пространство', workspaceCreated: 'Рабочее пространство создано', workspaceUpdated: 'Рабочее пространство обновлено', workspaceDeleted: 'Рабочее пространство удалено',
     customers: {

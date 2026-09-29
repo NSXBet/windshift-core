@@ -31115,6 +31115,10 @@
                   "description": "The is personal value.",
                   "type": "boolean"
                 },
+                "is_restricted": {
+                  "description": "The is restricted value.",
+                  "type": "boolean"
+                },
                 "is_template": {
                   "description": "The is template value.",
                   "type": "boolean"
@@ -37082,6 +37086,10 @@
               },
               "is_personal": {
                 "description": "The is personal value.",
+                "type": "boolean"
+              },
+              "is_restricted": {
+                "description": "The is restricted value.",
                 "type": "boolean"
               },
               "is_template": {
@@ -58492,6 +58500,10 @@
               },
               "is_personal": {
                 "description": "The is personal value.",
+                "type": "boolean"
+              },
+              "is_restricted": {
+                "description": "The is restricted value.",
                 "type": "boolean"
               },
               "is_template": {
@@ -84523,6 +84535,10 @@
               },
               "is_personal": {
                 "description": "The is personal value.",
+                "type": "boolean"
+              },
+              "is_restricted": {
+                "description": "The is restricted value.",
                 "type": "boolean"
               },
               "is_template": {
