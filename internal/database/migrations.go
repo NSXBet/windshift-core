@@ -1686,25 +1686,6 @@ var Catalog = []Migration{
 		Postgres:      slaImportSchemaPostgres,
 	},
 	{
-		Version: "20260931_sla_bigint_durations",
-		Name:    "Widen SLA millisecond columns to BIGINT on PostgreSQL",
-		// SQLite integers are already 64-bit, so the widening only applies to
-		// PostgreSQL. The check reports the effect present when all five
-		// columns are bigint.
-		CheckPostgres: `SELECT CASE WHEN COUNT(*) = 5 THEN 1 ELSE 0 END FROM information_schema.columns
-			WHERE table_schema = current_schema()
-			  AND ((table_name = 'item_sla_cycles' AND column_name IN ('goal_duration_ms', 'elapsed_ms', 'remaining_ms', 'remaining_at_pause_ms'))
-			       OR (table_name = 'sla_goal_targets' AND column_name = 'target_ms'))
-			  AND data_type = 'bigint'`,
-		Postgres: `
-			ALTER TABLE item_sla_cycles ALTER COLUMN goal_duration_ms TYPE BIGINT;
-			ALTER TABLE item_sla_cycles ALTER COLUMN elapsed_ms TYPE BIGINT;
-			ALTER TABLE item_sla_cycles ALTER COLUMN remaining_ms TYPE BIGINT;
-			ALTER TABLE item_sla_cycles ALTER COLUMN remaining_at_pause_ms TYPE BIGINT;
-			ALTER TABLE sla_goal_targets ALTER COLUMN target_ms TYPE BIGINT;
-		`,
-	},
-	{
 		Version:       "20260932_sla_hot_indexes",
 		Name:          "Add SLA job and cycle hot-path indexes",
 		CheckSQLite:   sqliteIndexCheck("idx_item_sla_cycles_metric"),
