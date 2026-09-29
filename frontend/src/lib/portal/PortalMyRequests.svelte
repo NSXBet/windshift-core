@@ -189,6 +189,7 @@
                 <!-- shortcut-guard-exempt: portal comments are an explicit, form-scoped submit action. -->
                 <Button
                   variant="primary"
+                  dataTestid="portal-request-comment-submit"
                   onclick={() => portalRequestsStore.addComment()}
                   disabled={!portalRequestsStore.newComment.trim() || portalRequestsStore.addingComment}
                   loading={portalRequestsStore.addingComment}

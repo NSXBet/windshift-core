@@ -107,7 +107,10 @@ async function addAttachment(file) {
   if (!file || !selectedRequest || !slug) return;
   try {
     uploadingAttachment = true;
-    const attachment = await api.portal.addRequestAttachment(slug, selectedRequest.id, file);
+    const result = await api.portal.addRequestAttachment(slug, selectedRequest.id, file);
+    // The upload endpoint answers with an AttachmentUploadResponse wrapper;
+    // list entries are bare attachment objects.
+    const attachment = result?.attachment ?? result;
     attachments = [...attachments, attachment];
   } catch (err) {
     console.error('Failed to upload attachment:', err);
