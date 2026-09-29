@@ -741,7 +741,7 @@ func (s *Server) initialize() error {
 	onCallService := services.NewOnCallService(s.db, onCallRepo, leaveRepo)
 	itemRepo := repository.NewItemRepository(s.db)
 	incidentService := services.NewIncidentService(s.db, onCallRepo, itemRepo, onCallService, teamRepo, s.notificationService)
-	teamHandler := handlers.NewTeamHandler(teamRepo, leaveRepo, permService, logger.NewAuditor(s.db))
+	teamHandler := handlers.NewTeamHandler(teamRepo, leaveRepo, repository.NewSLARepository(s.db), permService, logger.NewAuditor(s.db))
 	leaveHandler := handlers.NewLeaveHandler(leaveRepo, repository.NewUserRepository(s.db), permService)
 	onCallHandler := handlers.NewOnCallHandler(onCallRepo, teamRepo, itemRepo, onCallService, incidentService, permService, logger.NewAuditor(s.db))
 	s.actionService.SetTeamService(teamService)

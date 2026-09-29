@@ -99,11 +99,16 @@ func Compile(raw RawCalendar) (*Calendar, error) {
 		holidayList: append([]Holiday(nil), raw.Holidays...),
 	}
 
+	seenWeekday := make(map[int]string, len(raw.WeeklyIntervals))
 	for day, intervals := range raw.WeeklyIntervals {
 		index, ok := weekdayIndex(day)
 		if !ok {
 			return nil, fmt.Errorf("unknown weekday %q", day)
 		}
+		if previous, ok := seenWeekday[index]; ok {
+			return nil, fmt.Errorf("duplicate weekday %q (already defined as %q)", day, previous)
+		}
+		seenWeekday[index] = day
 		for _, interval := range intervals {
 			start, err := parseClock(interval.Start)
 			if err != nil {
@@ -121,6 +126,7 @@ func Compile(raw RawCalendar) (*Calendar, error) {
 		sort.Slice(calendar.weekly[index], func(a, b int) bool {
 			return calendar.weekly[index][a].start < calendar.weekly[index][b].start
 		})
+		calendar.weekly[index] = mergeIntervals(calendar.weekly[index])
 	}
 	for index := range calendar.weekly {
 		calendar.weeklyDuration += weekdaySeconds(calendar.weekly[index])
@@ -442,6 +448,26 @@ func (c *Calendar) intervalInstants(day time.Time, interval minuteInterval) (sta
 	start = time.Date(year, month, date, interval.start/60, interval.start%60, 0, 0, c.location)
 	end = time.Date(year, month, date, interval.end/60, interval.end%60, 0, 0, c.location)
 	return start, end
+}
+
+// mergeIntervals coalesces sorted intervals that overlap or touch, so a
+// schedule listing 09:00-12:00 and 10:00-13:00 counts three hours, not five.
+func mergeIntervals(intervals []minuteInterval) []minuteInterval {
+	if len(intervals) < 2 {
+		return intervals
+	}
+	merged := make([]minuteInterval, 0, len(intervals))
+	for _, interval := range intervals {
+		if len(merged) == 0 || interval.start > merged[len(merged)-1].end {
+			merged = append(merged, interval)
+			continue
+		}
+		last := &merged[len(merged)-1]
+		if interval.end > last.end {
+			last.end = interval.end
+		}
+	}
+	return merged
 }
 
 func weekdaySeconds(intervals []minuteInterval) time.Duration {

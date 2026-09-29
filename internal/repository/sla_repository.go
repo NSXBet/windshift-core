@@ -295,19 +295,56 @@ func (r *SLARepository) listImportedSourceIDs(ctx context.Context, query string,
 }
 
 // DeleteImportedCyclesNotIn removes imported cycles for a metric whose source
-// id is not in keep. Native cycles are never touched.
+// id is not in keep. Native cycles are never touched. Stale rows are selected
+// and deleted by primary key in bounded chunks so a large import cannot build
+// an oversized NOT IN list.
 func (r *SLARepository) DeleteImportedCyclesNotIn(ctx context.Context, tx database.Tx, metricID int, keep []string) error {
-	query := `DELETE FROM item_sla_cycles WHERE metric_id = ? AND origin = 'import'`
-	args := []any{metricID}
-	if len(keep) > 0 {
-		placeholders := strings.TrimSuffix(strings.Repeat("?,", len(keep)), ",")
-		query += ` AND (source_id IS NULL OR source_id NOT IN (` + placeholders + `))`
-		for _, id := range keep {
-			args = append(args, id)
-		}
+	keepSet := make(map[string]struct{}, len(keep))
+	for _, id := range keep {
+		keepSet[id] = struct{}{}
 	}
-	if _, err := tx.ExecContext(ctx, query, args...); err != nil {
-		return fmt.Errorf("delete stale imported cycles: %w", err)
+	rows, err := tx.QueryContext(ctx, `SELECT id, source_id FROM item_sla_cycles WHERE metric_id = ? AND origin = 'import'`, metricID)
+	if err != nil {
+		return fmt.Errorf("list imported cycles: %w", err)
+	}
+	var stale []int64
+	for rows.Next() {
+		var id int64
+		var sourceID sql.NullString
+		if err := rows.Scan(&id, &sourceID); err != nil {
+			_ = rows.Close()
+			return fmt.Errorf("scan imported cycle: %w", err)
+		}
+		if sourceID.Valid {
+			if _, ok := keepSet[sourceID.String]; ok {
+				continue
+			}
+		}
+		stale = append(stale, id)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return err
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+
+	const chunk = 500
+	for start := 0; start < len(stale); start += chunk {
+		end := start + chunk
+		if end > len(stale) {
+			end = len(stale)
+		}
+		batch := stale[start:end]
+		placeholders := strings.TrimSuffix(strings.Repeat("?,", len(batch)), ",")
+		args := make([]any, len(batch))
+		for i, id := range batch {
+			args[i] = id
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM item_sla_cycles WHERE id IN (`+placeholders+`)`, args...); err != nil {
+			return fmt.Errorf("delete stale imported cycles: %w", err)
+		}
 	}
 	return nil
 }
@@ -889,9 +926,6 @@ func (r *SLARepository) replaceMetricChildren(ctx context.Context, tx database.T
 	if _, err := tx.ExecContext(ctx, `DELETE FROM sla_metric_conditions WHERE metric_id = ?`, metricID); err != nil {
 		return fmt.Errorf("clear metric conditions: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM sla_goals WHERE metric_id = ?`, metricID); err != nil {
-		return fmt.Errorf("clear metric goals: %w", err)
-	}
 	for _, condition := range metric.Conditions {
 		config := condition.Config
 		if len(config) == 0 {
@@ -903,19 +937,119 @@ func (r *SLARepository) replaceMetricChildren(ctx context.Context, tx database.T
 			return fmt.Errorf("insert metric condition: %w", err)
 		}
 	}
-	for _, goal := range metric.Goals {
-		var goalID int
-		if err := tx.QueryRowContext(ctx, `INSERT INTO sla_goals (metric_id, position, ql_query, original_jql, import_status, source_id, source_payload)
-			VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id`,
-			metricID, goal.Position, goal.QLQuery, goal.OriginalJQL, goal.ImportStatus, goal.SourceID, goal.SourcePayload).Scan(&goalID); err != nil {
-			return fmt.Errorf("insert goal: %w", err)
+	return r.syncMetricGoals(ctx, tx, metricID, metric.Goals)
+}
+
+// syncMetricGoals reconciles a metric's goals in place. Existing rows are
+// matched by id, then source id, then position, and updated so cycles that
+// reference them keep their goal link; goals omitted from the new
+// configuration are deleted. Targets have no downstream references, so they
+// are replaced.
+func (r *SLARepository) syncMetricGoals(ctx context.Context, tx database.Tx, metricID int, goals []models.SLAGoal) error {
+	type storedGoal struct {
+		id       int
+		position int
+		sourceID sql.NullString
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT id, position, source_id FROM sla_goals WHERE metric_id = ?`, metricID)
+	if err != nil {
+		return fmt.Errorf("load metric goals: %w", err)
+	}
+	var stored []storedGoal
+	for rows.Next() {
+		var goal storedGoal
+		if err := rows.Scan(&goal.id, &goal.position, &goal.sourceID); err != nil {
+			_ = rows.Close()
+			return fmt.Errorf("scan metric goal: %w", err)
 		}
-		for _, target := range goal.Targets {
-			if _, err := tx.ExecContext(ctx, `INSERT INTO sla_goal_targets (goal_id, position, priority_id, is_fallback, target_ms, calendar_id, source_id, source_payload)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-				goalID, target.Position, nullableInt(target.PriorityID), target.IsFallback, target.TargetMs, target.CalendarID, target.SourceID, target.SourcePayload); err != nil {
-				return fmt.Errorf("insert goal target: %w", err)
+		stored = append(stored, goal)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return err
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+
+	byID := make(map[int]int, len(stored))
+	bySource := make(map[string]int, len(stored))
+	byPosition := make(map[int]int, len(stored))
+	for i, goal := range stored {
+		byID[goal.id] = i
+		if goal.sourceID.Valid {
+			bySource[goal.sourceID.String] = i
+		}
+		byPosition[goal.position] = i
+	}
+
+	// Park the existing rows on unique negative positions so reordering cannot
+	// trip the (metric_id, position) unique constraint mid-update.
+	for _, goal := range stored {
+		if _, err := tx.ExecContext(ctx, `UPDATE sla_goals SET position = ? WHERE id = ?`, -goal.id, goal.id); err != nil {
+			return fmt.Errorf("park metric goal: %w", err)
+		}
+	}
+
+	used := make([]bool, len(stored))
+	for _, goal := range goals {
+		match := -1
+		if goal.ID != 0 {
+			if index, ok := byID[goal.ID]; ok && !used[index] {
+				match = index
 			}
+		}
+		if match < 0 && goal.SourceID != nil {
+			if index, ok := bySource[*goal.SourceID]; ok && !used[index] {
+				match = index
+			}
+		}
+		if match < 0 {
+			if index, ok := byPosition[goal.Position]; ok && !used[index] {
+				match = index
+			}
+		}
+
+		goalID := 0
+		if match >= 0 {
+			used[match] = true
+			goalID = stored[match].id
+			if _, err := tx.ExecContext(ctx, `UPDATE sla_goals SET position = ?, ql_query = ?, original_jql = ?, import_status = ?, source_id = ?, source_payload = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+				goal.Position, goal.QLQuery, goal.OriginalJQL, goal.ImportStatus, goal.SourceID, goal.SourcePayload, goalID); err != nil {
+				return fmt.Errorf("update goal: %w", err)
+			}
+			if _, err := tx.ExecContext(ctx, `DELETE FROM sla_goal_targets WHERE goal_id = ?`, goalID); err != nil {
+				return fmt.Errorf("clear goal targets: %w", err)
+			}
+		} else {
+			if err := tx.QueryRowContext(ctx, `INSERT INTO sla_goals (metric_id, position, ql_query, original_jql, import_status, source_id, source_payload)
+				VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+				metricID, goal.Position, goal.QLQuery, goal.OriginalJQL, goal.ImportStatus, goal.SourceID, goal.SourcePayload).Scan(&goalID); err != nil {
+				return fmt.Errorf("insert goal: %w", err)
+			}
+		}
+		if err := r.insertGoalTargets(ctx, tx, goalID, goal.Targets); err != nil {
+			return err
+		}
+	}
+
+	for index, goal := range stored {
+		if used[index] {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM sla_goals WHERE id = ?`, goal.id); err != nil {
+			return fmt.Errorf("delete goal: %w", err)
+		}
+	}
+	return nil
+}
+
+func (r *SLARepository) insertGoalTargets(ctx context.Context, tx database.Tx, goalID int, targets []models.SLAGoalTarget) error {
+	for _, target := range targets {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO sla_goal_targets (goal_id, position, priority_id, is_fallback, target_ms, calendar_id, source_id, source_payload)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			goalID, target.Position, nullableInt(target.PriorityID), target.IsFallback, target.TargetMs, target.CalendarID, target.SourceID, target.SourcePayload); err != nil {
+			return fmt.Errorf("insert goal target: %w", err)
 		}
 	}
 	return nil
@@ -928,6 +1062,30 @@ func (r *SLARepository) DeleteMetric(ctx context.Context, tx database.Tx, metric
 		return fmt.Errorf("delete metric: %w", err)
 	}
 	return requireAffected(result)
+}
+
+// DeleteWorkspaceMetricsTx removes every SLA metric in a workspace, cascading
+// goals, targets, cycles, and jobs. Deleting metrics before a workspace
+// removes goal targets before the workspace's calendars cascade, which would
+// otherwise trip the calendar RESTRICT depending on cascade order.
+func (r *SLARepository) DeleteWorkspaceMetricsTx(ctx context.Context, tx database.Tx, workspaceID int) error {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM sla_metrics WHERE workspace_id = ?`, workspaceID); err != nil {
+		return fmt.Errorf("delete workspace SLA metrics: %w", err)
+	}
+	return nil
+}
+
+// TeamReferencedCalendars counts goal targets that reference the team's
+// calendars. A non-zero count means deleting the team would strand an SLA, so
+// the delete must be refused with a domain error rather than a raw FK failure.
+func (r *SLARepository) TeamReferencedCalendars(ctx context.Context, teamID int) (int, error) {
+	var count int
+	if err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sla_goal_targets t
+		JOIN working_calendars c ON c.id = t.calendar_id
+		WHERE c.team_id = ?`, teamID).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count team calendar references: %w", err)
+	}
+	return count, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -1268,15 +1426,20 @@ func (r *SLARepository) NextDueAt(ctx context.Context) (time.Time, bool, error) 
 	return due, true, nil
 }
 
-// ClaimDueJobs leases up to limit pending jobs due at or before now.
+// ClaimDueJobs leases up to limit pending jobs due at or before now. The
+// outer WHERE rechecks state and due_at, and PostgreSQL locks the candidate
+// rows with SKIP LOCKED, so two replicas running the same claim cannot lease
+// the same job.
 func (r *SLARepository) ClaimDueJobs(ctx context.Context, now time.Time, lease time.Duration, owner string, limit int) ([]models.SLAJob, error) {
 	leaseUntil := now.Add(lease)
+	candidates := `SELECT id FROM sla_jobs WHERE state = 'pending' AND due_at <= ? ORDER BY due_at LIMIT ?`
+	if database.IsPostgresDriver(r.db.GetDriverName()) {
+		candidates += ` FOR UPDATE SKIP LOCKED`
+	}
 	rows, err := r.db.QueryContext(ctx, `UPDATE sla_jobs
 		SET due_at = ?, lease_owner = ?, attempts = attempts + 1
-		WHERE id IN (
-			SELECT id FROM sla_jobs WHERE state = 'pending' AND due_at <= ? ORDER BY due_at LIMIT ?
-		)
-		RETURNING `+jobColumns, leaseUntil, owner, now, limit)
+		WHERE state = 'pending' AND due_at <= ? AND id IN (`+candidates+`)
+		RETURNING `+jobColumns, leaseUntil, owner, now, now, limit)
 	if err != nil {
 		return nil, fmt.Errorf("claim SLA jobs: %w", err)
 	}
@@ -1380,7 +1543,7 @@ func (r *SLARepository) SLAReport(ctx context.Context, workspaceID int, from, to
 		COALESCE(SUM(CASE WHEN c.breached_at IS NOT NULL THEN 1 ELSE 0 END), 0),
 		AVG(c.elapsed_ms), AVG(c.goal_duration_ms), MAX(c.elapsed_ms)
 	FROM sla_metrics m
-	LEFT JOIN item_sla_cycles c ON c.metric_id = m.id AND c.status = 'completed'`
+	LEFT JOIN item_sla_cycles c ON c.metric_id = m.id AND c.status = 'completed' AND c.goal_duration_ms > 0`
 	// Argument order follows the SQL text: evaluation time, date bounds, then
 	// the workspace predicate.
 	summaryArgs := []any{time.Now().UTC()}

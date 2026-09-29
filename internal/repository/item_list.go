@@ -194,8 +194,8 @@ var systemFieldSortColumns = map[string]string{
 	"frac_index":     "i.frac_index",
 	// SLA urgency: nearest running deadline first; paused cycles carry no
 	// deadline and sort last. Exact business-time remaining is display-only.
-	"sla_deadline": "(SELECT sla_c.next_deadline_at FROM item_sla_cycles sla_c WHERE sla_c.item_id = i.id AND sla_c.status = 'ongoing' ORDER BY sla_c.next_deadline_at LIMIT 1)",
-	"sla_urgency":  "(SELECT CASE WHEN sla_c.pause_started_at IS NOT NULL THEN 1 ELSE 0 END FROM item_sla_cycles sla_c WHERE sla_c.item_id = i.id AND sla_c.status = 'ongoing' LIMIT 1)",
+	"sla_deadline": "(SELECT sla_c.next_deadline_at FROM item_sla_cycles sla_c WHERE sla_c.item_id = i.id AND sla_c.status = 'ongoing' AND sla_c.next_deadline_at IS NOT NULL ORDER BY sla_c.next_deadline_at LIMIT 1)",
+	"sla_urgency":  "(SELECT MAX(CASE WHEN sla_c.pause_started_at IS NOT NULL THEN 1 ELSE 0 END) FROM item_sla_cycles sla_c WHERE sla_c.item_id = i.id AND sla_c.status = 'ongoing')",
 }
 
 // unsortableCustomFieldTypes lists custom field types that cannot be meaningfully sorted.
@@ -835,6 +835,11 @@ func (r *ItemRepository) buildOrderByClause(sortBy string, sortAsc bool) string 
 		)
 	}
 	if col, ok := systemFieldSortColumns[sortBy]; ok {
+		if sortBy == "sla_deadline" || sortBy == "sla_urgency" {
+			// Items with no matching cycle sort last regardless of direction,
+			// and the item id breaks ties so pages cannot reshuffle.
+			return fmt.Sprintf(" ORDER BY (%s IS NULL) ASC, %s %s, i.id ASC", col, col, direction)
+		}
 		return fmt.Sprintf(" ORDER BY %s %s, i.id ASC", col, direction)
 	}
 

@@ -167,6 +167,9 @@ CREATE INDEX IF NOT EXISTS idx_item_sla_cycles_item_ongoing
 CREATE INDEX IF NOT EXISTS idx_item_sla_cycles_metric_deadline
 	ON item_sla_cycles(metric_id, next_deadline_at) WHERE status = 'ongoing';
 CREATE INDEX IF NOT EXISTS idx_item_sla_cycles_item ON item_sla_cycles(item_id);
+CREATE INDEX IF NOT EXISTS idx_item_sla_cycles_metric ON item_sla_cycles(metric_id);
+CREATE INDEX IF NOT EXISTS idx_item_sla_cycles_goal ON item_sla_cycles(goal_id);
+CREATE INDEX IF NOT EXISTS idx_item_sla_cycles_calendar ON item_sla_cycles(calendar_id);
 
 -- Warning thresholds that have already fired, keyed per cycle.
 CREATE TABLE IF NOT EXISTS item_sla_cycle_thresholds (
@@ -203,3 +206,6 @@ CREATE TABLE IF NOT EXISTS sla_jobs (
 CREATE UNIQUE INDEX IF NOT EXISTS uq_sla_jobs_subject
 	ON sla_jobs(kind, threshold_key, COALESCE(cycle_id, 0), COALESCE(item_id, 0), COALESCE(metric_id, 0));
 CREATE INDEX IF NOT EXISTS idx_sla_jobs_due ON sla_jobs(due_at) WHERE state = 'pending';
+CREATE INDEX IF NOT EXISTS idx_sla_jobs_cycle ON sla_jobs(cycle_id);
+CREATE INDEX IF NOT EXISTS idx_sla_jobs_item ON sla_jobs(item_id);
+CREATE INDEX IF NOT EXISTS idx_sla_jobs_metric ON sla_jobs(metric_id);

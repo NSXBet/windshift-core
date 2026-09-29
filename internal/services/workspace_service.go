@@ -31,6 +31,7 @@ type WorkspaceService struct {
 	db                    database.Database
 	repo                  *repository.WorkspaceRepository
 	itemRepo              *repository.ItemRepository
+	slaRepo               *repository.SLARepository
 	templates             *repository.WorkspaceTemplateRepository
 	integrationLinkGuards *IntegrationLinkGuards
 	access                WorkspaceSourceAccess
@@ -42,6 +43,7 @@ func NewWorkspaceService(db database.Database) *WorkspaceService {
 		db:                    db,
 		repo:                  repository.NewWorkspaceRepository(db),
 		itemRepo:              repository.NewItemRepository(db),
+		slaRepo:               repository.NewSLARepository(db),
 		templates:             repository.NewWorkspaceTemplateRepository(db),
 		integrationLinkGuards: NewIntegrationLinkGuards(db),
 	}
@@ -407,6 +409,13 @@ func (s *WorkspaceService) Delete(id int) error {
 		}
 		if hasProtectedLinks {
 			return ErrWorkspaceHasProtectedIntegrationLinks
+		}
+
+		// Remove SLA configuration first so goal targets are gone before the
+		// workspace's calendars cascade; the goal-target calendar FK would
+		// otherwise abort the delete depending on cascade order.
+		if err := s.slaRepo.DeleteWorkspaceMetricsTx(context.Background(), tx, id); err != nil {
+			return err
 		}
 
 		if err := s.repo.DeleteTx(tx, id); err != nil {

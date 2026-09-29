@@ -118,6 +118,7 @@ func OffboardUser(db database.Database, userID int, notificationDeleter UserNoti
 		return result, fmt.Errorf("failed to find personal workspace: %w", err)
 	}
 	itemRepo := repository.NewItemRepository(db)
+	slaRepo := repository.NewSLARepository(db)
 	if personalWsID != nil {
 		if err := itemRepo.LockWorkspaceItemsTx(tx, *personalWsID); err != nil {
 			return result, err
@@ -158,6 +159,11 @@ func OffboardUser(db database.Database, userID int, notificationDeleter UserNoti
 	if personalWsID != nil {
 		if err := itemRepo.DeleteByWorkspaceTx(tx, *personalWsID); err != nil {
 			return result, fmt.Errorf("failed to delete personal workspace items: %w", err)
+		}
+		// Drop SLA metrics before the workspace calendars cascade so the
+		// goal-target calendar FK cannot abort the delete.
+		if err := slaRepo.DeleteWorkspaceMetricsTx(context.Background(), tx, *personalWsID); err != nil {
+			return result, fmt.Errorf("failed to delete personal workspace SLA metrics: %w", err)
 		}
 		if _, err := tx.Exec(`DELETE FROM workspaces WHERE id = ?`, *personalWsID); err != nil {
 			return result, fmt.Errorf("failed to delete personal workspace: %w", err)
