@@ -1668,6 +1668,10 @@ var Catalog = []Migration{
 		CheckPostgres: pgTableCheck("sla_metrics"),
 		SQLite:        slaSchema,
 		Postgres:      slaSchemaPostgres,
+		// The canonical schema was corrected in place (BIGINT durations and
+		// hot-path indexes) while this migration was unreleased, so advance the
+		// checksum instead of failing databases stamped with the earlier body.
+		ReconcileChecksum: true,
 	},
 	{
 		Version:       "20260929_sla_warning_thresholds",
