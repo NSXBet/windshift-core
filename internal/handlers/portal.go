@@ -49,6 +49,7 @@ type PortalHandler struct {
 	approvalService      *services.ApprovalService
 	draftRepo            *repository.PortalDraftRepository
 	attachmentPath       string
+	attachments          *services.ItemAttachmentService
 	eventCoordinator     *services.EventCoordinator
 	publication          *services.KnowledgePublicationService
 	kbSignals            *services.KBSignalService
@@ -343,6 +344,10 @@ func applyRequestTypeVisibility(rt *models.RequestType, groups, orgs sql.NullStr
 
 // NewPortalHandler creates a new portal handler
 func NewPortalHandler(db database.Database, sessionManager *auth.SessionManager, portalSessionManager *auth.PortalSessionManager, ipExtractor *utils.IPExtractor, attachmentPath string) *PortalHandler {
+	var attachments *services.ItemAttachmentService
+	if attachmentPath != "" {
+		attachments = services.NewItemAttachmentService(db, attachmentPath, nil)
+	}
 	return &PortalHandler{
 		db:                   db,
 		sessionManager:       sessionManager,
@@ -352,6 +357,7 @@ func NewPortalHandler(db database.Database, sessionManager *auth.SessionManager,
 		portalAuthRepo:       repository.NewPortalAuthRepository(db),
 		draftRepo:            repository.NewPortalDraftRepository(db),
 		attachmentPath:       attachmentPath,
+		attachments:          attachments,
 	}
 }
 

@@ -18,6 +18,8 @@ let comments = $state([]);
 let loadingComments = $state(false);
 let newComment = $state('');
 let addingComment = $state(false);
+let attachments = $state([]);
+let uploadingAttachment = $state(false);
 
 let showDrafts = $state(false);
 let drafts = $state([]);
@@ -87,10 +89,38 @@ async function loadComments(itemId) {
   }
 }
 
+async function loadAttachments(itemId) {
+  const slug = context.getSlug();
+  if (!slug) return;
+  try {
+    const result = await api.portal.getRequestAttachments(slug, itemId);
+    attachments = result || [];
+  } catch (err) {
+    // Attachments stay empty on failure; the timeline must still render.
+    console.error('Failed to load attachments:', err);
+    attachments = [];
+  }
+}
+
+async function addAttachment(file) {
+  const slug = context.getSlug();
+  if (!file || !selectedRequest || !slug) return;
+  try {
+    uploadingAttachment = true;
+    const attachment = await api.portal.addRequestAttachment(slug, selectedRequest.id, file);
+    attachments = [...attachments, attachment];
+  } catch (err) {
+    console.error('Failed to upload attachment:', err);
+    errorToast(err?.message || 'Failed to upload file. Please try again.');
+  } finally {
+    uploadingAttachment = false;
+  }
+}
+
 async function viewRequest(request) {
   selectedRequest = request;
   navigate(`/portal/${context.getSlug()}?view=requests&id=${request.id}`);
-  await loadComments(request.id);
+  await Promise.all([loadComments(request.id), loadAttachments(request.id)]);
 }
 
 async function loadAndViewRequest(requestId) {
@@ -99,7 +129,7 @@ async function loadAndViewRequest(requestId) {
   try {
     const request = await api.portal.getRequestDetail(slug, requestId);
     selectedRequest = request;
-    await loadComments(request.id);
+    await Promise.all([loadComments(request.id), loadAttachments(request.id)]);
   } catch (err) {
     console.error('Failed to load request:', err);
   }
@@ -125,6 +155,7 @@ function closeRequestDetail() {
   selectedRequest = null;
   comments = [];
   newComment = '';
+  attachments = [];
   navigate(`/portal/${context.getSlug()}?view=requests`);
 }
 
@@ -333,6 +364,8 @@ function reset() {
   loadingComments = false;
   newComment = '';
   addingComment = false;
+  attachments = [];
+  uploadingAttachment = false;
   showDrafts = false;
   drafts = [];
   loadingDrafts = false;
@@ -380,10 +413,22 @@ export const portalRequestsStore = {
   get addingComment() {
     return addingComment;
   },
+  get attachments() {
+    return attachments;
+  },
+  get uploadingAttachment() {
+    return uploadingAttachment;
+  },
   load: loadRequests,
   view: viewRequest,
   loadComments,
   addComment,
+  addAttachment,
+  attachmentUrl: (attachmentId) => {
+    const slug = context.getSlug();
+    if (!slug || !selectedRequest) return '#';
+    return api.portal.requestAttachmentUrl(slug, selectedRequest.id, attachmentId);
+  },
   closeDetail: closeRequestDetail,
   toggle: toggleRequests,
   setVisible: setShowRequests,

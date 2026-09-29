@@ -54,6 +54,12 @@ func RegisterPortalRoutes(deps *Deps) {
 		api.HandleH("GET /portal/{slug}/requests/{itemId}/comments", portalAuth(http.HandlerFunc(deps.Portal.Portal.GetRequestComments)))
 		api.HandleH("POST /portal/{slug}/requests/{itemId}/comments", deps.PortalSubmitLimiter.Limit(portalAuth(http.HandlerFunc(deps.Portal.Portal.AddRequestComment))))
 
+		// Request attachments share the submission rate limiter; uploads are
+		// owner-only and downloads are owner-or-active-approver scoped.
+		api.HandleH("GET /portal/{slug}/requests/{itemId}/attachments", portalAuth(http.HandlerFunc(deps.Portal.Portal.GetRequestAttachments)))
+		api.HandleH("POST /portal/{slug}/requests/{itemId}/attachments", deps.PortalSubmitLimiter.Limit(portalAuth(http.HandlerFunc(deps.Portal.Portal.AddRequestAttachment))))
+		api.HandleH("GET /portal/{slug}/requests/{itemId}/attachments/{attachmentId}/download", portalAuth(http.HandlerFunc(deps.Portal.Portal.DownloadRequestAttachment)))
+
 		// Draft writes share the submission rate limiter.
 		api.HandleH("POST /portal/{slug}/drafts", deps.PortalSubmitLimiter.Limit(portalAuth(http.HandlerFunc(deps.Portal.Portal.SaveDraft))))
 		api.HandleH("GET /portal/{slug}/drafts", portalAuth(http.HandlerFunc(deps.Portal.Portal.GetMyDrafts)))

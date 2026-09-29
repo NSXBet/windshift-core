@@ -194,6 +194,28 @@ func (r *AttachmentRepository) GetItemDownloadRecord(id int) (*AttachmentDownloa
 	return &rec, nil
 }
 
+// GetPortalRequestAttachmentRecord returns download metadata for an
+// item-scoped attachment bound to one specific request (item). The itemID
+// comes from the caller's portal ownership resolution, so the query refuses
+// attachments that belong to any other item or entity type.
+func (r *AttachmentRepository) GetPortalRequestAttachmentRecord(attachmentID, itemID int) (*AttachmentDownloadRecord, error) {
+	var rec AttachmentDownloadRecord
+	err := r.db.QueryRow(`
+		SELECT i.workspace_id, a.filename, a.original_filename, a.file_path, a.mime_type, a.file_size
+		FROM attachments a
+		JOIN items i ON i.id = a.item_id
+		WHERE a.id = ? AND a.item_id = ?
+		  AND (a.entity_type IS NULL OR a.entity_type = '' OR a.entity_type = 'item')
+	`, attachmentID, itemID).Scan(&rec.WorkspaceID, &rec.Filename, &rec.OriginalFilename, &rec.FilePath, &rec.MimeType, &rec.FileSize)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get portal request attachment: %w", err)
+	}
+	return &rec, nil
+}
+
 // GetItemThumbnailRecord returns thumbnail metadata for an item-scoped
 // attachment. Missing thumbnails and non-item attachments are deliberately
 // hidden from the items-token route and return ErrNotFound.

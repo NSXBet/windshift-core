@@ -1,4 +1,4 @@
-import { fetchAPI } from './core.js';
+import { API_BASE, fetchAPI } from './core.js';
 import { createCrudClient } from './createCrudClient.js';
 
 // Portal Auth API (magic link authentication for portal customers)
@@ -96,6 +96,23 @@ export const portal = {
       method: 'POST',
       body: JSON.stringify({ content }),
     }),
+
+  getRequestAttachments: (slug, itemId) =>
+    fetchAPI(`/portal/${slug}/requests/${itemId}/attachments`),
+
+  addRequestAttachment: (slug, itemId, file) => {
+    const body = new FormData();
+    body.append('file', file);
+    return fetchAPI(`/portal/${slug}/requests/${itemId}/attachments`, {
+      method: 'POST',
+      body,
+    });
+  },
+
+  // Session-authenticated download URL for one request attachment. Use as an
+  // anchor href; the portal cookie authorizes the GET.
+  requestAttachmentUrl: (slug, itemId, attachmentId) =>
+    `${API_BASE}/portal/${slug}/requests/${itemId}/attachments/${attachmentId}/download`,
 
   // Get request type fields (portal-authenticated)
   getRequestTypeFields: (slug, requestTypeId) =>

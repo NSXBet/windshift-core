@@ -158,6 +158,32 @@ func (s *ItemAttachmentService) OpenItemAttachment(userID, attachmentID int, thu
 	return &ItemAttachmentBinary{File: file, OriginalFilename: record.OriginalFilename, MimeType: record.MimeType, FileSize: record.FileSize}, nil
 }
 
+// ListPortalRequestAttachments returns the attachment page for one portal
+// request. Portal ownership was resolved by the caller, so no workspace
+// permission check runs here.
+func (s *ItemAttachmentService) ListPortalRequestAttachments(itemID, limit, offset int) ([]models.Attachment, int, error) {
+	return repository.NewAttachmentRepository(s.db).ListItem(itemID, limit, offset)
+}
+
+// OpenPortalRequestAttachment opens an item attachment for a portal
+// participant. The caller has already established portal ownership of itemID;
+// this verifies the attachment is an item attachment bound to that request and
+// returns a root-confined file handle.
+func (s *ItemAttachmentService) OpenPortalRequestAttachment(attachmentID, itemID int) (*ItemAttachmentBinary, error) {
+	if s.attachmentPath == "" {
+		return nil, ErrItemAttachmentDisabled
+	}
+	record, err := repository.NewAttachmentRepository(s.db).GetPortalRequestAttachmentRecord(attachmentID, itemID)
+	if err != nil {
+		return nil, ErrItemAttachmentNotFound
+	}
+	file, err := fileserve.OpenUnderRoot(s.attachmentPath, record.FilePath)
+	if err != nil {
+		return nil, ErrItemAttachmentNotFound
+	}
+	return &ItemAttachmentBinary{File: file, OriginalFilename: record.OriginalFilename, MimeType: record.MimeType, FileSize: record.FileSize}, nil
+}
+
 // ValidatePublicFormAttachment performs every file-level check before a form
 // item is created. UploadPublicFormAttachment repeats these checks before
 // storage, keeping validation safe across the create/store boundary.
