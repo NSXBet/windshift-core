@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -54,6 +55,7 @@ type WorkspaceService struct {
 	itemRepo              *repository.ItemRepository
 	slaRepo               *repository.SLARepository
 	templates             *repository.WorkspaceTemplateRepository
+	boards                *repository.BoardConfigurationRepository
 	integrationLinkGuards *IntegrationLinkGuards
 	access                WorkspaceSourceAccess
 	packProvisioner       WorkspacePackProvisioner
@@ -74,6 +76,7 @@ func NewWorkspaceService(db database.Database) *WorkspaceService {
 		itemRepo:              repository.NewItemRepository(db),
 		slaRepo:               repository.NewSLARepository(db),
 		templates:             repository.NewWorkspaceTemplateRepository(db),
+		boards:                repository.NewBoardConfigurationRepository(db),
 		integrationLinkGuards: NewIntegrationLinkGuards(db),
 	}
 }
@@ -430,6 +433,9 @@ func (s *WorkspaceService) Update(params UpdateWorkspaceParams) (*models.Workspa
 		appendField("avatar_url", nullableUpdateValue(params.AvatarURL))
 	}
 	if params.DefaultView != nil {
+		if err := s.validateDefaultView(params.ID, *params.DefaultView); err != nil {
+			return nil, err
+		}
 		appendField("default_view", *params.DefaultView)
 	}
 	if params.InternalCommentsEnabled != nil {
@@ -468,6 +474,27 @@ func (s *WorkspaceService) Update(params UpdateWorkspaceParams) (*models.Workspa
 	}
 
 	return s.GetByID(params.ID)
+}
+
+// validateDefaultView rejects a default_view that the workspace's view
+// settings disable. Values outside the known view set (legacy data) pass.
+func (s *WorkspaceService) validateDefaultView(workspaceID int, defaultView string) error {
+	if !slices.Contains(models.BoardViewIDs, defaultView) {
+		return nil
+	}
+	wsConfig, err := s.boards.GetByWorkspaceID(workspaceID)
+	if errors.Is(err, repository.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("failed to load workspace view settings: %w", err)
+	}
+	if set := wsConfig.ViewSettings.EnabledViewSet(); set != nil {
+		if _, ok := set[defaultView]; !ok {
+			return fmt.Errorf("%w: view %q is disabled by the workspace view settings", ErrWorkspaceMutationInvalid, defaultView)
+		}
+	}
+	return nil
 }
 
 func nullableUpdateValue[T any](update NullableUpdate[T]) any {

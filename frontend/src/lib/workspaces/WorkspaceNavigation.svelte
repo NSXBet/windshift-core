@@ -15,6 +15,7 @@
     IconPencil as Pencil,
   } from '@tabler/icons-svelte-runes';
   import { workspaceViewItems, workspaceOnlyViews, testNavigationItems, visibleWorkspaceSettingsItems, workspaceSettingsViews, workspaceSettingsRoute } from '../navigation/workspaceNavigation.js';
+  import { viewSettingsStore } from '../stores/viewSettings.svelte.js';
   import { navigate, currentRoute } from '../router.js';
   import { currentWorkspace, workspacePermissions } from '../stores';
   import { moduleSettings } from '../stores/moduleSettings.js';
@@ -83,7 +84,13 @@
   ]);
   const activeTestNavId = $derived.by(() => getActiveTestNavId($currentRoute));
   const isSettingsView = $derived(SETTINGS_VIEWS.includes($currentRoute.view));
-  const defaultCollectionView = workspaceViewItems[0]?.id || 'backlog';
+  // Collection-scoped views filtered by the scope's enabled-views setting.
+  const visibleWorkspaceViews = $derived.by(() => {
+    const enabled = new Set(viewSettingsStore.enabledViewIds(workspaceId, currentCollectionId));
+    return workspaceViewItems.filter((view) => enabled.has(view.id));
+  });
+  // First enabled view — workspace-only views cannot be collection-scoped.
+  const defaultCollectionView = $derived(visibleWorkspaceViews[0]?.id || 'backlog');
 
   // Permission-based visibility
   const canViewTests = $derived.by(() => workspacePermissions.canViewTests(workspaceId));
@@ -124,6 +131,13 @@
   $effect(() => {
     if (workspaceId) {
       loadCollections();
+    }
+  });
+
+  // Keep the enabled-views lookup warm for the current scope.
+  $effect(() => {
+    if (workspaceId) {
+      viewSettingsStore.load(workspaceId, currentCollectionId);
     }
   });
 
@@ -482,7 +496,7 @@
     <div class="flex flex-col items-center space-y-1 mt-6">
       {@render collapsedNavIcon({ href: getNavigationUrl('overview'), label: t('workspaceSettings.views.overview'), icon: Home, isActive: $currentRoute.view === 'workspace-overview' })}
 
-      {#each workspaceViewItems as view (view.id)}
+      {#each visibleWorkspaceViews as view (view.id)}
         {@render collapsedNavIcon({ href: getNavigationUrl(view.id), label: viewLabel(view), icon: view.icon, isActive: $currentRoute.view === `workspace-${view.id}` })}
       {/each}
 
@@ -589,7 +603,7 @@
     <nav class="px-4 space-y-1 pb-2">
       {@render navLink({ href: getNavigationUrl('overview'), label: t('workspaceSettings.views.overview'), tooltip: t('commandPalette.commands.workspaceOverview.description'), icon: Home, isActive: $currentRoute.view === 'workspace-overview' })}
 
-      {#each workspaceViewItems as view (view.id)}
+      {#each visibleWorkspaceViews as view (view.id)}
         {@render navLink({ href: getNavigationUrl(view.id), label: viewLabel(view), tooltip: viewTooltip(view), icon: view.icon, testId: view.testId, isActive: $currentRoute.view === `workspace-${view.id}` })}
       {/each}
 

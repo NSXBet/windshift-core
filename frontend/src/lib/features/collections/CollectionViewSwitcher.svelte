@@ -1,6 +1,7 @@
 <script>
   import { navigate } from '../../router.js';
   import { t } from '../../stores/i18n.svelte.js';
+  import { viewSettingsStore } from '../../stores/viewSettings.svelte.js';
   import { SquareKanban, Inbox, Settings, Globe } from '@lucide/svelte';
   import { workspacePermissions } from '../../stores/workspacePermissions.svelte.js';
 
@@ -11,6 +12,15 @@
     activeView = 'board',
     publicSlug = null,
   } = $props();
+
+  // Keep the enabled-views lookup warm; board/backlog hide when disabled.
+  $effect(() => {
+    if (workspaceId || collectionId) {
+      viewSettingsStore.load(workspaceId, collectionId);
+    }
+  });
+  const boardEnabled = $derived(viewSettingsStore.enabledViewIds(workspaceId, collectionId).includes('board'));
+  const backlogEnabled = $derived(viewSettingsStore.enabledViewIds(workspaceId, collectionId).includes('backlog'));
 
   // Configure view writes the workspace-default board configuration, which
   // the backend gates to `workspace.admin` — hide the entry point for
@@ -45,6 +55,7 @@
 
 <div class="flex rounded p-1" style={containerStyle} data-testid="board-view-switcher">
   <!-- Board Button -->
+  {#if boardEnabled}
   <button
     class="view-btn px-3 py-1.5 text-sm font-medium rounded transition-colors"
     class:shadow-sm={activeView === 'board'}
@@ -56,8 +67,10 @@
       {t('collections.board')}
     </div>
   </button>
+  {/if}
 
   <!-- Backlog Button -->
+  {#if backlogEnabled}
   <button
     class="view-btn px-3 py-1.5 text-sm font-medium rounded transition-colors"
     class:shadow-sm={activeView === 'backlog'}
@@ -69,6 +82,7 @@
       {t('collections.backlog')}
     </div>
   </button>
+  {/if}
 
   <!-- Configure Button -->
   {#if canConfigure}

@@ -43,7 +43,12 @@ import {
  * @type {WorkspaceView[]}
  */
 export const workspaceViewItems = [
-  { id: 'backlog', labelKey: 'workspaceSettings.views.backlog', icon: Rows_3 },
+  {
+    id: 'backlog',
+    labelKey: 'workspaceSettings.views.backlog',
+    icon: Rows_3,
+    testId: 'workspace-nav-backlog',
+  },
   {
     id: 'board',
     labelKey: 'workspaceSettings.views.board',
@@ -56,12 +61,23 @@ export const workspaceViewItems = [
     icon: List,
     testId: 'workspace-nav-list',
   },
-  { id: 'tree', labelKey: 'workspaceSettings.views.tree', icon: ListTree },
-  { id: 'map', labelKey: 'workspaceSettings.views.map', icon: MapPin },
+  {
+    id: 'tree',
+    labelKey: 'workspaceSettings.views.tree',
+    icon: ListTree,
+    testId: 'workspace-nav-tree',
+  },
+  {
+    id: 'map',
+    labelKey: 'workspaceSettings.views.map',
+    icon: MapPin,
+    testId: 'workspace-nav-map',
+  },
   {
     id: 'roadmap',
     labelKey: 'collections.roadmap',
     icon: GanttChart,
+    testId: 'workspace-nav-roadmap',
   },
 ];
 

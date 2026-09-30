@@ -511,14 +511,28 @@ func (s *CollectionApplicationService) GetBoardConfiguration(userID int, scope B
 		return nil, err
 	}
 	config, err := s.loadBoardConfiguration(scope)
-	if errors.Is(err, repository.ErrNotFound) && scope.WorkspaceID != nil {
+	switch {
+	case errors.Is(err, repository.ErrNotFound) && scope.WorkspaceID != nil:
 		return &models.BoardConfiguration{WorkspaceID: scope.WorkspaceID}, nil
-	}
-	if errors.Is(err, repository.ErrNotFound) {
-		return nil, ErrCollectionNotFound
-	}
-	if err != nil {
+	case errors.Is(err, repository.ErrNotFound) && scope.CollectionID != nil:
+		// No row yet: report the effective (inherited) view settings so
+		// navigation can render the scope without special-casing 404s.
+		collection, getErr := s.repository.GetByID(*scope.CollectionID)
+		if getErr != nil {
+			return nil, boardRepositoryError(getErr)
+		}
+		empty := &models.BoardConfiguration{CollectionID: scope.CollectionID, WorkspaceID: collection.WorkspaceID}
+		if err := s.applyEffectiveViewSettings(empty); err != nil {
+			return nil, err
+		}
+		return empty, nil
+	case err != nil:
 		return nil, err
+	}
+	if scope.CollectionID != nil {
+		if err := s.applyEffectiveViewSettings(config); err != nil {
+			return nil, err
+		}
 	}
 	config.Columns, err = s.boards.GetColumnsWithStatuses(config.ID)
 	return config, err
@@ -529,16 +543,33 @@ func (s *CollectionApplicationService) GetBoardConfigurationBootstrap(ctx contex
 		return nil, err
 	}
 	config, err := s.loadBoardConfiguration(scope)
-	if errors.Is(err, repository.ErrNotFound) {
+	switch {
+	case errors.Is(err, repository.ErrNotFound):
 		if scope.WorkspaceID != nil {
 			config = &models.BoardConfiguration{WorkspaceID: scope.WorkspaceID}
 		} else {
-			config = nil
+			// No row yet: report the effective (inherited) view settings so
+			// navigation can render the scope without special-casing 404s.
+			collection, getErr := s.repository.GetByID(*scope.CollectionID)
+			if getErr != nil {
+				return nil, boardRepositoryError(getErr)
+			}
+			config = &models.BoardConfiguration{CollectionID: scope.CollectionID, WorkspaceID: collection.WorkspaceID}
+			if err := s.applyEffectiveViewSettings(config); err != nil {
+				return nil, err
+			}
 		}
-	} else if err != nil {
+	case err != nil:
 		return nil, err
-	} else if config.Columns, err = s.boards.GetColumnsWithStatuses(config.ID); err != nil {
-		return nil, err
+	default:
+		if scope.CollectionID != nil {
+			if err := s.applyEffectiveViewSettings(config); err != nil {
+				return nil, err
+			}
+		}
+		if config.Columns, err = s.boards.GetColumnsWithStatuses(config.ID); err != nil {
+			return nil, err
+		}
 	}
 
 	if scope.WorkspaceID != nil {
@@ -591,6 +622,14 @@ func (s *CollectionApplicationService) PutBoardConfiguration(actor AuditActor, s
 	if err := validateBoardConfiguration(input); err != nil {
 		return nil, err
 	}
+	if err := validateViewSettings(input.ViewSettings); err != nil {
+		return nil, err
+	}
+	if scope.WorkspaceID != nil {
+		if err := s.validateWorkspaceDefaultView(*scope.WorkspaceID, input.ViewSettings); err != nil {
+			return nil, err
+		}
+	}
 	if scope.CollectionID != nil {
 		collection, err := s.repository.GetByID(*scope.CollectionID)
 		if err != nil {
@@ -630,6 +669,7 @@ func (s *CollectionApplicationService) PutBoardConfiguration(actor AuditActor, s
 				}
 			}
 		}
+		input.ViewSettings = mergeViewSettings(current.ViewSettings, input.ViewSettings)
 		err = s.boards.Update(current.ID, &input)
 	default:
 		return nil, err
@@ -739,6 +779,115 @@ func validateBoardConfiguration(input models.BoardConfigurationRequest) error {
 	if days < 1 || days > 3650 {
 		return collectionValidation("completed_item_retention_days must be between 1 and 3650")
 	}
+	return nil
+}
+
+// validateViewSettings checks an explicit enabled-views key: known view
+// ids, no duplicates, at least one view. A null key (pointer to a nil slice)
+// is the reset form and passes.
+func validateViewSettings(settings *models.ViewSettings) error {
+	if settings == nil || settings.EnabledViews == nil {
+		return nil
+	}
+	views := *settings.EnabledViews
+	if views == nil {
+		return nil
+	}
+	if len(views) == 0 {
+		return collectionValidation("enabled_views must contain at least one view")
+	}
+	known := make(map[string]struct{}, len(models.BoardViewIDs))
+	for _, id := range models.BoardViewIDs {
+		known[id] = struct{}{}
+	}
+	seen := make(map[string]struct{}, len(views))
+	for _, id := range views {
+		if _, ok := known[id]; !ok {
+			return collectionValidation(fmt.Sprintf("unknown view %q in enabled_views", id))
+		}
+		if _, dup := seen[id]; dup {
+			return collectionValidation(fmt.Sprintf("duplicate view %q in enabled_views", id))
+		}
+		seen[id] = struct{}{}
+	}
+	return nil
+}
+
+// validateWorkspaceDefaultView rejects a workspace-scope enabled-views
+// override that disables the workspace's current default view. The caller
+// changes the default view via the workspace API first.
+func (s *CollectionApplicationService) validateWorkspaceDefaultView(workspaceID int, settings *models.ViewSettings) error {
+	if !settings.HasEnabledViewsOverride() {
+		return nil
+	}
+	workspace, err := s.workspaces.GetByID(workspaceID)
+	if err != nil {
+		return err
+	}
+	if !slices.Contains(models.BoardViewIDs, workspace.DefaultView) {
+		return nil
+	}
+	if !slices.Contains(*settings.EnabledViews, workspace.DefaultView) {
+		return collectionValidation(fmt.Sprintf("workspace default view %q must stay enabled; change the workspace default view first", workspace.DefaultView))
+	}
+	return nil
+}
+
+// mergeViewSettings applies the request's view settings on top of the stored
+// ones so keys the request omits keep their stored value.
+func mergeViewSettings(current, update *models.ViewSettings) *models.ViewSettings {
+	if update == nil {
+		return current
+	}
+	merged := models.ViewSettings{}
+	if current != nil {
+		merged = *current
+	}
+	if update.EnabledViews != nil {
+		merged.EnabledViews = update.EnabledViews
+	}
+	return &merged
+}
+
+// applyEffectiveViewSettings resolves the effective view settings for a
+// collection-scoped configuration: the collection's own override, or the
+// workspace default, or every view enabled. Collection-scoped rows carry no
+// workspace id, so it is resolved from the collection record when needed.
+func (s *CollectionApplicationService) applyEffectiveViewSettings(config *models.BoardConfiguration) error {
+	if config.ViewSettings.HasEnabledViewsOverride() {
+		return nil
+	}
+	config.ViewSettingsInherited = true
+	allViews := func() *models.ViewSettings {
+		views := slices.Clone(models.BoardViewIDs)
+		return &models.ViewSettings{EnabledViews: &views}
+	}
+	workspaceID := config.WorkspaceID
+	if workspaceID == nil && config.CollectionID != nil {
+		collection, err := s.repository.GetByID(*config.CollectionID)
+		if err != nil {
+			return boardRepositoryError(err)
+		}
+		workspaceID = collection.WorkspaceID
+	}
+	if workspaceID == nil {
+		config.ViewSettings = allViews()
+		return nil
+	}
+	wsConfig, err := s.boards.GetByWorkspaceID(*workspaceID)
+	if errors.Is(err, repository.ErrNotFound) {
+		config.ViewSettings = allViews()
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if wsConfig.ViewSettings.HasEnabledViewsOverride() {
+		views := slices.Clone(*wsConfig.ViewSettings.EnabledViews)
+		config.ViewSettings = &models.ViewSettings{EnabledViews: &views}
+		return nil
+	}
+	config.ViewSettings = allViews()
 	return nil
 }
 

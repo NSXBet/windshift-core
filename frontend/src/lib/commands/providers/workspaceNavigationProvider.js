@@ -5,6 +5,7 @@ import {
 } from '../../navigation/workspaceNavigation.js';
 import { workspacePermissions } from '../../stores';
 import { t } from '../../stores/i18n.svelte.js';
+import { viewSettingsStore } from '../../stores/viewSettings.svelte.js';
 import { BUCKET } from '../buckets.js';
 import { createCommand } from '../types.js';
 
@@ -35,7 +36,9 @@ export function workspaceNavigationProvider(ctx) {
     })
   );
 
+  const enabledViews = new Set(viewSettingsStore.enabledViewIds(workspaceId, collectionId));
   for (const view of workspaceViewItems) {
+    if (!enabledViews.has(view.id)) continue;
     const label = t(view.labelKey);
     out.push(
       createCommand({

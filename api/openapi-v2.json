@@ -6019,6 +6019,26 @@
                     "format": "date-time",
                     "type": "string"
                   },
+                  "view_settings": {
+                    "additionalProperties": false,
+                    "description": "The view settings value.",
+                    "nullable": true,
+                    "properties": {
+                      "enabled_views": {
+                        "description": "The enabled views value.",
+                        "items": {
+                          "type": "string"
+                        },
+                        "nullable": true,
+                        "type": "array"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "view_settings_inherited": {
+                    "description": "The view settings inherited value.",
+                    "type": "boolean"
+                  },
                   "workspace_id": {
                     "description": "The workspace id value.",
                     "nullable": true,
@@ -6379,6 +6399,26 @@
                 "description": "The updated at value.",
                 "format": "date-time",
                 "type": "string"
+              },
+              "view_settings": {
+                "additionalProperties": false,
+                "description": "The view settings value.",
+                "nullable": true,
+                "properties": {
+                  "enabled_views": {
+                    "description": "The enabled views value.",
+                    "items": {
+                      "type": "string"
+                    },
+                    "nullable": true,
+                    "type": "array"
+                  }
+                },
+                "type": "object"
+              },
+              "view_settings_inherited": {
+                "description": "The view settings inherited value.",
+                "type": "boolean"
               },
               "workspace_id": {
                 "description": "The workspace id value.",
@@ -32633,6 +32673,26 @@
                     "format": "date-time",
                     "type": "string"
                   },
+                  "view_settings": {
+                    "additionalProperties": false,
+                    "description": "The view settings value.",
+                    "nullable": true,
+                    "properties": {
+                      "enabled_views": {
+                        "description": "The enabled views value.",
+                        "items": {
+                          "type": "string"
+                        },
+                        "nullable": true,
+                        "type": "array"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "view_settings_inherited": {
+                    "description": "The view settings inherited value.",
+                    "type": "boolean"
+                  },
                   "workspace_id": {
                     "description": "The workspace id value.",
                     "nullable": true,
@@ -32993,6 +33053,26 @@
                 "description": "The updated at value.",
                 "format": "date-time",
                 "type": "string"
+              },
+              "view_settings": {
+                "additionalProperties": false,
+                "description": "The view settings value.",
+                "nullable": true,
+                "properties": {
+                  "enabled_views": {
+                    "description": "The enabled views value.",
+                    "items": {
+                      "type": "string"
+                    },
+                    "nullable": true,
+                    "type": "array"
+                  }
+                },
+                "type": "object"
+              },
+              "view_settings_inherited": {
+                "description": "The view settings inherited value.",
+                "type": "boolean"
               },
               "workspace_id": {
                 "description": "The workspace id value.",
@@ -91403,6 +91483,22 @@
           "show_rightmost_column_last_50": {
             "description": "The show rightmost column last 50 value.",
             "type": "boolean"
+          },
+          "view_settings": {
+            "additionalProperties": false,
+            "description": "The view settings value.",
+            "nullable": true,
+            "properties": {
+              "enabled_views": {
+                "description": "The enabled views value.",
+                "items": {
+                  "type": "string"
+                },
+                "nullable": true,
+                "type": "array"
+              }
+            },
+            "type": "object"
           }
         },
         "required": [
@@ -91601,6 +91697,26 @@
                 "description": "The updated at value.",
                 "format": "date-time",
                 "type": "string"
+              },
+              "view_settings": {
+                "additionalProperties": false,
+                "description": "The view settings value.",
+                "nullable": true,
+                "properties": {
+                  "enabled_views": {
+                    "description": "The enabled views value.",
+                    "items": {
+                      "type": "string"
+                    },
+                    "nullable": true,
+                    "type": "array"
+                  }
+                },
+                "type": "object"
+              },
+              "view_settings_inherited": {
+                "description": "The view settings inherited value.",
+                "type": "boolean"
               },
               "workspace_id": {
                 "description": "The workspace id value.",
@@ -92576,6 +92692,22 @@
           "show_rightmost_column_last_50": {
             "description": "The show rightmost column last 50 value.",
             "type": "boolean"
+          },
+          "view_settings": {
+            "additionalProperties": false,
+            "description": "The view settings value.",
+            "nullable": true,
+            "properties": {
+              "enabled_views": {
+                "description": "The enabled views value.",
+                "items": {
+                  "type": "string"
+                },
+                "nullable": true,
+                "type": "array"
+              }
+            },
+            "type": "object"
           }
         },
         "required": [
@@ -92774,6 +92906,26 @@
                 "description": "The updated at value.",
                 "format": "date-time",
                 "type": "string"
+              },
+              "view_settings": {
+                "additionalProperties": false,
+                "description": "The view settings value.",
+                "nullable": true,
+                "properties": {
+                  "enabled_views": {
+                    "description": "The enabled views value.",
+                    "items": {
+                      "type": "string"
+                    },
+                    "nullable": true,
+                    "type": "array"
+                  }
+                },
+                "type": "object"
+              },
+              "view_settings_inherited": {
+                "description": "The view settings inherited value.",
+                "type": "boolean"
               },
               "workspace_id": {
                 "description": "The workspace id value.",

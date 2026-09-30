@@ -1,7 +1,9 @@
 package models
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 )
@@ -316,6 +318,80 @@ func (p IterationPatch) Apply(existing Iteration) Iteration {
 	return existing
 }
 
+// BoardViewIDs lists the collection-scoped views that view visibility
+// settings can toggle, in navigation order.
+var BoardViewIDs = []string{"backlog", "board", "list", "tree", "map", "roadmap"}
+
+// ViewSettings holds view-scoped settings for a board configuration scope.
+// New settings are added as keys of this object instead of new columns.
+type ViewSettings struct {
+	// EnabledViews limits which collection-scoped views are visible and
+	// reachable. nil means inherit: all views for a workspace scope, the
+	// workspace's effective set for a collection scope. A pointer to a nil
+	// slice resets an override to the inherited default.
+	EnabledViews *[]string `json:"enabled_views,omitempty"`
+}
+
+// UnmarshalJSON rejects unknown keys and distinguishes an omitted
+// enabled_views (inherit, nil pointer) from an explicit null (reset to the
+// default, pointer to a nil slice).
+func (v *ViewSettings) UnmarshalJSON(data []byte) error {
+	var fields map[string]json.RawMessage
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	if err := decoder.Decode(&fields); err != nil {
+		return err
+	}
+	for key := range fields {
+		if key != "enabled_views" {
+			return fmt.Errorf("view_settings: unknown key %q", key)
+		}
+	}
+	v.EnabledViews = nil
+	if raw, ok := fields["enabled_views"]; ok {
+		var views []string
+		if string(raw) != "null" {
+			if err := json.Unmarshal(raw, &views); err != nil {
+				return err
+			}
+		}
+		v.EnabledViews = &views
+	}
+	return nil
+}
+
+// MarshalJSON writes the inherit state as {} and the reset state as an
+// explicit null so both round-trip without ambiguity.
+func (v ViewSettings) MarshalJSON() ([]byte, error) {
+	if v.EnabledViews == nil {
+		return []byte(`{}`), nil
+	}
+	if len(*v.EnabledViews) == 0 {
+		return []byte(`{"enabled_views":null}`), nil
+	}
+	return json.Marshal(struct {
+		EnabledViews []string `json:"enabled_views"`
+	}{EnabledViews: *v.EnabledViews})
+}
+
+// HasEnabledViewsOverride reports whether the settings carry an explicit
+// enabled-views override (as opposed to inheriting the default).
+func (v *ViewSettings) HasEnabledViewsOverride() bool {
+	return v != nil && v.EnabledViews != nil && len(*v.EnabledViews) > 0
+}
+
+// EnabledViewSet returns the enabled views as a set, or nil when the settings
+// do not carry an override.
+func (v *ViewSettings) EnabledViewSet() map[string]struct{} {
+	if v == nil || v.EnabledViews == nil {
+		return nil
+	}
+	set := make(map[string]struct{}, len(*v.EnabledViews))
+	for _, id := range *v.EnabledViews {
+		set[id] = struct{}{}
+	}
+	return set
+}
+
 // BoardConfiguration represents a board layout configuration for a collection
 type BoardConfiguration struct {
 	ID                         int            `json:"id"`
@@ -327,10 +403,15 @@ type BoardConfiguration struct {
 	RoadmapConfig              *RoadmapConfig `json:"roadmap_config,omitempty"`
 	ShowRightmostColumnLast50  bool           `json:"show_rightmost_column_last_50"`
 	CompletedItemRetentionDays *int           `json:"completed_item_retention_days,omitempty"`
+	ViewSettings               *ViewSettings  `json:"view_settings,omitempty"`
 	CreatedAt                  time.Time      `json:"created_at"`
 	UpdatedAt                  time.Time      `json:"updated_at"`
 	// Joined fields
 	Columns []BoardColumn `json:"columns,omitempty"`
+	// ViewSettingsInherited reports that ViewSettings was resolved from the
+	// workspace default rather than this collection's own row. Only set on
+	// collection-scoped reads.
+	ViewSettingsInherited bool `json:"view_settings_inherited,omitempty"`
 }
 
 // RoadmapConfig represents the configuration for a roadmap view
@@ -379,6 +460,7 @@ type BoardConfigurationRequest struct {
 	RoadmapConfig              *RoadmapConfig       `json:"roadmap_config,omitempty"`
 	ShowRightmostColumnLast50  bool                 `json:"show_rightmost_column_last_50"`
 	CompletedItemRetentionDays *int                 `json:"completed_item_retention_days"`
+	ViewSettings               *ViewSettings        `json:"view_settings,omitempty"`
 }
 
 // BoardColumnRequest represents the payload for a column in the board configuration

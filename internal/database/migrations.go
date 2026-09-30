@@ -8,6 +8,27 @@ import (
 	"slices"
 )
 
+// pgJSONBColumnsCheck reports whether every named column already has the
+// JSONB type, so type-conversion migrations stamp instead of re-running.
+func pgJSONBColumnsCheck(columns ...[2]string) func(Database) (bool, error) {
+	return func(db Database) (bool, error) {
+		for _, column := range columns {
+			var count int
+			err := db.QueryRow(fmt.Sprintf(
+				"SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='%s' AND column_name='%s' AND data_type='jsonb'",
+				column[0], column[1],
+			)).Scan(&count)
+			if err != nil {
+				return false, err
+			}
+			if count == 0 {
+				return false, nil
+			}
+		}
+		return true, nil
+	}
+}
+
 const zammadSchemaMigrationSQLite = `
 	CREATE TABLE zammad_connections (
 		provider_id TEXT PRIMARY KEY,
@@ -1712,12 +1733,39 @@ var Catalog = []Migration{
 		`,
 	},
 	{
+		Version:       "20261001_board_view_settings",
+		Name:          "Add view settings and convert board JSON columns to JSONB",
+		CheckSQLite:   sqliteColumnCheck("board_configurations", "view_settings"),
+		CheckPostgres: pgColumnCheck("board_configurations", "view_settings"),
+		SQLite:        "ALTER TABLE board_configurations ADD COLUMN view_settings TEXT",
+		Postgres: `
+			ALTER TABLE board_configurations ADD COLUMN view_settings JSONB;
+			ALTER TABLE board_configurations ALTER COLUMN backlog_status_ids TYPE JSONB USING NULLIF(btrim(backlog_status_ids), '')::jsonb;
+			ALTER TABLE board_configurations ALTER COLUMN list_columns TYPE JSONB USING NULLIF(btrim(list_columns), '')::jsonb;
+			ALTER TABLE board_configurations ALTER COLUMN roadmap_config TYPE JSONB USING NULLIF(btrim(roadmap_config), '')::jsonb;
+			ALTER TABLE board_configurations ALTER COLUMN card_fields TYPE JSONB USING NULLIF(btrim(card_fields), '')::jsonb;
+		`,
+	},
+	{
+		Version: "20261002_jsonb_hygiene",
+		Name:    "Convert remaining legacy JSON TEXT columns to JSONB",
+		CheckPostgresFn: pgJSONBColumnsCheck(
+			[2]string{"reviews", "review_data"},
+			[2]string{"test_coverage_configurations", "requirement_item_type_ids"},
+		),
+		SQLite: "",
+		Postgres: `
+			ALTER TABLE reviews ALTER COLUMN review_data TYPE JSONB USING NULLIF(btrim(review_data), '')::jsonb;
+			ALTER TABLE test_coverage_configurations ALTER COLUMN requirement_item_type_ids TYPE JSONB USING NULLIF(btrim(requirement_item_type_ids), '')::jsonb;
+		`,
+	},
+	{
 		Version:       "20261003_item_history_portal_actors",
 		Name:          "Carry portal-customer and system actors in item history",
 		CheckSQLite:   sqliteColumnCheck("item_history", "actor_kind"),
 		CheckPostgres: pgColumnCheck("item_history", "actor_kind"),
 		// SQLite cannot drop NOT NULL in place; ApplySQLite rebuilds the table.
-		SQLite:        "item_history actor attribution rebuild (applySQLiteItemHistoryPortalActors)",
+		SQLite: "item_history actor attribution rebuild (applySQLiteItemHistoryPortalActors)",
 		Postgres: `
 			ALTER TABLE item_history ALTER COLUMN user_id DROP NOT NULL;
 			ALTER TABLE item_history ADD COLUMN actor_kind TEXT NOT NULL DEFAULT 'user';
