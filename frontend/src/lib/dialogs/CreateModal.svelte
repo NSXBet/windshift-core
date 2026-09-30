@@ -91,7 +91,8 @@
     key: '',
     description: '',
     template_workspace_id: null,
-    template_pack: ''
+    template_pack: '',
+    restricted_to_creator: false
   });
 
   let workspaceTemplateOptions = $state([]);
@@ -172,7 +173,8 @@
       key: '',
       description: '',
       template_workspace_id: null,
-      template_pack: ''
+      template_pack: '',
+      restricted_to_creator: false
     };
 
     collectionFormData = {
@@ -305,7 +307,8 @@
           description: workspaceFormData.description || '',
           icon: 'Package',
           color: '#3b82f6',
-          active: true
+          active: true,
+          restricted_to_creator: workspaceFormData.restricted_to_creator === true
         };
         if (workspaceFormData.template_workspace_id) {
           payload.template_workspace_id = workspaceFormData.template_workspace_id;

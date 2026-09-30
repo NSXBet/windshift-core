@@ -84458,6 +84458,10 @@
             "nullable": true,
             "type": "integer"
           },
+          "restricted_to_creator": {
+            "description": "The restricted to creator value.",
+            "type": "boolean"
+          },
           "template_pack": {
             "description": "The template pack value.",
             "type": "string"
@@ -84481,6 +84485,7 @@
           "is_personal",
           "key",
           "name",
+          "restricted_to_creator",
           "template_pack"
         ],
         "type": "object"

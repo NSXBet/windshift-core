@@ -204,6 +204,11 @@ type CreateWorkspaceParams struct {
 	// content, and conformance are applied to the new workspace. Mutually
 	// exclusive with TemplateWorkspaceID.
 	TemplatePack string
+
+	// RestrictedToCreator grants the creator the Viewer role inside the
+	// creation transaction, gating the workspace to assigned users from the
+	// first committed moment instead of briefly exposing it as open.
+	RestrictedToCreator *bool
 }
 
 // CreateWorkspaceResult contains the result of creating a workspace. The

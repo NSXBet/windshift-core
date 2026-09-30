@@ -453,18 +453,21 @@ func (r *WorkspaceRepository) FindAll(userID int, isPersonalOnly bool) ([]models
 	return workspaces, rows.Err()
 }
 
-// GrantAdministratorRoleTx grants the Administrator role on a workspace to a user within a transaction.
-func (r *WorkspaceRepository) GrantAdministratorRoleTx(tx database.Tx, workspaceID int64, userID int) error {
+// GrantBuiltinRoleTx grants a built-in workspace role to a user within a
+// transaction. Creation uses it to hand the creator both Administrator and,
+// for restricted workspaces, Viewer — the Viewer grant is what flips the
+// permission cache into gated visibility.
+func (r *WorkspaceRepository) GrantBuiltinRoleTx(tx database.Tx, workspaceID int64, userID int, builtinKey string) error {
 	result, err := tx.Exec(`
 		INSERT INTO user_workspace_roles (workspace_id, user_id, role_id, granted_by, granted_at)
 		SELECT ?, ?, id, ?, CURRENT_TIMESTAMP FROM workspace_roles WHERE builtin_key = ?
-	`, workspaceID, userID, userID, models.RoleBuiltinAdministrator)
+	`, workspaceID, userID, userID, builtinKey)
 	if err != nil {
-		return fmt.Errorf("failed to grant admin role to workspace creator: %w", err)
+		return fmt.Errorf("failed to grant %s role to workspace creator: %w", builtinKey, err)
 	}
 	rows, _ := result.RowsAffected()
 	if rows == 0 {
-		return fmt.Errorf("administrator role not found; workspace creation aborted")
+		return fmt.Errorf("%s role not found; workspace creation aborted", builtinKey)
 	}
 	return nil
 }

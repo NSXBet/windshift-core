@@ -115,6 +115,7 @@ type workspaceCreateRequest struct {
 	DefaultView         string  `json:"default_view"`
 	TemplateWorkspaceID *int    `json:"template_workspace_id"`
 	TemplatePack        string  `json:"template_pack"`
+	RestrictedToCreator bool    `json:"restricted_to_creator"`
 }
 
 type workspacePatchRequest struct {
@@ -212,6 +213,7 @@ func createWorkspace(workspaces workspaceApplication) jsonOperation[workspaceCre
 			TimeProjectID: input.TimeProjectID, IsPersonal: input.IsPersonal, OwnerID: input.OwnerID,
 			Icon: input.Icon, Color: input.Color, AvatarURL: input.AvatarURL, DefaultView: input.DefaultView,
 			TemplateWorkspaceID: input.TemplateWorkspaceID, TemplatePack: input.TemplatePack,
+			RestrictedToCreator: &input.RestrictedToCreator,
 		})
 		if err != nil {
 			return workspaceDTO{}, workspaceMutationError(err)

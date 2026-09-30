@@ -2,6 +2,7 @@
   import { t } from '../stores/i18n.svelte.js';
   import MilkdownEditor from '../editors/LazyMilkdownEditor.svelte';
   import Input from '../components/Input.svelte';
+  import Checkbox from '../components/Checkbox.svelte';
   import ChipPicker from '../pickers/ChipPicker.svelte';
   import Spinner from '../components/Spinner.svelte';
   import { LayoutTemplate, Package } from '@lucide/svelte';
@@ -12,7 +13,8 @@
       key: '',
       description: '',
       template_workspace_id: null,
-      template_pack: ''
+      template_pack: '',
+      restricted_to_creator: false
     }),
     templates = [],
     templatesLoading = false,
@@ -104,7 +106,8 @@
       description: formData.description || '',
       active: true,
       template_workspace_id: formData.template_workspace_id ?? null,
-      template_pack: formData.template_pack || null
+      template_pack: formData.template_pack || null,
+      restricted_to_creator: formData.restricted_to_creator === true
     };
   }
 
@@ -114,7 +117,8 @@
       key: '',
       description: '',
       template_workspace_id: null,
-      template_pack: ''
+      template_pack: '',
+      restricted_to_creator: false
     };
     keyManuallyEdited = false;
   }
@@ -213,6 +217,17 @@
       </ChipPicker>
     </div>
   {/if}
+
+  <!-- Restrict visibility: gates the workspace to assigned users from the
+       first moment by granting the creator Viewer on creation. -->
+  <div class="pt-1">
+    <Checkbox
+      bind:checked={formData.restricted_to_creator}
+      label={t('createModal.workspaceRestrict')}
+      hint={t('createModal.workspaceRestrictHint')}
+      dataTestid="workspace-restrict-checkbox"
+    />
+  </div>
 
   <!-- Description -->
   <div class="min-h-[60px]">

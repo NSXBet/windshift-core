@@ -773,6 +773,8 @@ export default {
     workspaceTemplateBlank: 'Blank workspace',
     workspaceTemplateLoading: 'Loading templates...',
     workspaceTemplateError: 'Failed to load workspace templates',
+    workspaceRestrict: 'Restrict visibility',
+    workspaceRestrictHint: 'Only you and people you assign can see this workspace',
     workspaceTemplateMeta: '{templates} templates · {items} items',
     workspacePackTemplate: 'Built-in pack',
     workspacePackMeta: 'v{version} · configuration set + content',
