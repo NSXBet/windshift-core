@@ -41,6 +41,7 @@ export const MAIN_APP_COMPONENT_LOADERS = {
   'asset-detail': () => import('../features/assets/AssetBrowser.svelte'),
   'asset-settings': () => import('../features/assets/AssetManager.svelte'),
   'channel-manager': () => import('../features/channels/ManagerChannels.svelte'),
+  'workspace-queue': () => import('../features/support/SupportQueue.svelte'),
   'workspace-board': () => import('../features/collections/CollectionBoard.svelte'),
   'workspace-board-config': () => import('../settings/BoardConfigurationPage.svelte'),
   'workspace-backlog': () => import('../features/collections/CollectionBacklog.svelte'),
@@ -265,6 +266,12 @@ export const MAIN_APP_ROUTE_CONFIG = {
     'Failed to load Board Configuration',
     { getProps: workspaceCollectionProps }
   ),
+  'workspace-queue': route('Loading Queue...', 'Failed to load Queue', {
+    getProps: (currentRoute) => ({
+      workspaceId: Number(currentRoute.params.id),
+      queue: currentRoute.query?.queue || null,
+    }),
+  }),
   'workspace-backlog': route('Loading Backlog View...', 'Failed to load Backlog View', {
     getProps: workspaceCollectionProps,
   }),

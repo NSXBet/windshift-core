@@ -45,6 +45,7 @@ const routes = {
   '/item/:itemKey': 'item-detail',
   '/zammad/:correlationKey': 'zammad-resolve',
   // Routes without collection (show all workspace items)
+  '/workspaces/:id/queue': 'workspace-queue',
   '/workspaces/:id/board': 'workspace-board',
   '/workspaces/:id/board/configure': 'workspace-board-config',
   '/workspaces/:id/backlog': 'workspace-backlog',
