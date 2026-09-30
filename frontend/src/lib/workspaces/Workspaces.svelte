@@ -219,13 +219,11 @@
           dataTestid={`workspace-restricted-badge-${workspace.id}`}
         />
       {:else}
-        <span
-          data-testid={`workspace-open-${workspace.id}`}
-          class="text-sm"
-          style="color: var(--ds-text-subtle);"
-        >
-          {t('workspaces.open')}
-        </span>
+        <Lozenge
+          color="gray"
+          text={t('workspaces.open')}
+          dataTestid={`workspace-open-${workspace.id}`}
+        />
       {/if}
     {/snippet}
   </DataTable>
