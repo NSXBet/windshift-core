@@ -5679,12 +5679,21 @@
                 "nullable": true,
                 "type": "integer"
               },
+              "uploaded_by_portal_customer_id": {
+                "description": "The uploaded by portal customer id value.",
+                "nullable": true,
+                "type": "integer"
+              },
               "uploader_email": {
                 "description": "The uploader email value.",
                 "type": "string"
               },
               "uploader_name": {
                 "description": "The uploader name value.",
+                "type": "string"
+              },
+              "uploader_portal_customer_name": {
+                "description": "The uploader portal customer name value.",
                 "type": "string"
               }
             },
@@ -12087,12 +12096,21 @@
                   "nullable": true,
                   "type": "integer"
                 },
+                "uploaded_by_portal_customer_id": {
+                  "description": "The uploaded by portal customer id value.",
+                  "nullable": true,
+                  "type": "integer"
+                },
                 "uploader_email": {
                   "description": "The uploader email value.",
                   "type": "string"
                 },
                 "uploader_name": {
                   "description": "The uploader name value.",
+                  "type": "string"
+                },
+                "uploader_portal_customer_name": {
+                  "description": "The uploader portal customer name value.",
                   "type": "string"
                 }
               },
@@ -19063,6 +19081,10 @@
             "items": {
               "additionalProperties": false,
               "properties": {
+                "actor_kind": {
+                  "description": "The actor kind value.",
+                  "type": "string"
+                },
                 "agent_owner_name": {
                   "description": "The agent owner name value.",
                   "type": "string"
@@ -19096,6 +19118,19 @@
                 "old_value": {
                   "description": "The old value value.",
                   "nullable": true,
+                  "type": "string"
+                },
+                "portal_customer_email": {
+                  "description": "The portal customer email value.",
+                  "type": "string"
+                },
+                "portal_customer_id": {
+                  "description": "The portal customer id value.",
+                  "nullable": true,
+                  "type": "integer"
+                },
+                "portal_customer_name": {
+                  "description": "The portal customer name value.",
                   "type": "string"
                 },
                 "resolved_new_value": {
@@ -72398,12 +72433,21 @@
                 "nullable": true,
                 "type": "integer"
               },
+              "uploaded_by_portal_customer_id": {
+                "description": "The uploaded by portal customer id value.",
+                "nullable": true,
+                "type": "integer"
+              },
               "uploader_email": {
                 "description": "The uploader email value.",
                 "type": "string"
               },
               "uploader_name": {
                 "description": "The uploader name value.",
+                "type": "string"
+              },
+              "uploader_portal_customer_name": {
+                "description": "The uploader portal customer name value.",
                 "type": "string"
               }
             },
@@ -87360,12 +87404,21 @@
                 "nullable": true,
                 "type": "integer"
               },
+              "uploaded_by_portal_customer_id": {
+                "description": "The uploaded by portal customer id value.",
+                "nullable": true,
+                "type": "integer"
+              },
               "uploader_email": {
                 "description": "The uploader email value.",
                 "type": "string"
               },
               "uploader_name": {
                 "description": "The uploader name value.",
+                "type": "string"
+              },
+              "uploader_portal_customer_name": {
+                "description": "The uploader portal customer name value.",
                 "type": "string"
               }
             },

@@ -788,6 +788,14 @@ func (s *ItemApplicationService) ReparentChildren(ctx context.Context, actor Aud
 		}
 		updated := *child
 		updated.ParentID = parentID
+		// The parent change must be visible in item history, not only in the
+		// domain event log.
+		if err := s.items.RecordHistory(tx, historyEntryForChange(
+			child.ID, "parent_id", intPtrToString(child.ParentID), intPtrToString(parentID),
+			metadata.OccurredAt, metadata,
+		)); err != nil {
+			return ItemMutationCount{}, err
+		}
 		records = append(records, itemevents.UpdateRecord{Item: &updated, Changes: itemevents.Changes(child, &updated), Metadata: metadata})
 	}
 	if _, err := itemevents.NewRecorder(s.db).UpdatedBatch(ctx, tx, records); err != nil {

@@ -252,9 +252,11 @@ func (h *PortalHandler) GetRequestAttachments(w http.ResponseWriter, r *http.Req
 // AddRequestAttachment stores a file uploaded by the request owner. Approvers
 // have read-only portal access, so uploads are owner-only. The upload shares
 // the submission rate limiter and the same validation, storage, and limits as
-// the authenticated item attachment surface.
+// the authenticated item attachment surface. Portal-customer uploads are
+// attributed to the customer end to end (attachment record + item history);
+// internal-owner uploads keep user attribution.
 func (h *PortalHandler) AddRequestAttachment(w http.ResponseWriter, r *http.Request) {
-	itemID, _, internalUserID, _, isOwner, _, cancel, ok := h.resolvePortalRequest(w, r)
+	itemID, _, internalUserID, portalCustomerID, isOwner, _, cancel, ok := h.resolvePortalRequest(w, r)
 	if !ok {
 		return
 	}
@@ -298,13 +300,17 @@ func (h *PortalHandler) AddRequestAttachment(w http.ResponseWriter, r *http.Requ
 	if internalUserID != nil {
 		uploaderID = *internalUserID
 	}
-	response, err := svc.UploadPublicFormAttachment(services.ItemAttachmentUploadInput{
+	input := services.ItemAttachmentUploadInput{
 		ItemID:           itemID,
 		UploaderID:       uploaderID,
 		OriginalFilename: header.Filename,
 		FileData:         data,
 		FileSize:         int64(len(data)),
-	})
+	}
+	if portalCustomerID != nil {
+		input.UploaderPortalCustomerID = portalCustomerID
+	}
+	response, err := svc.UploadPublicFormAttachment(input)
 	if err != nil {
 		h.respondPortalUploadError(w, r, err)
 		return

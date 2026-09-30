@@ -160,16 +160,24 @@ CREATE INDEX IF NOT EXISTS idx_items_request_type_id ON items(request_type_id);
 CREATE INDEX IF NOT EXISTS idx_items_related_work_item_id ON items(related_work_item_id);
 
 -- Item history table for tracking changes to items (PostgreSQL)
+-- Item history table for tracking changes to items.
+-- Actor attribution mirrors comments and domain events: user_id holds the
+-- acting internal user and is NULL for portal customers and system actions;
+-- actor_kind is 'user', 'portal_customer', or 'system'; and
+-- actor_portal_customer_id carries the portal-customer actor.
 CREATE TABLE IF NOT EXISTS item_history (
 	id SERIAL PRIMARY KEY,
 	item_id INTEGER NOT NULL,
-	user_id INTEGER NOT NULL,
+	user_id INTEGER,
+	actor_kind TEXT NOT NULL DEFAULT 'user',
+	actor_portal_customer_id INTEGER,
 	changed_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
 	field_name TEXT NOT NULL,
 	old_value TEXT,
 	new_value TEXT,
 	FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE,
-	FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT
+	FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT,
+	FOREIGN KEY (actor_portal_customer_id) REFERENCES portal_customers(id) ON DELETE SET NULL
 );
 
 -- Index for efficient history queries (most common: get all history for an item)

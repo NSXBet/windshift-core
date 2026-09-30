@@ -1711,6 +1711,34 @@ var Catalog = []Migration{
 			CREATE INDEX IF NOT EXISTS idx_sla_jobs_metric ON sla_jobs(metric_id);
 		`,
 	},
+	{
+		Version:       "20261003_item_history_portal_actors",
+		Name:          "Carry portal-customer and system actors in item history",
+		CheckSQLite:   sqliteColumnCheck("item_history", "actor_kind"),
+		CheckPostgres: pgColumnCheck("item_history", "actor_kind"),
+		// SQLite cannot drop NOT NULL in place; ApplySQLite rebuilds the table.
+		SQLite:        "item_history actor attribution rebuild (applySQLiteItemHistoryPortalActors)",
+		Postgres: `
+			ALTER TABLE item_history ALTER COLUMN user_id DROP NOT NULL;
+			ALTER TABLE item_history ADD COLUMN actor_kind TEXT NOT NULL DEFAULT 'user';
+			ALTER TABLE item_history ADD COLUMN actor_portal_customer_id INTEGER REFERENCES portal_customers(id) ON DELETE SET NULL;
+		`,
+		ApplySQLite: applySQLiteItemHistoryPortalActors,
+	},
+	{
+		Version:       "20261003_attachments_portal_uploader",
+		Name:          "Attribute attachment uploads to portal customers",
+		CheckSQLite:   sqliteColumnCheck("attachments", "uploaded_by_portal_customer_id"),
+		CheckPostgres: pgColumnCheck("attachments", "uploaded_by_portal_customer_id"),
+		SQLite: `
+			ALTER TABLE attachments ADD COLUMN uploaded_by_portal_customer_id INTEGER REFERENCES portal_customers(id) ON DELETE SET NULL;
+			CREATE INDEX idx_attachments_uploaded_by_portal_customer ON attachments(uploaded_by_portal_customer_id);
+		`,
+		Postgres: `
+			ALTER TABLE attachments ADD COLUMN IF NOT EXISTS uploaded_by_portal_customer_id INTEGER REFERENCES portal_customers(id) ON DELETE SET NULL;
+			CREATE INDEX IF NOT EXISTS idx_attachments_uploaded_by_portal_customer ON attachments(uploaded_by_portal_customer_id);
+		`,
+	},
 }
 
 func applySQLitePersonalLabelsPerUserUnique(db Database) (retErr error) {
@@ -1772,6 +1800,83 @@ func applySQLitePersonalLabelsPerUserUnique(db Database) (retErr error) {
 
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit personal_labels rebuild: %w", err)
+	}
+
+	return nil
+}
+
+// applySQLiteItemHistoryPortalActors rebuilds item_history with a nullable
+// user_id plus the actor_kind / actor_portal_customer_id columns. SQLite
+// cannot drop a NOT NULL constraint in place, so the rows are copied into a
+// fresh table and swapped. Existing rows all had a user actor, so they keep
+// user_id and the default actor_kind 'user'.
+func applySQLiteItemHistoryPortalActors(db Database) (retErr error) {
+	sqliteDB, ok := db.(*SQLiteDB)
+	if !ok {
+		return fmt.Errorf("expected SQLite database, got %T", db)
+	}
+
+	ctx := context.Background()
+	conn, err := sqliteDB.writeConn.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("acquire SQLite write connection: %w", err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	var foreignKeysEnabled bool
+	if err := conn.QueryRowContext(ctx, "PRAGMA foreign_keys").Scan(&foreignKeysEnabled); err != nil {
+		return fmt.Errorf("read foreign_keys pragma: %w", err)
+	}
+	if foreignKeysEnabled {
+		if _, err := conn.ExecContext(ctx, "PRAGMA foreign_keys=OFF"); err != nil {
+			return fmt.Errorf("disable foreign keys: %w", err)
+		}
+		defer func() {
+			if _, err := conn.ExecContext(ctx, "PRAGMA foreign_keys=ON"); retErr == nil && err != nil {
+				retErr = fmt.Errorf("restore foreign keys: %w", err)
+			}
+		}()
+	}
+
+	tx, err := conn.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin item_history rebuild: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	statements := []string{
+		`CREATE TABLE item_history_migration (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			item_id INTEGER NOT NULL,
+			user_id INTEGER,
+			actor_kind TEXT NOT NULL DEFAULT 'user',
+			actor_portal_customer_id INTEGER,
+			changed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			field_name TEXT NOT NULL,
+			old_value TEXT,
+			new_value TEXT,
+			FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE,
+			FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT,
+			FOREIGN KEY (actor_portal_customer_id) REFERENCES portal_customers(id) ON DELETE SET NULL
+		)`,
+		`INSERT INTO item_history_migration (id, item_id, user_id, actor_kind, changed_at, field_name, old_value, new_value)
+			SELECT id, item_id, user_id, 'user', changed_at, field_name, old_value, new_value FROM item_history`,
+		`DROP TABLE item_history`,
+		`ALTER TABLE item_history_migration RENAME TO item_history`,
+		`CREATE INDEX idx_item_history_item_id_changed_at ON item_history(item_id, changed_at DESC)`,
+		`CREATE INDEX idx_item_history_current_status_latest
+			ON item_history(item_id, new_value, changed_at DESC)
+			WHERE field_name = 'status_id'`,
+		`CREATE INDEX idx_item_history_user_id ON item_history(user_id)`,
+	}
+	for _, statement := range statements {
+		if _, err := tx.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("rebuild item_history: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit item_history rebuild: %w", err)
 	}
 
 	return nil

@@ -719,8 +719,19 @@ var itemRemapColumns = map[string]bool{
 }
 
 // RemapFieldForWorkspacesTx remaps one allowlisted reference column in a
-// transaction and optionally restricts by item type.
+// transaction and optionally restricts by item type. The remap lands in item
+// history attributed to the system (no acting user).
 func (r *ItemRepository) RemapFieldForWorkspacesTx(tx database.Tx, column string, fromID *int, toID int, itemTypeID *int, workspaceIDs []int, now time.Time) (int, error) {
+	return r.remapFieldForWorkspacesTx(tx, column, fromID, toID, itemTypeID, workspaceIDs, now, 0)
+}
+
+// RemapFieldForWorkspacesTxAsUser behaves like RemapFieldForWorkspacesTx but
+// attributes the item-history rows to the acting admin user.
+func (r *ItemRepository) RemapFieldForWorkspacesTxAsUser(tx database.Tx, column string, fromID *int, toID int, itemTypeID *int, workspaceIDs []int, now time.Time, actorUserID int) (int, error) {
+	return r.remapFieldForWorkspacesTx(tx, column, fromID, toID, itemTypeID, workspaceIDs, now, actorUserID)
+}
+
+func (r *ItemRepository) remapFieldForWorkspacesTx(tx database.Tx, column string, fromID *int, toID int, itemTypeID *int, workspaceIDs []int, now time.Time, actorUserID int) (int, error) {
 	if !itemRemapColumns[column] {
 		return 0, fmt.Errorf("RemapFieldForWorkspacesTx: column %q is not in the allow-list", column)
 	}
@@ -729,27 +740,73 @@ func (r *ItemRepository) RemapFieldForWorkspacesTx(tx database.Tx, column string
 	}
 	// The column name is validated against the fixed allow-list above, so the
 	// fmt.Sprintf cannot splice attacker-controlled input.
-	query := fmt.Sprintf("UPDATE items SET %s = ?, updated_at = ?", column)
-	args := []any{toID, now}
+	where := " WHERE " + column
+	args := []any{}
 	if fromID == nil {
-		query += fmt.Sprintf(" WHERE %s IS NULL", column)
+		where += " IS NULL"
 	} else {
-		query += fmt.Sprintf(" WHERE %s = ?", column)
+		where += " = ?"
 		args = append(args, *fromID)
 	}
 	if itemTypeID != nil {
-		query += " AND item_type_id = ?"
+		where += " AND item_type_id = ?"
 		args = append(args, *itemTypeID)
 	}
 	ph, wsArgs := inPlaceholders(workspaceIDs)
-	query += " AND workspace_id IN (" + ph + ")"
+	where += " AND workspace_id IN (" + ph + ")"
 	args = append(args, wsArgs...)
 
-	res, err := tx.Exec(query, args...)
+	// Capture the affected items before the update so each one gets an
+	// item-history row; the remap is otherwise invisible to audit trails.
+	idRows, err := tx.Query("SELECT id FROM items"+where, args...)
+	if err != nil {
+		return 0, fmt.Errorf("list %s remap targets: %w", column, err)
+	}
+	var itemIDs []int
+	for idRows.Next() {
+		var id int
+		if err := idRows.Scan(&id); err != nil {
+			_ = idRows.Close()
+			return 0, fmt.Errorf("scan %s remap target: %w", column, err)
+		}
+		itemIDs = append(itemIDs, id)
+	}
+	if err := idRows.Err(); err != nil {
+		_ = idRows.Close()
+		return 0, fmt.Errorf("iterate %s remap targets: %w", column, err)
+	}
+	_ = idRows.Close()
+
+	updateQuery := fmt.Sprintf("UPDATE items SET %s = ?, updated_at = ?", column) + where
+	updateArgs := make([]any, 0, 2+len(args))
+	updateArgs = append(updateArgs, toID, now)
+	updateArgs = append(updateArgs, args...)
+	res, err := tx.Exec(updateQuery, updateArgs...)
 	if err != nil {
 		return 0, fmt.Errorf("remap %s: %w", column, err)
 	}
 	rows, _ := res.RowsAffected()
+
+	// Record the remap per item, committed atomically with the update.
+	oldValue := ""
+	if fromID != nil {
+		oldValue = fmt.Sprintf("%d", *fromID)
+	}
+	for _, itemID := range itemIDs {
+		entry := HistoryEntry{
+			ItemID: itemID, FieldName: column,
+			OldValue: oldValue, NewValue: fmt.Sprintf("%d", toID), ChangedAt: now,
+		}
+		if actorUserID > 0 {
+			entry.ActorKind = HistoryActorUser
+			entry.UserID = actorUserID
+		} else {
+			entry.ActorKind = HistoryActorSystem
+		}
+		if err := r.RecordHistory(tx, entry); err != nil {
+			return 0, fmt.Errorf("record %s remap history: %w", column, err)
+		}
+	}
 	return int(rows), nil
 }
 
@@ -1792,17 +1849,23 @@ func (r *ItemRepository) ClearRelatedWorkItem(itemID int) error {
 }
 
 // GetHistoryWithApprovals returns item history plus approval decision events as a single chronological feed.
+// Portal-customer actors resolve to their customer name; system rows have no
+// user and display through the empty-name fallback the frontend applies.
 func (r *ItemRepository) GetHistoryWithApprovals(itemID int, includeAgentOwner bool) ([]models.ItemHistory, error) {
 	query := `
 		SELECT
 			ih.id, ih.item_id, ih.user_id, ih.changed_at, ih.field_name, ih.old_value, ih.new_value,
-			COALESCE(u.first_name || ' ' || u.last_name, u.username, '') as user_name,
-			COALESCE(u.email, '') as user_email,
+			COALESCE(NULLIF(TRIM(u.first_name || ' ' || u.last_name), ''), u.username, '') AS user_name,
+			COALESCE(u.email, '') AS user_email,
 			COALESCE(u.is_agent, FALSE) AS is_agent,
-			COALESCE(NULLIF(TRIM(COALESCE(owner.first_name, '') || ' ' || COALESCE(owner.last_name, '')), ''), owner.username, '') AS agent_owner_name
+			COALESCE(NULLIF(TRIM(COALESCE(owner.first_name, '') || ' ' || COALESCE(owner.last_name, '')), ''), owner.username, '') AS agent_owner_name,
+			ih.actor_kind,
+			ih.actor_portal_customer_id,
+			COALESCE(NULLIF(TRIM(pc.name), ''), pc.email, '') AS portal_customer_name
 		FROM item_history ih
 		LEFT JOIN users u ON ih.user_id = u.id
 		LEFT JOIN users owner ON owner.id = u.agent_owner_user_id
+		LEFT JOIN portal_customers pc ON ih.actor_portal_customer_id = pc.id
 		WHERE ih.item_id = ?
 		UNION ALL
 		SELECT
@@ -1813,14 +1876,18 @@ func (r *ItemRepository) GetHistoryWithApprovals(itemID int, includeAgentOwner b
 			'approval_' || d.decision AS field_name,
 			NULL AS old_value,
 			d.comment AS new_value,
-			COALESCE(u.first_name || ' ' || u.last_name, u.username, 'System') AS user_name,
+			COALESCE(NULLIF(TRIM(u.first_name || ' ' || u.last_name), ''), u.username, '') AS user_name,
 			COALESCE(u.email, '') AS user_email,
 			COALESCE(u.is_agent, FALSE) AS is_agent,
-			COALESCE(NULLIF(TRIM(COALESCE(owner.first_name, '') || ' ' || COALESCE(owner.last_name, '')), ''), owner.username, '') AS agent_owner_name
+			COALESCE(NULLIF(TRIM(COALESCE(owner.first_name, '') || ' ' || COALESCE(owner.last_name, '')), ''), owner.username, '') AS agent_owner_name,
+			CASE WHEN d.actor_portal_customer_id IS NOT NULL THEN 'portal_customer' ELSE 'user' END AS actor_kind,
+			d.actor_portal_customer_id,
+			COALESCE(NULLIF(TRIM(pc.name), ''), pc.email, '') AS portal_customer_name
 		FROM approval_decisions d
 		JOIN approval_requests ar ON ar.id = d.approval_request_id
 		LEFT JOIN users u ON u.id = d.actor_user_id
 		LEFT JOIN users owner ON owner.id = u.agent_owner_user_id
+		LEFT JOIN portal_customers pc ON d.actor_portal_customer_id = pc.id
 		WHERE ar.item_id = ?
 		ORDER BY changed_at DESC
 	`
@@ -1834,8 +1901,18 @@ func (r *ItemRepository) GetHistoryWithApprovals(itemID int, includeAgentOwner b
 	history := []models.ItemHistory{}
 	for rows.Next() {
 		var entry models.ItemHistory
-		if err := rows.Scan(&entry.ID, &entry.ItemID, &entry.UserID, &entry.ChangedAt, &entry.FieldName, &entry.OldValue, &entry.NewValue, &entry.UserName, &entry.UserEmail, &entry.IsAgent, &entry.AgentOwnerName); err != nil {
+		var userID, portalCustomerID sql.NullInt64
+		var actorKind sql.NullString
+		if err := rows.Scan(&entry.ID, &entry.ItemID, &userID, &entry.ChangedAt, &entry.FieldName, &entry.OldValue, &entry.NewValue, &entry.UserName, &entry.UserEmail, &entry.IsAgent, &entry.AgentOwnerName, &actorKind, &portalCustomerID, &entry.PortalCustomerName); err != nil {
 			return nil, err
+		}
+		if userID.Valid {
+			entry.UserID = int(userID.Int64)
+		}
+		entry.ActorKind = actorKind.String
+		if portalCustomerID.Valid {
+			id := int(portalCustomerID.Int64)
+			entry.PortalCustomerID = &id
 		}
 		if !includeAgentOwner {
 			entry.AgentOwnerName = ""
