@@ -1787,6 +1787,89 @@ var Catalog = []Migration{
 			CREATE INDEX IF NOT EXISTS idx_attachments_uploaded_by_portal_customer ON attachments(uploaded_by_portal_customer_id);
 		`,
 	},
+	{
+		Version: "20261004_import_jobs_scope_fk",
+		Name:    "Drop the stale asset-set foreign key from the generic import tables",
+		// The 20260924 rename preserved the original set_id →
+		// asset_management_sets foreign keys under the new scope_id name, so
+		// on every upgraded install ticket CSV imports (scope_id = workspace
+		// id) fail the constraint and deleting an asset set can cascade into
+		// unrelated import rows. Fresh installs never had the FKs; the checks
+		// report the effect present when neither table carries such an FK.
+		CheckSQLite: `
+			SELECT CASE WHEN (SELECT COUNT(*) FROM pragma_foreign_key_list('import_jobs') WHERE "table"='asset_management_sets') = 0
+				AND (SELECT COUNT(*) FROM pragma_foreign_key_list('import_uploads') WHERE "table"='asset_management_sets') = 0
+			THEN 1 ELSE 0 END`,
+		CheckPostgres: `
+			SELECT CASE WHEN COUNT(*) = 0 THEN 1 ELSE 0 END
+			FROM pg_constraint con
+			JOIN pg_class child ON child.oid = con.conrelid
+			JOIN pg_class parent ON parent.oid = con.confrelid
+			JOIN pg_namespace n ON n.oid = child.relnamespace
+			WHERE con.contype = 'f'
+				AND n.nspname = current_schema()
+				AND child.relname IN ('import_jobs', 'import_uploads')
+				AND parent.relname = 'asset_management_sets'`,
+		// SQLite cannot drop a constraint in place; rebuild both tables
+		// without the asset-set FK, copying rows and restoring the indexes.
+		SQLite: `
+			CREATE TABLE import_jobs_scope_fk_rebuild (
+				id TEXT PRIMARY KEY,
+				kind TEXT NOT NULL DEFAULT 'asset',
+				scope_id INTEGER NOT NULL,
+				status TEXT NOT NULL DEFAULT 'queued',
+				phase TEXT DEFAULT 'initializing',
+				file_path TEXT NOT NULL,
+				config_json TEXT,
+				progress_json TEXT,
+				error_message TEXT,
+				created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+				created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+				started_at DATETIME,
+				completed_at DATETIME,
+				lease_expires_at BIGINT
+			);
+			INSERT INTO import_jobs_scope_fk_rebuild
+				SELECT id, kind, scope_id, status, phase, file_path, config_json, progress_json, error_message, created_by, created_at, started_at, completed_at, lease_expires_at
+				FROM import_jobs;
+			DROP TABLE import_jobs;
+			ALTER TABLE import_jobs_scope_fk_rebuild RENAME TO import_jobs;
+			CREATE INDEX IF NOT EXISTS idx_import_jobs_scope ON import_jobs(scope_id);
+			CREATE INDEX IF NOT EXISTS idx_import_jobs_status ON import_jobs(status);
+			CREATE INDEX IF NOT EXISTS idx_import_jobs_created_by ON import_jobs(created_by);
+			CREATE TABLE import_uploads_scope_fk_rebuild (
+				id TEXT PRIMARY KEY,
+				kind TEXT NOT NULL DEFAULT 'asset',
+				scope_id INTEGER NOT NULL,
+				created_by INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+				created_at BIGINT NOT NULL
+			);
+			INSERT INTO import_uploads_scope_fk_rebuild
+				SELECT id, kind, scope_id, created_by, created_at
+				FROM import_uploads;
+			DROP TABLE import_uploads;
+			ALTER TABLE import_uploads_scope_fk_rebuild RENAME TO import_uploads;
+		`,
+		Postgres: `
+			DO $$
+			DECLARE fk record;
+			BEGIN
+				FOR fk IN
+					SELECT rel.relname AS table_name, con.conname AS constraint_name
+					FROM pg_constraint con
+					JOIN pg_class rel ON rel.oid = con.conrelid
+					JOIN pg_class parent ON parent.oid = con.confrelid
+					JOIN pg_namespace n ON n.oid = rel.relnamespace
+					WHERE con.contype = 'f'
+						AND n.nspname = current_schema()
+						AND rel.relname IN ('import_jobs', 'import_uploads')
+						AND parent.relname = 'asset_management_sets'
+				LOOP
+					EXECUTE format('ALTER TABLE %I DROP CONSTRAINT %I', fk.table_name, fk.constraint_name);
+				END LOOP;
+			END $$;
+		`,
+	},
 }
 
 func applySQLitePersonalLabelsPerUserUnique(db Database) (retErr error) {
