@@ -72,14 +72,17 @@ import { fetchV2Data } from '../../api/core.js';
 
   async function loadQueues() {
     try {
-      // Resolve the key directly: the workspace store may still be
-      // initializing for a different workspace when this view deep-links in.
-      const list = (await api.workspaces.getAll()) ?? [];
-      const key = list.find((entry) => entry.id === Number(workspaceId))?.key;
-      if (!key) return;
+      // The bootstrap payload the shell loads for this workspace anyway
+      // carries the key; initialize() dedupes with the onMount call and
+      // re-targets the store when it was left on a different workspace.
+      await workspaceDataStore.initialize(workspaceId);
+      const key = workspaceDataStore.workspace?.key;
+      if (!key) throw new Error('workspace bootstrap unavailable');
       queues = (await fetchV2Data(`/workspaces/${key}/queues`)) ?? [];
     } catch (error) {
       errorToast(t('supportQueue.loadFailed'));
+    } finally {
+      loadingQueues = false;
     }
   }
 
