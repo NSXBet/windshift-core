@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
@@ -119,11 +118,6 @@ func (s *ItemLifecycleService) Merge(ctx context.Context, input ItemMergeInput) 
 		alreadyMerged bool
 		sameRequester bool
 	}
-	// The canonical's materialized path anchors the descendant check.
-	var targetPath string
-	if err := s.db.QueryRowContext(ctx, `SELECT path FROM items WHERE id = ?`, input.TargetItemID).Scan(&targetPath); err != nil {
-		return nil, fmt.Errorf("load path for item %d: %w", input.TargetItemID, err)
-	}
 
 	sources := make([]plannedSource, 0, len(ordered))
 	for _, id := range ordered {
@@ -137,14 +131,15 @@ func (s *ItemLifecycleService) Merge(ctx context.Context, input ItemMergeInput) 
 		if source.WorkspaceID != target.WorkspaceID {
 			return nil, &validation.ValidationError{Field: "source_item_ids", Message: "All items must be in the same workspace as the canonical ticket"}
 		}
-		var sourcePath string
-		if err := s.db.QueryRowContext(ctx, `SELECT path FROM items WHERE id = ?`, id).Scan(&sourcePath); err != nil {
-			return nil, fmt.Errorf("load path for item %d: %w", id, err)
-		}
 		// Folding a ticket into its own descendant would create a redirect
-		// cycle. Paths chain as "/<id>/...", so the target is a descendant of
-		// the source exactly when its path extends the source's own segment.
-		if strings.HasPrefix(targetPath, sourcePath+strconv.Itoa(id)+"/") {
+		// cycle. Follow the live parent_id chain: items.path is only written
+		// by cross-workspace moves and template clones and stays '/' for
+		// normally created items.
+		targetIsDescendant, err := s.items.IsDescendantContext(ctx, id, input.TargetItemID)
+		if err != nil {
+			return nil, err
+		}
+		if targetIsDescendant {
 			return nil, fmt.Errorf("%w: cannot merge an item into its own subticket", ErrItemMergeConflict)
 		}
 		plan := plannedSource{item: source, sameRequester: sameRequester(source, target)}
