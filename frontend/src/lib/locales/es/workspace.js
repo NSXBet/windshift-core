@@ -5,6 +5,8 @@ export default {
     workspace: 'Espacio de trabajo',
     template: 'Plantilla',
     restricted: 'Restringido',
+    visibility: 'Visibilidad',
+    open: 'Abierto',
     workspaces_one: '{count} espacio de trabajo',
     workspaces_other: '{count} espacios de trabajo',
     createWorkspace: 'Crear espacio de trabajo',

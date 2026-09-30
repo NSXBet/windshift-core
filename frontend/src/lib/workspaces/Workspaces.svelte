@@ -107,6 +107,11 @@
       slot: 'status'
     },
     {
+      key: 'visibility',
+      label: t('workspaces.visibility'),
+      slot: 'visibility'
+    },
+    {
       key: 'created_at',
       label: t('common.created'),
       sortable: true,
@@ -194,15 +199,6 @@
                 {t('workspaces.template')}
               </span>
             {/if}
-            {#if workspace.is_restricted}
-              <span
-                data-testid={`workspace-restricted-badge-${workspace.id}`}
-                class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
-                style="background-color: var(--ds-accent-orange-subtle); color: var(--ds-text-accent-orange);"
-              >
-                {t('workspaces.restricted')}
-              </span>
-            {/if}
           </div>
           {#if workspace.description}
             <div class="text-sm mt-1" style="color: var(--ds-text-subtle);">{workspace.description}</div>
@@ -213,6 +209,24 @@
 
     {#snippet status(workspace)}
       <Lozenge color={workspace.active ? 'green' : 'gray'} text={workspace.active ? 'Active' : 'Inactive'} />
+    {/snippet}
+
+    {#snippet visibility(workspace)}
+      {#if workspace.is_restricted}
+        <Lozenge
+          color="orange"
+          text={t('workspaces.restricted')}
+          dataTestid={`workspace-restricted-badge-${workspace.id}`}
+        />
+      {:else}
+        <span
+          data-testid={`workspace-open-${workspace.id}`}
+          class="text-sm"
+          style="color: var(--ds-text-subtle);"
+        >
+          {t('workspaces.open')}
+        </span>
+      {/if}
     {/snippet}
   </DataTable>
     </div>

@@ -5,6 +5,8 @@ export default {
     workspace: 'Workspace',
     template: 'Template',
     restricted: 'Restricted',
+    visibility: 'Visibility',
+    open: 'Open',
     workspaces_one: '{count} workspace',
     workspaces_other: '{count} workspaces',
     createWorkspace: 'Create Workspace',

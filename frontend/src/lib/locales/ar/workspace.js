@@ -5,6 +5,8 @@ export default {
     workspace: 'مساحة عمل',
     template: 'قالب',
     restricted: 'مقيّد',
+    visibility: 'الرؤية',
+    open: 'مفتوح',
     workspaces_one: '{count} مساحة عمل',
     workspaces_other: '{count} مساحات عمل',
     createWorkspace: 'إنشاء مساحة عمل',

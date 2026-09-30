@@ -6,6 +6,8 @@ export default {
     "workspace": "워크스페이스",
     "template": "템플릿",
     "restricted": "제한됨",
+    "visibility": "공개 범위",
+    "open": "공개",
     "workspaces_one": "워크스페이스 {count}개",
     "workspaces_other": "워크스페이스 {count}개",
     "createWorkspace": "워크스페이스 만들기",

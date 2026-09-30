@@ -9,6 +9,8 @@ export default {
     workspace: 'Arbeitsbereich',
     template: 'Vorlage',
     restricted: 'Eingeschränkt',
+    visibility: 'Sichtbarkeit',
+    open: 'Offen',
     workspaces_one: '{count} Arbeitsbereich',
     workspaces_other: '{count} Arbeitsbereiche',
     createWorkspace: 'Arbeitsbereich erstellen',

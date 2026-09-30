@@ -5,6 +5,8 @@ export default {
     workspace: '工作区',
     template: '模板',
     restricted: '受限',
+    visibility: '可见性',
+    open: '开放',
     workspaces_one: '{count} 个工作区',
     workspaces_other: '{count} 个工作区',
     createWorkspace: '创建工作区',

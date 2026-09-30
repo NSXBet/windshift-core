@@ -5,6 +5,8 @@ export default {
     workspace: 'Workspace',
     template: 'Modelo',
     restricted: 'Restrito',
+    visibility: 'Visibilidade',
+    open: 'Aberto',
     workspaces_one: '{count} workspace',
     workspaces_other: '{count} workspaces',
     createWorkspace: 'Criar Workspace',
