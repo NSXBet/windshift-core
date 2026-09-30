@@ -11,6 +11,7 @@
     "workspace_bundle": "workspace-bundle.json"
   },
   "conformance": {
-    "configuration_set": "configuration-set.json"
+    "configuration_set": "configuration-set.json",
+    "required_statuses": ["Open", "Closed"]
   }
 }

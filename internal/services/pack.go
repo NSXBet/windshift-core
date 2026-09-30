@@ -64,6 +64,12 @@ type PackPluginRef struct {
 // template the conformance check runs against.
 type PackConformanceSection struct {
 	ConfigurationSet string `json:"configuration_set,omitempty"`
+	// RequiredStatuses names statuses that must exist after the schema stage,
+	// by exact name (case-insensitive). The pack's content depends on them —
+	// e.g. queue views keyed on "Open"/"Closed" — so a missing status fails
+	// the apply. Shared-registry attributes are never gated: existing statuses
+	// are adopted as the instance has them.
+	RequiredStatuses []string `json:"required_statuses,omitempty"`
 }
 
 // PackArchive is a parsed pack: the manifest plus every file it may

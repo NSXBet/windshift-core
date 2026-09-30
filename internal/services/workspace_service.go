@@ -329,6 +329,8 @@ func (s *WorkspaceService) provisionTemplatePack(ctx context.Context, params Cre
 	detail := "provisioning did not complete"
 	if provisionErr != nil {
 		detail = provisionErr.Error()
+	} else if failed := firstFailedPackStage(report); failed != nil {
+		detail = fmt.Sprintf("stage %q failed: %s", failed.Name, failed.Detail)
 	} else if report != nil {
 		detail = report.Status
 	}
