@@ -2022,7 +2022,7 @@ func (g *SQLGenerator) mapItemFieldName(fieldName string) (expr string, args []a
 
 	// slaDeadline exposes the running cycle's promised instant as a comparable
 	// datetime, so queues can select items whose deadline is within a window
-	// (for example `slaRunning = true AND slaDeadline <= '2d'`). It is the
+	// (for example `slaRunning = true AND slaDeadline <= 2d`). It is the
 	// stored next_deadline_at, not a computed business-time value.
 	case "sladeadline", "sla_deadline":
 		return "(SELECT sla_c.next_deadline_at FROM item_sla_cycles sla_c WHERE sla_c.item_id = " + prefix + "i.id AND sla_c.status = 'ongoing' AND sla_c.next_deadline_at IS NOT NULL ORDER BY sla_c.next_deadline_at LIMIT 1)", nil, nil

@@ -48345,6 +48345,51 @@
         ],
         "type": "object"
       },
+      "GetWorkspacesWorkspaceKeyQueuesResult": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "count": {
+                  "description": "The count value.",
+                  "type": "integer"
+                },
+                "description": {
+                  "description": "The description value.",
+                  "type": "string"
+                },
+                "key": {
+                  "description": "The key value.",
+                  "type": "string"
+                },
+                "name": {
+                  "description": "The name value.",
+                  "type": "string"
+                },
+                "ql": {
+                  "description": "The ql value.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "count",
+                "description",
+                "key",
+                "name",
+                "ql"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
       "Item": {
         "additionalProperties": false,
         "description": "A work item with stable identifiers and permission-filtered joined display fields.",
@@ -126978,6 +127023,63 @@
           }
         ],
         "summary": "Get item detail summary by key",
+        "tags": [
+          "Work items"
+        ],
+        "x-required-scopes": [
+          "items:read"
+        ]
+      }
+    },
+    "/workspaces/{workspace_key}/queues": {
+      "get": {
+        "description": "List support queue presets. Results include only resources visible to the authenticated caller; collections use their documented stable order and bounds.",
+        "operationId": "getWorkspacesWorkspaceKeyQueues",
+        "parameters": [
+          {
+            "description": "The workspace key.",
+            "in": "path",
+            "name": "workspace_key",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetWorkspacesWorkspaceKeyQueuesResult"
+                }
+              }
+            },
+            "description": "List support queue presets response."
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationError"
+          },
+          "403": {
+            "$ref": "#/components/responses/PermissionError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimitError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "List support queue presets",
         "tags": [
           "Work items"
         ],

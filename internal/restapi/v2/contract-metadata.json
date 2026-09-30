@@ -17358,6 +17358,34 @@
           "Work items"
         ]
       }
+    },
+    "/workspaces/{workspace_key}/queues": {
+      "get": {
+        "description": "List support queue presets. Results include only resources visible to the authenticated caller; collections use their documented stable order and bounds.",
+        "parameters": [
+          {
+            "Name": "workspace_key",
+            "In": "path",
+            "Description": "The workspace key.",
+            "Required": true,
+            "Schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "401": {},
+          "403": {},
+          "404": {},
+          "429": {},
+          "500": {}
+        },
+        "summary": "List support queue presets",
+        "tags": [
+          "Work items"
+        ]
+      }
     }
   }
 }
