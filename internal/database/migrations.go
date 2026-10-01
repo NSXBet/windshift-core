@@ -1552,10 +1552,15 @@ var Catalog = []Migration{
 		`,
 	},
 	{
-		Version:       "20260925_incidents",
-		Name:          "Model incidents as pager state on work items",
-		CheckSQLite:   sqliteTableCheck("incidents"),
-		CheckPostgres: pgTableCheck("incidents"),
+		// Carries the on-call incident history forward from 0.8.9 (WI-1535):
+		// rows archive to on_call_incidents_archive and the latest open
+		// incident per item migrates into the new model. ReconcileChecksum
+		// restamps installs that already ran the original destructive body.
+		Version:           "20260925_incidents",
+		Name:              "Model incidents as pager state on work items",
+		CheckSQLite:       sqliteTableCheck("incidents"),
+		CheckPostgres:     pgTableCheck("incidents"),
+		ReconcileChecksum: true,
 		SQLite: `
 			CREATE TABLE incidents (
 				id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1587,6 +1592,51 @@ var Catalog = []Migration{
 			CREATE UNIQUE INDEX uq_incidents_open_item ON incidents(item_id) WHERE status = 'triggered';
 			ALTER TABLE items ADD COLUMN incident_id INTEGER REFERENCES incidents(id) ON DELETE SET NULL;
 			CREATE UNIQUE INDEX uq_items_incident ON items(incident_id) WHERE incident_id IS NOT NULL;
+			CREATE TABLE on_call_incidents_archive (
+				id INTEGER PRIMARY KEY,
+				escalation_policy_id INTEGER,
+				item_id INTEGER,
+				status TEXT,
+				triggered_at DATETIME,
+				acknowledged_at DATETIME,
+				acknowledged_by INTEGER,
+				resolved_at DATETIME,
+				resolved_by INTEGER,
+				current_escalation_step INTEGER,
+				escalation_repeat_count INTEGER,
+				created_at DATETIME
+			);
+			INSERT INTO on_call_incidents_archive
+				SELECT id, escalation_policy_id, item_id, status, triggered_at, acknowledged_at,
+					acknowledged_by, resolved_at, resolved_by, current_escalation_step,
+					escalation_repeat_count, created_at
+				FROM on_call_incidents;
+			INSERT INTO incidents (item_id, status, urgency, source, escalation_policy_id,
+					triggered_at, acknowledged_at, acknowledged_by, escalation_step,
+					escalation_repeat_count, next_escalation_at, created_at, updated_at)
+			SELECT o.item_id, o.status, 'high', 'manual',
+				CASE WHEN EXISTS (
+					SELECT 1 FROM on_call_escalation_policies p WHERE p.id = o.escalation_policy_id
+				) THEN o.escalation_policy_id END,
+				o.triggered_at, o.acknowledged_at, o.acknowledged_by,
+				COALESCE(o.current_escalation_step, 0), COALESCE(o.escalation_repeat_count, 0),
+				CASE WHEN o.status = 'triggered' THEN CURRENT_TIMESTAMP END,
+				o.created_at, CURRENT_TIMESTAMP
+			FROM on_call_incidents o
+			WHERE o.item_id IS NOT NULL AND o.status IN ('triggered', 'acknowledged')
+				AND NOT EXISTS (
+					SELECT 1 FROM on_call_incidents o2
+					WHERE o2.item_id = o.item_id AND o2.status IN ('triggered', 'acknowledged')
+						AND o2.id > o.id
+				);
+			UPDATE items SET incident_id = (
+				SELECT i.id FROM incidents i
+				WHERE i.item_id = items.id AND i.status != 'resolved'
+				ORDER BY i.id DESC LIMIT 1
+			), updated_at = CURRENT_TIMESTAMP
+			WHERE EXISTS (
+				SELECT 1 FROM incidents i WHERE i.item_id = items.id
+			);
 			DROP TABLE IF EXISTS on_call_incidents;
 		`,
 		Postgres: `
@@ -1620,6 +1670,51 @@ var Catalog = []Migration{
 			CREATE UNIQUE INDEX IF NOT EXISTS uq_incidents_open_item ON incidents(item_id) WHERE status = 'triggered';
 			ALTER TABLE items ADD COLUMN IF NOT EXISTS incident_id INTEGER REFERENCES incidents(id) ON DELETE SET NULL;
 			CREATE UNIQUE INDEX IF NOT EXISTS uq_items_incident ON items(incident_id) WHERE incident_id IS NOT NULL;
+			CREATE TABLE on_call_incidents_archive (
+				id INTEGER PRIMARY KEY,
+				escalation_policy_id INTEGER,
+				item_id INTEGER,
+				status TEXT,
+				triggered_at TIMESTAMPTZ,
+				acknowledged_at TIMESTAMPTZ,
+				acknowledged_by INTEGER,
+				resolved_at TIMESTAMPTZ,
+				resolved_by INTEGER,
+				current_escalation_step INTEGER,
+				escalation_repeat_count INTEGER,
+				created_at TIMESTAMPTZ
+			);
+			INSERT INTO on_call_incidents_archive
+				SELECT id, escalation_policy_id, item_id, status, triggered_at, acknowledged_at,
+					acknowledged_by, resolved_at, resolved_by, current_escalation_step,
+					escalation_repeat_count, created_at
+				FROM on_call_incidents;
+			INSERT INTO incidents (item_id, status, urgency, source, escalation_policy_id,
+					triggered_at, acknowledged_at, acknowledged_by, escalation_step,
+					escalation_repeat_count, next_escalation_at, created_at, updated_at)
+			SELECT o.item_id, o.status, 'high', 'manual',
+				CASE WHEN EXISTS (
+					SELECT 1 FROM on_call_escalation_policies p WHERE p.id = o.escalation_policy_id
+				) THEN o.escalation_policy_id END,
+				o.triggered_at, o.acknowledged_at, o.acknowledged_by,
+				COALESCE(o.current_escalation_step, 0), COALESCE(o.escalation_repeat_count, 0),
+				CASE WHEN o.status = 'triggered' THEN CURRENT_TIMESTAMP END,
+				o.created_at, CURRENT_TIMESTAMP
+			FROM on_call_incidents o
+			WHERE o.item_id IS NOT NULL AND o.status IN ('triggered', 'acknowledged')
+				AND NOT EXISTS (
+					SELECT 1 FROM on_call_incidents o2
+					WHERE o2.item_id = o.item_id AND o2.status IN ('triggered', 'acknowledged')
+						AND o2.id > o.id
+				);
+			UPDATE items SET incident_id = (
+				SELECT i.id FROM incidents i
+				WHERE i.item_id = items.id AND i.status != 'resolved'
+				ORDER BY i.id DESC LIMIT 1
+			), updated_at = CURRENT_TIMESTAMP
+			WHERE EXISTS (
+				SELECT 1 FROM incidents i WHERE i.item_id = items.id
+			);
 			DROP TABLE IF EXISTS on_call_incidents;
 		`,
 	},
@@ -1956,6 +2051,63 @@ var Catalog = []Migration{
 		Postgres: `
 			CREATE INDEX IF NOT EXISTS idx_email_message_tracking_sender ON email_message_tracking(from_email);
 			CREATE INDEX IF NOT EXISTS idx_email_message_tracking_channel_sender_time ON email_message_tracking(channel_id, LOWER(from_email), processed_at);
+		`,
+	},
+	{
+		// Incidents had a never-read dedup_key column and scheduled incident
+		// notifications kept no escalation-rule reference (WI-1536). The drop
+		// removes the dead column; the state table rebuild adds the missing
+		// foreign key after clearing rows whose rule no longer exists.
+		Version: "20261006_incident_state_hardening",
+		Name:    "Drop incidents.dedup_key and reference escalation rules from notification state",
+		CheckSQLite: `
+			SELECT CASE WHEN (SELECT COUNT(*) FROM pragma_table_info('incidents') WHERE name='dedup_key') = 0
+				AND (SELECT COUNT(*) FROM pragma_foreign_key_list('incident_notification_state') WHERE "table"='on_call_escalation_rules') > 0
+			THEN 1 ELSE 0 END`,
+		CheckPostgres: `
+			SELECT CASE WHEN NOT EXISTS (
+				SELECT 1 FROM information_schema.columns
+				WHERE table_schema = current_schema() AND table_name = 'incidents' AND column_name = 'dedup_key'
+			) AND EXISTS (
+				SELECT 1 FROM pg_constraint con
+				JOIN pg_class child ON child.oid = con.conrelid
+				JOIN pg_class parent ON parent.oid = con.confrelid
+				JOIN pg_namespace n ON n.oid = child.relnamespace
+				WHERE con.contype = 'f' AND n.nspname = current_schema()
+					AND child.relname = 'incident_notification_state'
+					AND parent.relname = 'on_call_escalation_rules'
+			) THEN 1 ELSE 0 END`,
+		SQLite: `
+			ALTER TABLE incidents DROP COLUMN dedup_key;
+			DELETE FROM incident_notification_state WHERE escalation_rule_id NOT IN (SELECT id FROM on_call_escalation_rules);
+			CREATE TABLE incident_notification_state_state_fk_rebuild (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				incident_id INTEGER NOT NULL,
+				escalation_rule_id INTEGER NOT NULL,
+				notification_rule_id INTEGER NOT NULL,
+				repeat_index INTEGER NOT NULL DEFAULT 0,
+				next_notification_at DATETIME NOT NULL,
+				created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+				updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+				FOREIGN KEY (incident_id) REFERENCES incidents(id) ON DELETE CASCADE,
+				FOREIGN KEY (escalation_rule_id) REFERENCES on_call_escalation_rules(id) ON DELETE CASCADE,
+				FOREIGN KEY (notification_rule_id) REFERENCES on_call_notification_rules(id) ON DELETE CASCADE
+			);
+			INSERT INTO incident_notification_state_state_fk_rebuild
+				SELECT id, incident_id, escalation_rule_id, notification_rule_id, repeat_index,
+					next_notification_at, created_at, updated_at
+				FROM incident_notification_state;
+			DROP TABLE incident_notification_state;
+			ALTER TABLE incident_notification_state_state_fk_rebuild RENAME TO incident_notification_state;
+			CREATE UNIQUE INDEX uq_incident_notification_state ON incident_notification_state(incident_id, notification_rule_id, repeat_index);
+			CREATE INDEX idx_incident_notification_state_due ON incident_notification_state(next_notification_at);
+		`,
+		Postgres: `
+			ALTER TABLE incidents DROP COLUMN IF EXISTS dedup_key;
+			DELETE FROM incident_notification_state WHERE escalation_rule_id NOT IN (SELECT id FROM on_call_escalation_rules);
+			ALTER TABLE incident_notification_state DROP CONSTRAINT IF EXISTS incident_notification_state_escalation_rule_fkey;
+			ALTER TABLE incident_notification_state ADD CONSTRAINT incident_notification_state_escalation_rule_fkey
+				FOREIGN KEY (escalation_rule_id) REFERENCES on_call_escalation_rules(id) ON DELETE CASCADE;
 		`,
 	},
 }

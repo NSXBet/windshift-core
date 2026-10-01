@@ -202,7 +202,8 @@ type OnCallSwapRequestResponse struct {
 }
 
 // Incident is pager state attached to a work item. The incidents table owns
-// the history; items.incident_id points at the current/latest row.
+// the history; items.incident_id points at the item's current (unresolved)
+// incident and is cleared when the incident is resolved.
 type Incident struct {
 	ID                    int        `json:"id"`
 	ItemID                int        `json:"item_id"`
@@ -218,7 +219,6 @@ type Incident struct {
 	EscalationStep        int        `json:"escalation_step"`
 	EscalationRepeatCount int        `json:"escalation_repeat_count"`
 	NextEscalationAt      *time.Time `json:"next_escalation_at,omitempty"`
-	DedupKey              string     `json:"dedup_key,omitempty"`
 	CreatedAt             time.Time  `json:"created_at"`
 	UpdatedAt             time.Time  `json:"updated_at"`
 	// Joined fields

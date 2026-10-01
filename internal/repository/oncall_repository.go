@@ -45,7 +45,7 @@ const incidentSelectBody = `
 	SELECT inc.id, inc.item_id, inc.status, inc.urgency, inc.source,
 	       inc.escalation_policy_id, inc.triggered_at, inc.acknowledged_at, inc.acknowledged_by,
 	       inc.resolved_at, inc.resolved_by, inc.escalation_step, inc.escalation_repeat_count,
-	       inc.next_escalation_at, COALESCE(inc.dedup_key, ''), inc.created_at, inc.updated_at,
+	       inc.next_escalation_at, inc.created_at, inc.updated_at,
 	       COALESCE(p.name, '') AS policy_name,
 	       i.title AS item_title,
 	       w.key || '-' || i.workspace_item_number AS item_key,
@@ -70,7 +70,7 @@ func scanIncident(scanner rowScanner) (models.Incident, error) {
 		&inc.ID, &inc.ItemID, &inc.Status, &inc.Urgency, &inc.Source,
 		&escalationPolicyID, &inc.TriggeredAt, &acknowledgedAt, &acknowledgedBy,
 		&resolvedAt, &resolvedBy, &inc.EscalationStep, &inc.EscalationRepeatCount,
-		&nextEscalationAt, &inc.DedupKey, &inc.CreatedAt, &inc.UpdatedAt,
+		&nextEscalationAt, &inc.CreatedAt, &inc.UpdatedAt,
 		&inc.PolicyName, &inc.ItemTitle, &inc.ItemKey,
 		&inc.WorkspaceID, &teamID, &inc.TeamName,
 		&acknowledgedByName, &resolvedByName,
@@ -962,50 +962,89 @@ func (r *OnCallRepository) CreateIncident(itemID int, policyID *int, urgency, so
 	return incidentID, nil
 }
 
-// AcknowledgeIncident records the ack handshake and stops escalation.
-func (r *OnCallRepository) AcknowledgeIncident(id, userID int, now time.Time) error {
-	_, err := r.db.ExecWrite(`
+// AcknowledgeIncident records the ack handshake and stops escalation. The
+// update is conditional so a resolve that commits first wins; the returned
+// count reports whether the ack landed.
+func (r *OnCallRepository) AcknowledgeIncident(id, userID int, now time.Time) (int64, error) {
+	res, err := r.db.ExecWrite(`
 		UPDATE incidents
 		SET status = 'acknowledged', acknowledged_at = ?, acknowledged_by = ?,
 			next_escalation_at = NULL, updated_at = ?
-		WHERE id = ?
+		WHERE id = ? AND status != 'resolved'
 	`, now, userID, now, id)
-	return err
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }
 
-// UnacknowledgeIncident returns an incident to the triggered state so
-// escalation resumes after an accidental ack.
-func (r *OnCallRepository) UnacknowledgeIncident(id int, now time.Time) error {
-	_, err := r.db.ExecWrite(`
+// UnacknowledgeIncident returns an acknowledged incident to the triggered
+// state. Only an acknowledged incident can be unacknowledged; the returned
+// count reports whether the transition happened.
+func (r *OnCallRepository) UnacknowledgeIncident(id int, now time.Time) (int64, error) {
+	res, err := r.db.ExecWrite(`
 		UPDATE incidents
 		SET status = 'triggered', acknowledged_at = NULL, acknowledged_by = NULL,
-			resolved_at = NULL, resolved_by = NULL, next_escalation_at = NULL, updated_at = ?
-		WHERE id = ?
+			resolved_at = NULL, resolved_by = NULL, updated_at = ?
+		WHERE id = ? AND status = 'acknowledged'
 	`, now, id)
-	return err
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }
 
-// ResolveIncident ends the incident. Resolve is not item completion.
-func (r *OnCallRepository) ResolveIncident(id, userID int, now time.Time) error {
-	_, err := r.db.ExecWrite(`
-		UPDATE incidents
-		SET status = 'resolved', resolved_at = ?, resolved_by = ?,
-			next_escalation_at = NULL, updated_at = ?
-		WHERE id = ?
-	`, now, userID, now, id)
-	return err
+// ResolveIncident ends the incident and releases the item pointer in one
+// transaction, so readers never see a resolved incident as the item's current
+// one. The returned count reports whether the resolve landed; resolving an
+// already-resolved incident affects zero rows.
+func (r *OnCallRepository) ResolveIncident(id, userID int, now time.Time) (int64, error) {
+	var affected int64
+	err := database.WithTx(r.db, func(tx database.Tx) error {
+		res, err := tx.Exec(`
+			UPDATE incidents
+			SET status = 'resolved', resolved_at = ?, resolved_by = ?,
+				next_escalation_at = NULL, updated_at = ?
+			WHERE id = ? AND status != 'resolved'
+		`, now, userID, now, id)
+		if err != nil {
+			return err
+		}
+		affected, err = res.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if affected == 0 {
+			return nil
+		}
+		_, err = tx.Exec(
+			`UPDATE items SET incident_id = NULL, updated_at = ? WHERE incident_id = ?`,
+			now, id,
+		)
+		return err
+	})
+	if err != nil {
+		return 0, err
+	}
+	return affected, nil
 }
 
 // SetIncidentEscalation persists the engine cursor: the current step, the
-// repeat count, and the next escalation deadline (nil when exhausted).
-func (r *OnCallRepository) SetIncidentEscalation(id, step, repeatCount int, next *time.Time) error {
-	_, err := r.db.ExecWrite(`
+// repeat count, and the next escalation deadline (nil when exhausted). The
+// update only applies while the incident is still triggered, so an
+// acknowledge that commits between the read and the write keeps its cleared
+// deadline; the returned count reports whether the write landed.
+func (r *OnCallRepository) SetIncidentEscalation(id, step, repeatCount int, next *time.Time) (int64, error) {
+	res, err := r.db.ExecWrite(`
 		UPDATE incidents
 		SET escalation_step = ?, escalation_repeat_count = ?, next_escalation_at = ?,
 			updated_at = CURRENT_TIMESTAMP
-		WHERE id = ?
+		WHERE id = ? AND status = 'triggered'
 	`, step, repeatCount, next, id)
-	return err
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }
 
 // FindDueIncidentIDs returns triggered incidents whose escalation deadline has

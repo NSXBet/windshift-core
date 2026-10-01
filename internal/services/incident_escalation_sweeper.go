@@ -13,14 +13,20 @@ import (
 // time-based escalation for triggered incidents.
 type IncidentEscalationSweeperConfig struct {
 	TickInterval time.Duration // how often to scan for due incidents; default 30s
-	BatchSize    int           // max incidents to advance per tick; default 50
+	BatchSize    int           // max incidents to advance per pass; default 50
+	// MaxDrainDuration bounds one tick's drain loop. A tick keeps processing
+	// further batches while due work remains, so a burst drains within
+	// TickInterval + MaxDrainDuration of its deadline instead of one batch
+	// per interval; default 15s.
+	MaxDrainDuration time.Duration
 }
 
 // DefaultIncidentEscalationSweeperConfig returns sensible defaults.
 func DefaultIncidentEscalationSweeperConfig() IncidentEscalationSweeperConfig {
 	return IncidentEscalationSweeperConfig{
-		TickInterval: 30 * time.Second,
-		BatchSize:    50,
+		TickInterval:     30 * time.Second,
+		BatchSize:        50,
+		MaxDrainDuration: 15 * time.Second,
 	}
 }
 
@@ -47,6 +53,9 @@ func NewIncidentEscalationSweeper(db database.Database, incident *IncidentServic
 	}
 	if config.BatchSize == 0 {
 		config.BatchSize = 50
+	}
+	if config.MaxDrainDuration == 0 {
+		config.MaxDrainDuration = 15 * time.Second
 	}
 	return &IncidentEscalationSweeper{
 		repo:     repository.NewOnCallRepository(db),
@@ -87,12 +96,37 @@ func (s *IncidentEscalationSweeper) run() {
 	}
 }
 
-// tick runs a single sweep pass. It advances due escalation steps and then
-// delivers due delayed/repeated notifications. Per-row failures are logged and
-// skipped.
+// tick runs one sweep drain. It processes batches of due escalations and
+// due scheduled notifications alternately, continuing while either queue
+// still returns a full batch so a burst drains within one tick instead of
+// accruing a per-interval backlog. Alternation keeps neither queue starved
+// when both are saturated. The loop stops at the drain budget, on shutdown,
+// or when both queues return a partial batch. Per-row failures are logged
+// and skipped.
 func (s *IncidentEscalationSweeper) tick() {
 	s.ticksProcessed++
+	budgetEnd := time.Now().Add(s.config.MaxDrainDuration)
+	for {
+		more := s.drainPass()
+		if !more {
+			return
+		}
+		select {
+		case <-s.stopChan:
+			return
+		default:
+		}
+		if time.Now().After(budgetEnd) {
+			return
+		}
+	}
+}
+
+// drainPass processes one incident batch and one notification batch. It
+// reports whether either batch was full, meaning more work likely remains.
+func (s *IncidentEscalationSweeper) drainPass() bool {
 	now := time.Now()
+	fullIncidents := false
 
 	dueIDs, err := s.repo.FindDueIncidentIDs(now, s.config.BatchSize)
 	if err != nil {
@@ -100,6 +134,7 @@ func (s *IncidentEscalationSweeper) tick() {
 		slog.Warn("incident sweeper: failed to query due incidents",
 			slog.String("component", "oncall"), slog.Any("error", err))
 	} else {
+		fullIncidents = len(dueIDs) == s.config.BatchSize
 		for _, id := range dueIDs {
 			if err := s.incident.AdvanceDue(id); err != nil {
 				s.errors++
@@ -119,7 +154,7 @@ func (s *IncidentEscalationSweeper) tick() {
 		s.errors++
 		slog.Warn("incident sweeper: failed to query scheduled notifications",
 			slog.String("component", "oncall"), slog.Any("error", err))
-		return
+		return fullIncidents
 	}
 	for _, id := range stateIDs {
 		if err := s.incident.DispatchDueNotification(id); err != nil {
@@ -133,4 +168,5 @@ func (s *IncidentEscalationSweeper) tick() {
 		}
 		s.notificationsSent++
 	}
+	return fullIncidents || len(stateIDs) == s.config.BatchSize
 }

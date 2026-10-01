@@ -17,7 +17,6 @@ CREATE TABLE IF NOT EXISTS incidents (
 	escalation_step INTEGER NOT NULL DEFAULT 0,
 	escalation_repeat_count INTEGER NOT NULL DEFAULT 0,
 	next_escalation_at TIMESTAMPTZ,
-	dedup_key TEXT,
 	created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE,
@@ -51,6 +50,7 @@ CREATE TABLE IF NOT EXISTS incident_notification_state (
 	created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	FOREIGN KEY (incident_id) REFERENCES incidents(id) ON DELETE CASCADE,
+	FOREIGN KEY (escalation_rule_id) REFERENCES on_call_escalation_rules(id) ON DELETE CASCADE,
 	FOREIGN KEY (notification_rule_id) REFERENCES on_call_notification_rules(id) ON DELETE CASCADE
 );
 CREATE UNIQUE INDEX IF NOT EXISTS uq_incident_notification_state
