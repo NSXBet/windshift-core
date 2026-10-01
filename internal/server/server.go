@@ -161,6 +161,8 @@ type Server struct {
 	emailScheduler               *scheduler.EmailScheduler
 	ticketImport                 *services.TicketImportService
 	emailTrackingRetention       *scheduler.EmailTrackingRetentionSweeper
+	portalAuthRetention          *scheduler.PortalAuthRetentionSweeper
+	kbEventsRetention            *scheduler.KBEventsRetentionSweeper
 	briefingScheduler            *scheduler.BriefingScheduler
 	pluginScheduleScheduler      *scheduler.PluginScheduleScheduler
 	activityTracker              *services.ActivityTracker
@@ -1006,6 +1008,15 @@ func (s *Server) initialize() error {
 	// referenced by in_reply_to are preserved past the cutoff.
 	s.emailTrackingRetention = scheduler.NewEmailTrackingRetentionSweeper(s.db)
 	s.emailTrackingRetention.Start()
+
+	// Daily retention sweeps for portal credential and analytics data:
+	// expired sessions and consumed magic links (system_settings windows,
+	// default 30 days) and kb_events analytics (per-channel override, default
+	// 365 days).
+	s.portalAuthRetention = scheduler.NewPortalAuthRetentionSweeper(s.db)
+	s.portalAuthRetention.Start()
+	s.kbEventsRetention = scheduler.NewKBEventsRetentionSweeper(s.db)
+	s.kbEventsRetention.Start()
 
 	integrationProviderHandler := handlers.NewIntegrationProviderHandler(repository.NewIntegrationProviderRepository(s.db), scmProviderHandler.GetEncryption(), logger.NewAuditor(s.db))
 	integrationOAuthHandler := handlers.NewIntegrationOAuthHandler(s.db, scmProviderHandler.GetEncryption(), baseURL)
@@ -2295,6 +2306,16 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	if s.emailTrackingRetention != nil {
 		slog.Info("stopping email tracking retention sweeper")
 		s.emailTrackingRetention.Stop()
+	}
+
+	if s.portalAuthRetention != nil {
+		slog.Info("stopping portal auth retention sweeper")
+		s.portalAuthRetention.Stop()
+	}
+
+	if s.kbEventsRetention != nil {
+		slog.Info("stopping kb events retention sweeper")
+		s.kbEventsRetention.Stop()
 	}
 
 	if s.briefingScheduler != nil {
