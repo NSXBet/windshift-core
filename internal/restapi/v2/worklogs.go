@@ -1,7 +1,9 @@
 package v2
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -84,8 +86,14 @@ func aggregateWorklogs(deps Deps) Handler {
 		if err != nil {
 			return err
 		}
-		if r.URL.Query().Get("from") == "" || r.URL.Query().Get("to") == "" {
+		fromRaw, toRaw := r.URL.Query().Get("from"), r.URL.Query().Get("to")
+		if fromRaw == "" || toRaw == "" {
 			return newError(http.StatusBadRequest, "invalid_request", "from and to (YYYY-MM-DD) are required")
+		}
+		// A report's date span is the bound on its work: cap the range so a
+		// years-long request cannot monopolize the database (WI-1598).
+		if err := enforceWorklogReportRange(fromRaw, toRaw, location); err != nil {
+			return err
 		}
 		accessible, err := deps.TimeAccess.GetAccessibleProjects(user.ID)
 		if err != nil {
@@ -103,8 +111,11 @@ func aggregateWorklogs(deps Deps) Handler {
 		if err := scopeWorklogReader(deps, user.ID, &filter); err != nil {
 			return err
 		}
-		result, err := deps.Worklogs.Aggregate(filter, location.String())
+		result, err := deps.Worklogs.Aggregate(r.Context(), filter, location.String())
 		if err != nil {
+			if errors.Is(err, context.Canceled) {
+				return newError(http.StatusRequestTimeout, "request_canceled", "Report request was canceled")
+			}
 			return internalError(err)
 		}
 		return writeJSON(w, http.StatusOK, result)
@@ -389,6 +400,30 @@ func reportTimezone(r *http.Request, user *models.User) (*time.Location, error) 
 		return nil, newError(http.StatusBadRequest, "invalid_request", err.Error())
 	}
 	return location, nil
+}
+
+// maxWorklogReportRangeDays bounds one report request. A year of daily
+// granularity covers every legitimate report; longer spans are the
+// resource-exhaustion shape the bound exists for (WI-1598).
+const maxWorklogReportRangeDays = 366
+
+// enforceWorklogReportRange rejects report requests whose inclusive date
+// span exceeds the maximum range.
+func enforceWorklogReportRange(fromRaw, toRaw string, location *time.Location) error {
+	start, _, err := services.CivilDateRangeUTC(fromRaw, fromRaw, location)
+	if err != nil {
+		return newError(http.StatusBadRequest, "invalid_request", "from must use YYYY-MM-DD")
+	}
+	_, end, err := services.CivilDateRangeUTC(toRaw, toRaw, location)
+	if err != nil {
+		return newError(http.StatusBadRequest, "invalid_request", "to must use YYYY-MM-DD")
+	}
+	days := (end.Unix() - start.Unix()) / (24 * 60 * 60)
+	if days > maxWorklogReportRangeDays {
+		return newError(http.StatusBadRequest, "invalid_request",
+			fmt.Sprintf("report range exceeds %d days; split the request into smaller ranges", maxWorklogReportRangeDays))
+	}
+	return nil
 }
 
 func applyWorklogDateRange(r *http.Request, user *models.User, from, to **int64) error {
