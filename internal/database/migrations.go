@@ -1920,6 +1920,16 @@ var Catalog = []Migration{
 		SQLite:        `ALTER TABLE portal_customers ADD COLUMN deactivated_at DATETIME`,
 		Postgres:      `ALTER TABLE portal_customers ADD COLUMN IF NOT EXISTS deactivated_at TIMESTAMPTZ`,
 	},
+	{
+		Version:       "20261006_portal_customers_created_via",
+		Name:          "Record creation provenance on portal customers (WI-1553)",
+		CheckSQLite:   sqliteColumnCheck("portal_customers", "created_via"),
+		CheckPostgres: pgColumnCheck("portal_customers", "created_via"),
+		// The DEFAULT backfills existing rows to 'unknown' in the same
+		// statement — no separate rewrite is needed.
+		SQLite:   `ALTER TABLE portal_customers ADD COLUMN created_via TEXT NOT NULL DEFAULT 'unknown'`,
+		Postgres: `ALTER TABLE portal_customers ADD COLUMN IF NOT EXISTS created_via TEXT NOT NULL DEFAULT 'unknown'`,
+	},
 }
 
 func applySQLitePersonalLabelsPerUserUnique(db Database) (retErr error) {

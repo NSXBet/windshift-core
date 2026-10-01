@@ -265,7 +265,7 @@ func (p *Processor) findOrCreatePortalCustomer(
 		}
 	}
 
-	customerID, created, err := repository.NewPortalCustomerRepository(p.db).FindOrCreateByEmail(ctx, name, email)
+	customerID, created, err := repository.NewPortalCustomerRepository(p.db).FindOrCreateByEmail(ctx, name, email, models.CustomerCreatedViaEmailIntake)
 	if err != nil {
 		return 0, err
 	}

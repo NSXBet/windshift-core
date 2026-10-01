@@ -636,14 +636,15 @@ const (
 	ActionTimeCustomerDelete = "time_customer.delete"
 
 	// Portal customer (contact) management
-	ActionPortalCustomerCreate     = "portal_customer.create"
-	ActionPortalCustomerUpdate     = "portal_customer.update"
-	ActionPortalCustomerDelete     = "portal_customer.delete"
-	ActionPortalCustomerUpdateOrg  = "portal_customer.update_organisation" //nolint:misspell // British spelling
-	ActionPortalCustomerErase      = "portal_customer.erase"
-	ActionPortalCustomerDataExport = "portal_customer.data_export"
-	ActionPortalCustomerDeactivate = "portal_customer.deactivate"
-	ActionPortalCustomerActivate   = "portal_customer.activate"
+	ActionPortalCustomerCreate      = "portal_customer.create"
+	ActionPortalCustomerUpdate      = "portal_customer.update"
+	ActionPortalCustomerDelete      = "portal_customer.delete"
+	ActionPortalCustomerUpdateOrg   = "portal_customer.update_organisation" //nolint:misspell // British spelling
+	ActionPortalCustomerErase       = "portal_customer.erase"
+	ActionPortalCustomerDataExport  = "portal_customer.data_export"
+	ActionPortalCustomerDeactivate  = "portal_customer.deactivate"
+	ActionPortalCustomerActivate    = "portal_customer.activate"
+	ActionPortalCustomerBulkCleanup = "portal_customer.bulk_cleanup"
 
 	// Time project permission management
 	ActionTimeProjectAddManager    = "time_project.add_manager"

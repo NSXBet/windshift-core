@@ -253,7 +253,7 @@ func (s *TicketImportService) importRow(ctx context.Context, workspaceID int, jo
 	}
 	if requesterEmail != "" {
 		customerID, _, err := repository.NewPortalCustomerRepository(s.db).
-			FindOrCreateByEmail(ctx, strings.SplitN(requesterEmail, "@", 2)[0], requesterEmail)
+			FindOrCreateByEmail(ctx, strings.SplitN(requesterEmail, "@", 2)[0], requesterEmail, models.CustomerCreatedViaTicketImport)
 		if err != nil {
 			return fmt.Errorf("resolve requester: %w", err)
 		}

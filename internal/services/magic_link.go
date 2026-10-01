@@ -13,6 +13,7 @@ import (
 
 	"windshift/internal/database"
 	"windshift/internal/emailutil"
+	"windshift/internal/models"
 	"windshift/internal/repository"
 )
 
@@ -252,7 +253,7 @@ func (s *MagicLinkService) FindOrCreatePortalCustomer(email, name string, channe
 	}
 
 	repo := repository.NewPortalCustomerRepository(s.db)
-	customerID, created, err := repo.FindOrCreateByEmail(context.Background(), name, email)
+	customerID, created, err := repo.FindOrCreateByEmail(context.Background(), name, email, models.CustomerCreatedViaMagicLink)
 	if err != nil {
 		return 0, err
 	}

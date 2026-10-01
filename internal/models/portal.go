@@ -181,6 +181,28 @@ type PortalSection struct {
 }
 
 // PortalCustomer represents an individual portal user
+// Creation provenance values recorded on portal_customers.created_via
+// (WI-1553). 'unknown' covers rows created before provenance capture;
+// portal submissions never create customers (they attribute to existing
+// authenticated identities), so no 'portal' value exists.
+const (
+	CustomerCreatedViaAgent        = "agent"
+	CustomerCreatedViaEmailIntake  = "email-intake"
+	CustomerCreatedViaMagicLink    = "magic-link"
+	CustomerCreatedViaTicketImport = "ticket-import"
+	CustomerCreatedViaUnknown      = "unknown"
+)
+
+// CustomerCreatedViaValues lists every provenance value the bulk cleanup
+// filter accepts.
+var CustomerCreatedViaValues = []string{
+	CustomerCreatedViaAgent,
+	CustomerCreatedViaEmailIntake,
+	CustomerCreatedViaMagicLink,
+	CustomerCreatedViaTicketImport,
+	CustomerCreatedViaUnknown,
+}
+
 type PortalCustomer struct {
 	ID                     int            `json:"id"`
 	Name                   string         `json:"name"`
@@ -191,6 +213,7 @@ type PortalCustomer struct {
 	IsPrimary              bool           `json:"is_primary"`                         // Primary contact for the organization
 	CustomFieldValues      map[string]any `json:"custom_field_values,omitempty"`
 	DeactivatedAt          *time.Time     `json:"deactivated_at,omitempty"` // Security deactivation (WI-1554); every portal auth path refuses deactivated customers
+	CreatedVia             string         `json:"created_via"`              // Creation provenance (WI-1553)
 	CreatedAt              time.Time      `json:"created_at"`
 	UpdatedAt              time.Time      `json:"updated_at"`
 	// Joined fields for API responses

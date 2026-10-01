@@ -57,6 +57,7 @@ const portalCustomerBaseQuery = `
 		pc.id, pc.name, pc.email, pc.phone,
 		pc.user_id, pc.customer_organisation_id, pc.is_primary,
 		pc.custom_field_values,
+		pc.created_via,
 		pc.deactivated_at,
 		pc.created_at, pc.updated_at,
 		u.first_name AS user_first_name,
@@ -95,11 +96,13 @@ func scanPortalCustomer(scanner interface{ Scan(...any) error }) (models.PortalC
 	var customFieldValuesStr sql.NullString
 	var createdAtStr, updatedAtStr string
 	var deactivatedAtStr sql.NullString
+	var createdViaStr string
 
 	err := scanner.Scan(
 		&c.ID, &c.Name, &c.Email, &phone,
 		&c.UserID, &c.CustomerOrganisationID, &c.IsPrimary,
 		&customFieldValuesStr,
+		&createdViaStr,
 		&deactivatedAtStr,
 		&createdAtStr, &updatedAtStr,
 		&userFirstName, &userLastName, &userEmail, &orgName,
@@ -135,6 +138,8 @@ func scanPortalCustomer(scanner interface{ Scan(...any) error }) (models.PortalC
 			return c, &customFieldParseError{err: err}
 		}
 	}
+
+	c.CreatedVia = createdViaStr
 
 	return c, nil
 }
@@ -442,9 +447,9 @@ func (h *PortalCustomersHandler) CreatePortalCustomer(w http.ResponseWriter, r *
 	txErr := database.WithTx(h.db, func(tx database.Tx) error {
 		//nolint:misspell // database column uses British spelling
 		err := tx.QueryRow(`
-			INSERT INTO portal_customers (name, email, phone, customer_organisation_id, is_primary, custom_field_values, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) RETURNING id
-		`, input.Name, input.Email, input.Phone, input.CustomerOrganisationID, input.IsPrimary, input.CustomFieldValuesJSON).Scan(&customerID)
+			INSERT INTO portal_customers (name, email, phone, customer_organisation_id, is_primary, custom_field_values, created_via, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) RETURNING id
+		`, input.Name, input.Email, input.Phone, input.CustomerOrganisationID, input.IsPrimary, input.CustomFieldValuesJSON, models.CustomerCreatedViaAgent).Scan(&customerID)
 		if err != nil {
 			return err
 		}
@@ -832,6 +837,49 @@ func (h *PortalCustomersHandler) ActivatePortalCustomer(w http.ResponseWriter, r
 		return
 	}
 	respondJSONOK(w, c)
+}
+
+// PortalCustomerBulkCleanupRequest selects the stale auto-created customers
+// a cleanup run targets.
+type PortalCustomerBulkCleanupRequest struct {
+	// CreatedVia optionally filters by provenance (agent, email-intake,
+	// magic-link, ticket-import, unknown). Empty = any.
+	CreatedVia string `json:"created_via,omitempty"`
+	// OlderThanDays optionally restricts to customers created more than this
+	// many days ago. 0 = no age filter.
+	OlderThanDays int `json:"older_than_days,omitempty"`
+}
+
+// BulkCleanupPortalCustomers erases stale auto-created customers (spam and
+// one-off email senders that never became tickets) through the standard
+// erasure flow, one DSAR evidence row each, plus a single batch audit event.
+func (h *PortalCustomersHandler) BulkCleanupPortalCustomers(w http.ResponseWriter, r *http.Request) {
+	currentUser, ok := RequireAuth(w, r)
+	if !ok {
+		return
+	}
+
+	body, ok := decodeJSON[PortalCustomerBulkCleanupRequest](w, r)
+	if !ok {
+		return
+	}
+
+	actor := services.NewAuditActorFromRequest(r, currentUser, nil, "")
+	result, err := services.CleanupAutoCreatedCustomers(h.db, actor, services.CustomerBulkCleanupInput{
+		CreatedVia:    body.CreatedVia,
+		OlderThanDays: body.OlderThanDays,
+	})
+	if err != nil {
+		if se, ok := err.(*services.ServiceError); ok {
+			handleServiceError(w, r, se)
+			return
+		}
+		slog.Error("failed to run portal customer bulk cleanup", slog.String("component", "portal"), slog.Any("error", err))
+		respondInternalError(w, r, err)
+		return
+	}
+
+	respondJSONOK(w, result)
 }
 
 // eraseCustomer runs the shared erasure execution and writes the response:
