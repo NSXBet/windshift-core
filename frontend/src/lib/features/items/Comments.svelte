@@ -327,11 +327,20 @@
 
 	// Insert a canned response (WI-1138) into the composer. Private snippets
 	// flip the composer to an internal note so they never reach customers.
+	// The markdown goes through the editor so the canvas and the bound
+	// content stay in sync.
 	function insertCannedResponse(response) {
 		if (!response?.body) return;
-		newCommentContent = newCommentContent.trim()
-			? `${newCommentContent.trimEnd()}\n\n${response.body}`
+		const text = newCommentContent.trim()
+			? `\n\n${response.body}`
 			: response.body;
+		if (editorRef?.insertMarkdown) {
+			editorRef.insertMarkdown(text);
+		} else {
+			newCommentContent = newCommentContent.trim()
+				? `${newCommentContent.trimEnd()}${text}`
+				: text;
+		}
 		if (response.is_private) {
 			isInternalComment = true;
 		}
