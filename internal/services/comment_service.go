@@ -25,6 +25,12 @@ type WebhookDispatcher interface {
 	DispatchEvent(eventType string, item *models.Item)
 }
 
+// InactivityMarkClearer re-arms item_inactive triggers after comment
+// activity (WI-1132).
+type InactivityMarkClearer interface {
+	ClearItemMarks(itemID int) error
+}
+
 // EmailReplyHandler is an interface for handling outbound email replies on comment creation.
 // This avoids an import cycle with the email reply service.
 type EmailReplyHandler interface {
@@ -101,6 +107,8 @@ type CommentService struct {
 	notificationService *NotificationService
 	mentionService      *MentionService
 	webhookSender       WebhookDispatcher
+	actionEvents        ActionEventEmitter
+	inactivityMarks     InactivityMarkClearer
 	emailReplyService   EmailReplyHandler
 	agentMentionTrigger AgentMentionTrigger
 	issueSync           CommentIssueSync
@@ -292,6 +300,18 @@ func (s *CommentService) SetMentionService(ms *MentionService) {
 // SetWebhookSender sets the webhook sender for dispatching webhook events.
 func (s *CommentService) SetWebhookSender(ws WebhookDispatcher) {
 	s.webhookSender = ws
+}
+
+// SetActionEventEmitter wires the comment_created automation trigger.
+func (s *CommentService) SetActionEventEmitter(e ActionEventEmitter) {
+	s.actionEvents = e
+}
+
+// SetInactivityMarkClearer wires inactivity re-arming on comment activity.
+func (s *CommentService) SetInactivityMarkClearer(c InactivityMarkClearer) {
+	if c != nil {
+		s.inactivityMarks = c
+	}
 }
 
 // SetEmailReplyService sets the email reply service for sending threaded replies to portal customers.
@@ -636,6 +656,34 @@ func (s *CommentService) create(params CreateCommentParams) (*CreateCommentResul
 		// 7. Dispatch webhook (if webhookSender != nil)
 		if s.webhookSender != nil {
 			s.webhookSender.DispatchEvent("comment.created", item)
+		}
+
+		// 7b. Dispatch the comment_created automation trigger (WI-1132).
+		// Admission outlives the request; failures never block comments.
+		if s.actionEvents != nil {
+			fromCustomer := params.PortalCustomerID != nil
+			s.actionEvents.EmitActionEvent(&models.ActionEvent{
+				EventType:   models.ActionTriggerCommentCreated,
+				WorkspaceID: item.WorkspaceID,
+				ItemID:      params.ItemID,
+				ActorUserID: params.ActorUserID,
+				ItemTypeID:  item.ItemTypeID,
+				NewValues: map[string]any{
+					"comment_id":            int(commentID),
+					"comment_is_private":    params.IsPrivate,
+					"comment_from_customer": fromCustomer,
+				},
+			})
+		}
+		// Fresh comment activity re-arms item_inactive triggers for the item.
+		if s.inactivityMarks != nil {
+			if err := s.inactivityMarks.ClearItemMarks(params.ItemID); err != nil {
+				slog.Warn("failed to clear inactivity marks",
+					slog.String("component", "comment_service"),
+					slog.Int("item_id", params.ItemID),
+					slog.Any("error", err),
+				)
+			}
 		}
 
 		// 8. Handle outbound email reply (if emailReplyService != nil)

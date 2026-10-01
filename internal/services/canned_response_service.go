@@ -78,6 +78,7 @@ func (s *CannedResponseService) Create(workspaceID int, input CannedResponseInpu
 		return nil, err
 	}
 	cr.WorkspaceID = workspaceID
+	cr.IsActive = true // new responses always start active; archive via update
 	if actor := optionalAuditActor(actors); actor != nil && actor.UserID > 0 {
 		createdBy := actor.UserID
 		cr.CreatedBy, cr.UpdatedBy = &createdBy, &createdBy

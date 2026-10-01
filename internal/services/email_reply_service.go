@@ -242,6 +242,115 @@ type emailReplyOutboxRow struct {
 	AttemptCount   int
 }
 
+// SendAutomationNotice implements CustomerNotifier: it emails the portal
+// customer who created the item through the same threaded transport as reply
+// notifications. Automation notices send directly rather than through the
+// comment-bound reply outbox; action run history is the durable record.
+// Skips (no customer, no thread, SMTP unset) are reported, not errors.
+func (s *EmailReplyService) SendAutomationNotice(itemID, actorID int, subject, message string) (delivered bool, skipReason string, err error) {
+	if !s.smtpSender.IsSMTPConfigured() {
+		return false, "smtp_not_configured", nil
+	}
+
+	item, err := repository.NewItemRepository(s.db).FindByIDWithDetails(itemID)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return false, "item_missing", nil
+		}
+		return false, "", fmt.Errorf("load item for customer notice: %w", err)
+	}
+	if item.ChannelID == nil || item.CreatorPortalCustomerID == nil {
+		return false, "no_customer", nil
+	}
+
+	var customerEmail, customerName string
+	err = s.db.QueryRow("SELECT email, name FROM portal_customers WHERE id = ?", *item.CreatorPortalCustomerID).Scan(&customerEmail, &customerName)
+	if err != nil {
+		return false, "no_customer", nil
+	}
+	if customerEmail == "" {
+		return false, "no_email", nil
+	}
+
+	// Thread against the item's recorded Message-IDs; without tracking there
+	// is nothing to thread to, so the notice would start an orphaned thread.
+	var inReplyTo string
+	var references []string
+	var originalSubject sql.NullString
+	rows, err := s.db.Query(`
+		SELECT message_id, subject FROM email_message_tracking
+		WHERE item_id = ? AND channel_id = ?
+		ORDER BY processed_at ASC
+	`, itemID, *item.ChannelID)
+	if err != nil {
+		return false, "", fmt.Errorf("query email tracking for customer notice: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var messageID string
+		if scanErr := rows.Scan(&messageID, &originalSubject); scanErr != nil {
+			continue
+		}
+		references = append(references, messageID)
+		inReplyTo = messageID
+	}
+	if err := rows.Err(); err != nil {
+		return false, "", fmt.Errorf("iterate email tracking for customer notice: %w", err)
+	}
+	if len(references) == 0 {
+		return false, "no_thread", nil
+	}
+
+	emailSubject := item.Title
+	if originalSubject.Valid && originalSubject.String != "" {
+		emailSubject = originalSubject.String
+	}
+	if subject != "" {
+		emailSubject = subject
+	}
+	if !strings.HasPrefix(strings.ToLower(emailSubject), "re:") {
+		emailSubject = "Re: " + emailSubject
+	}
+
+	authorName := s.idResolver.ResolveUserName(actorID)
+	if authorName == "" {
+		authorName = "Support Team"
+	}
+	itemKey := fmt.Sprintf("%s-%d", item.WorkspaceKey, item.WorkspaceItemNumber)
+	_, htmlBody, textBody, err := s.smtpSender.RenderEmail(emailutil.TemplatePortalReply, struct {
+		AuthorName      string
+		ItemKey         string
+		ItemTitle       string
+		Content         string
+		OriginalSubject string
+	}{
+		AuthorName:      authorName,
+		ItemKey:         itemKey,
+		ItemTitle:       item.Title,
+		Content:         message,
+		OriginalSubject: emailSubject,
+	})
+	if err != nil {
+		return false, "", fmt.Errorf("render customer notice email: %w", err)
+	}
+
+	smtpDomain := s.getSMTPDomain()
+	messageID := fmt.Sprintf("<ws-notice-%d-%d@%s>", itemID, time.Now().UnixNano(), smtpDomain)
+	if err := s.smtpSender.SendThreadedEmail(smtp.ThreadedEmailParams{
+		ToEmail:    customerEmail,
+		ToName:     customerName,
+		Subject:    emailSubject,
+		HTMLBody:   htmlBody,
+		TextBody:   textBody,
+		MessageID:  messageID,
+		InReplyTo:  inReplyTo,
+		References: references,
+	}); err != nil {
+		return false, "", fmt.Errorf("send customer notice: %w", err)
+	}
+	return true, "", nil
+}
+
 // ProcessPendingReplies retries a bounded batch from the durable reply outbox.
 // It is called by NotificationScheduler on the existing SMTP cadence.
 func (s *EmailReplyService) ProcessPendingReplies(limit int) (int, error) {

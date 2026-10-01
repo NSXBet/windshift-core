@@ -18,8 +18,7 @@ CREATE TABLE IF NOT EXISTS canned_responses (
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
     FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
-    FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL,
-    UNIQUE(name, workspace_id)
+    FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL
 );
-
+CREATE UNIQUE INDEX IF NOT EXISTS uq_canned_responses_ws_name_ci ON canned_responses(LOWER(name), workspace_id);
 CREATE INDEX IF NOT EXISTS idx_canned_responses_ws_active ON canned_responses(workspace_id, is_active, name);

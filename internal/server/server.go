@@ -154,6 +154,7 @@ type Server struct {
 	eventEngine                  *events.Engine
 	approvalEscalationSweeper    *services.ApprovalEscalationSweeper
 	incidentEscalationSweeper    *services.IncidentEscalationSweeper
+	actionInactivitySweeper      *services.ActionInactivitySweeper
 	slaEngine                    *sla.Engine
 	slaLoop                      *sla.Loop
 	slaLoopCancel                context.CancelFunc
@@ -1094,6 +1095,8 @@ func (s *Server) initialize() error {
 		commentService.SetAgentMentionTrigger(bindingSvc)
 	}
 	s.actionService.SetCommentService(commentService)
+	commentService.SetActionEventEmitter(s.actionService)
+	commentService.SetInactivityMarkClearer(repository.NewActionTriggerMarkRepository(s.db))
 
 	// Wire email reply service for bidirectional email threading
 	emailReplyService := services.NewEmailReplyService(s.db, smtpSender)
@@ -1102,6 +1105,10 @@ func (s *Server) initialize() error {
 	}
 	commentService.SetEmailReplyService(emailReplyService)
 	s.notificationScheduler.SetEmailReplyOutbox(emailReplyService)
+
+	// Wire the helpdesk automation nodes (WI-1132/WI-1138). The reply
+	// service doubles as the customer notifier for notify_customer.
+	s.actionService.RegisterHelpdeskNodeExecutors(cannedResponseService, commentService, emailReplyService)
 
 	// Wire CommentService into email processor for unified comment creation
 	s.emailScheduler.SetCommentService(commentService)
@@ -1179,6 +1186,9 @@ func (s *Server) initialize() error {
 	// Drives time-based escalation for triggered on-call incidents.
 	s.incidentEscalationSweeper = services.NewIncidentEscalationSweeper(s.db, incidentService, services.DefaultIncidentEscalationSweeperConfig())
 	s.incidentEscalationSweeper.Start()
+
+	s.actionInactivitySweeper = services.NewActionInactivitySweeper(s.db, s.actionService, services.DefaultActionInactivitySweeperConfig())
+	s.actionInactivitySweeper.Start()
 
 	// SLA evaluation runs inline with item facts, and one process-wide
 	// goroutine fires deadline and recalculation jobs. Under the e2e test hook
@@ -2302,6 +2312,11 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	if s.incidentEscalationSweeper != nil {
 		slog.Info("stopping incident escalation sweeper")
 		s.incidentEscalationSweeper.Stop()
+	}
+
+	if s.actionInactivitySweeper != nil {
+		slog.Info("stopping action inactivity sweeper")
+		s.actionInactivitySweeper.Stop()
 	}
 
 	if s.slaLoopCancel != nil {

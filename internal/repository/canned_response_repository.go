@@ -56,11 +56,12 @@ func (r *CannedResponseRepository) GetByID(id int) (*models.CannedResponse, erro
 	return &cr, nil
 }
 
-// NameExistsInWorkspace reports whether an active response with the given
-// name already exists in the workspace. excludeID > 0 excludes that row so an
-// update does not collide with itself.
+// NameExistsInWorkspace reports whether a response with the given name
+// already exists in the workspace, case-insensitively (matching the
+// LOWER(name) unique index). excludeID > 0 excludes that row so an update
+// does not collide with itself.
 func (r *CannedResponseRepository) NameExistsInWorkspace(workspaceID int, name string, excludeID int) (bool, error) {
-	query := "SELECT COUNT(*) FROM canned_responses WHERE workspace_id = ? AND name = ?"
+	query := "SELECT COUNT(*) FROM canned_responses WHERE workspace_id = ? AND LOWER(name) = LOWER(?)"
 	args := []any{workspaceID, name}
 	if excludeID > 0 {
 		query += " AND id != ?"
@@ -81,8 +82,8 @@ func (r *CannedResponseRepository) Create(cr *models.CannedResponse) (*models.Ca
 	err := r.db.QueryRow(`
 		INSERT INTO canned_responses
 			(workspace_id, name, body, is_private, is_active, created_by, updated_by, used_count, created_at, updated_at)
-		VALUES (?, ?, ?, ?, true, ?, ?, 0, ?, ?) RETURNING id
-	`, cr.WorkspaceID, cr.Name, cr.Body, cr.IsPrivate, cr.CreatedBy, cr.UpdatedBy, now, now).Scan(&id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?) RETURNING id
+	`, cr.WorkspaceID, cr.Name, cr.Body, cr.IsPrivate, cr.IsActive, cr.CreatedBy, cr.UpdatedBy, now, now).Scan(&id)
 	if err != nil {
 		if database.IsUniqueConstraintError(err) {
 			return nil, ErrDuplicateEntry

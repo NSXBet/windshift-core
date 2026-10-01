@@ -399,6 +399,13 @@ func (as *ActionService) matchesTrigger(action *models.Action, event *models.Act
 		return false
 	}
 
+	// Targeted events carry the action they were emitted for (the inactivity
+	// sweeper evaluates each action's threshold separately) and match only
+	// that action.
+	if target := utils.InterfaceToIntPtr(event.NewValues["action_id"]); target != nil && *target != action.ID {
+		return false
+	}
+
 	var config models.ActionTriggerConfig
 	if action.TriggerConfig != "" {
 		if err := json.Unmarshal([]byte(action.TriggerConfig), &config); err != nil {
@@ -425,6 +432,10 @@ func (as *ActionService) matchesTrigger(action *models.Action, event *models.Act
 	}
 
 	switch event.EventType {
+	case models.ActionTriggerCommentCreated:
+		return matchesCommentCreatedTrigger(config, event)
+	case models.ActionTriggerItemInactive:
+		return matchesItemInactiveTrigger(config, event)
 	case models.ActionTriggerStatusTransition:
 		return matchesStatusTransition(config.FromStatusID, config.ToStatusID, event.OldValues, event.NewValues) &&
 			as.matchesDestinationStatusCategory(config.ToStatusCategoryIsCompleted, event.NewValues)
@@ -453,6 +464,35 @@ func (as *ActionService) matchesDestinationStatusCategory(isCompleted *bool, new
 	}
 	status, err := NewStatusService(as.db).GetStatus(*newStatusID)
 	return err == nil && status != nil && status.IsCompleted == *isCompleted
+}
+
+// matchesCommentCreatedTrigger narrows comment_created events by author
+// type. from_customer = true reacts only to customer replies (portal
+// customer or email-intake sender); false only to agent comments; nil to
+// any author.
+func matchesCommentCreatedTrigger(config models.ActionTriggerConfig, event *models.ActionEvent) bool {
+	if config.FromCustomer != nil {
+		fromCustomer, ok := event.NewValues["comment_from_customer"].(bool)
+		if !ok || fromCustomer != *config.FromCustomer {
+			return false
+		}
+	}
+	return true
+}
+
+// matchesItemInactiveTrigger narrows item_inactive events by item type.
+// inactive_hours drives the sweeper's query; the matcher only enforces that
+// a threshold is configured.
+func matchesItemInactiveTrigger(config models.ActionTriggerConfig, event *models.ActionEvent) bool {
+	if config.InactiveHours <= 0 {
+		return false
+	}
+	if config.ItemTypeID != nil {
+		if event.ItemTypeID == nil || *event.ItemTypeID != *config.ItemTypeID {
+			return false
+		}
+	}
+	return true
 }
 
 func matchesItemActionTrigger(config models.ActionTriggerConfig, event *models.ActionEvent) bool {
@@ -2092,8 +2132,14 @@ func (as *ActionService) cleanupActionContainers(results []models.StepResult) {
 	}
 }
 
-// authorizeWorkspaceMutation requires effective-actor workspace access and
-// fails closed when authorization is unavailable.
+// AuthorizeWorkspaceMutation verifies the effective actor's workspace access
+// and is the NodeAPI surface for registered executors; it delegates to the
+// shared authorization helper, which fails closed when authorization is
+// unavailable.
+func (as *ActionService) AuthorizeWorkspaceMutation(actorUserID, workspaceID int, permission string) error {
+	return as.authorizeWorkspaceMutation(actorUserID, workspaceID, permission)
+}
+
 func (as *ActionService) authorizeWorkspaceMutation(actorUserID, workspaceID int, permissionKey string) error {
 	if actorUserID <= 0 {
 		return fmt.Errorf("workspace mutation requires an identified actor (workspace %d)", workspaceID)

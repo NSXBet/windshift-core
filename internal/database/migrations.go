@@ -1538,84 +1538,6 @@ var Catalog = []Migration{
 		`,
 	},
 	{
-		Version:       "20261001_canned_responses",
-		Name:          "Workspace canned responses for support agents (WI-1138)",
-		CheckSQLite:   sqliteTableCheck("canned_responses"),
-		CheckPostgres: pgTableCheck("canned_responses"),
-		SQLite: `
-			CREATE TABLE canned_responses (
-				id INTEGER PRIMARY KEY AUTOINCREMENT,
-				workspace_id INTEGER NOT NULL,
-				name TEXT NOT NULL,
-				body TEXT NOT NULL,
-				is_private BOOLEAN NOT NULL DEFAULT false,
-				is_active BOOLEAN NOT NULL DEFAULT true,
-				created_by INTEGER,
-				updated_by INTEGER,
-				used_count INTEGER NOT NULL DEFAULT 0,
-				last_used_at DATETIME,
-				created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-				updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-				FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
-				FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
-				FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL,
-				UNIQUE(name, workspace_id)
-			);
-			CREATE INDEX idx_canned_responses_ws_active ON canned_responses(workspace_id, is_active, name);
-		`,
-		Postgres: `
-			CREATE TABLE canned_responses (
-				id BIGSERIAL PRIMARY KEY,
-				workspace_id BIGINT NOT NULL,
-				name TEXT NOT NULL,
-				body TEXT NOT NULL,
-				is_private BOOLEAN NOT NULL DEFAULT false,
-				is_active BOOLEAN NOT NULL DEFAULT true,
-				created_by BIGINT,
-				updated_by BIGINT,
-				used_count INTEGER NOT NULL DEFAULT 0,
-				last_used_at TIMESTAMPTZ,
-				created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-				updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-				FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
-				FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
-				FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL,
-				UNIQUE(name, workspace_id)
-			);
-			CREATE INDEX IF NOT EXISTS idx_canned_responses_ws_active ON canned_responses(workspace_id, is_active, name);
-		`,
-	},
-	{
-		Version:       "20261001_action_trigger_marks",
-		Name:          "Per-action inactivity trigger marks (WI-1132)",
-		CheckSQLite:   sqliteTableCheck("action_trigger_marks"),
-		CheckPostgres: pgTableCheck("action_trigger_marks"),
-		SQLite: `
-			CREATE TABLE action_trigger_marks (
-				action_id INTEGER NOT NULL,
-				item_id INTEGER NOT NULL,
-				last_activity_at DATETIME NOT NULL,
-				marked_at DATETIME NOT NULL,
-				PRIMARY KEY (action_id, item_id),
-				FOREIGN KEY (action_id) REFERENCES actions(id) ON DELETE CASCADE,
-				FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE
-			);
-			CREATE INDEX idx_action_trigger_marks_item ON action_trigger_marks(item_id);
-		`,
-		Postgres: `
-			CREATE TABLE action_trigger_marks (
-				action_id BIGINT NOT NULL,
-				item_id BIGINT NOT NULL,
-				last_activity_at TIMESTAMPTZ NOT NULL,
-				marked_at TIMESTAMPTZ NOT NULL,
-				PRIMARY KEY (action_id, item_id),
-				FOREIGN KEY (action_id) REFERENCES actions(id) ON DELETE CASCADE,
-				FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE
-			);
-			CREATE INDEX IF NOT EXISTS idx_action_trigger_marks_item ON action_trigger_marks(item_id);
-		`,
-	},
-	{
 		Version:       "20260925_items_team",
 		Name:          "Assign a team to work items",
 		CheckSQLite:   sqliteColumnCheck("items", "team_id"),
@@ -1903,6 +1825,84 @@ var Catalog = []Migration{
 			CREATE INDEX IF NOT EXISTS idx_sla_jobs_cycle ON sla_jobs(cycle_id);
 			CREATE INDEX IF NOT EXISTS idx_sla_jobs_item ON sla_jobs(item_id);
 			CREATE INDEX IF NOT EXISTS idx_sla_jobs_metric ON sla_jobs(metric_id);
+		`,
+	},
+	{
+		Version:       "20261001_action_trigger_marks",
+		Name:          "Per-action inactivity trigger marks (WI-1132)",
+		CheckSQLite:   sqliteTableCheck("action_trigger_marks"),
+		CheckPostgres: pgTableCheck("action_trigger_marks"),
+		SQLite: `
+			CREATE TABLE action_trigger_marks (
+				action_id INTEGER NOT NULL,
+				item_id INTEGER NOT NULL,
+				last_activity_at DATETIME NOT NULL,
+				marked_at DATETIME NOT NULL,
+				PRIMARY KEY (action_id, item_id),
+				FOREIGN KEY (action_id) REFERENCES actions(id) ON DELETE CASCADE,
+				FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE
+			);
+			CREATE INDEX idx_action_trigger_marks_item ON action_trigger_marks(item_id);
+		`,
+		Postgres: `
+			CREATE TABLE action_trigger_marks (
+				action_id BIGINT NOT NULL,
+				item_id BIGINT NOT NULL,
+				last_activity_at TIMESTAMPTZ NOT NULL,
+				marked_at TIMESTAMPTZ NOT NULL,
+				PRIMARY KEY (action_id, item_id),
+				FOREIGN KEY (action_id) REFERENCES actions(id) ON DELETE CASCADE,
+				FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE
+			);
+			CREATE INDEX IF NOT EXISTS idx_action_trigger_marks_item ON action_trigger_marks(item_id);
+		`,
+	},
+	{
+		Version:       "20261001_canned_responses",
+		Name:          "Workspace canned responses for support agents (WI-1138)",
+		CheckSQLite:   sqliteTableCheck("canned_responses"),
+		CheckPostgres: pgTableCheck("canned_responses"),
+		SQLite: `
+			CREATE TABLE canned_responses (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				workspace_id INTEGER NOT NULL,
+				name TEXT NOT NULL,
+				body TEXT NOT NULL,
+				is_private BOOLEAN NOT NULL DEFAULT false,
+				is_active BOOLEAN NOT NULL DEFAULT true,
+				created_by INTEGER,
+				updated_by INTEGER,
+				used_count INTEGER NOT NULL DEFAULT 0,
+				last_used_at DATETIME,
+				created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+				updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+				FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+				FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
+				FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL
+			);
+			CREATE UNIQUE INDEX uq_canned_responses_ws_name_ci ON canned_responses(LOWER(name), workspace_id);
+			CREATE INDEX idx_canned_responses_ws_active ON canned_responses(workspace_id, is_active, name);
+		`,
+		Postgres: `
+			CREATE TABLE canned_responses (
+				id BIGSERIAL PRIMARY KEY,
+				workspace_id BIGINT NOT NULL,
+				name TEXT NOT NULL,
+				body TEXT NOT NULL,
+				is_private BOOLEAN NOT NULL DEFAULT false,
+				is_active BOOLEAN NOT NULL DEFAULT true,
+				created_by BIGINT,
+				updated_by BIGINT,
+				used_count INTEGER NOT NULL DEFAULT 0,
+				last_used_at TIMESTAMPTZ,
+				created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+				updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+				FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+				FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
+				FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL
+			);
+			CREATE UNIQUE INDEX IF NOT EXISTS uq_canned_responses_ws_name_ci ON canned_responses(LOWER(name), workspace_id);
+			CREATE INDEX IF NOT EXISTS idx_canned_responses_ws_active ON canned_responses(workspace_id, is_active, name);
 		`,
 	},
 	{
