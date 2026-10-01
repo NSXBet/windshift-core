@@ -20,6 +20,33 @@ import (
 // a ticket into its own descendant. Handlers surface it as a conflict.
 var ErrItemMergeConflict = errors.New("item merge conflict")
 
+// lockCanonicalMergeTarget re-checks the canonical's merge identity inside
+// the merge transaction and fences it against concurrent merges: PostgreSQL
+// locks the row for the transaction; SQLite serializes through the write
+// lock via a no-op conditional update. A canonical that became a merged
+// duplicate in the meantime fails the merge instead of closing a redirect
+// cycle (WI-1567).
+func lockCanonicalMergeTarget(ctx context.Context, tx database.Tx, driver string, targetID int) error {
+	if database.IsPostgresDriver(driver) {
+		var id int
+		err := tx.QueryRowContext(ctx,
+			`SELECT id FROM items WHERE id = ? AND merged_into_item_id IS NULL FOR UPDATE`, targetID,
+		).Scan(&id)
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("%w: the canonical ticket became a merged duplicate", ErrItemMergeConflict)
+		}
+		return err
+	}
+	res, err := tx.Exec(`UPDATE items SET updated_at = updated_at WHERE id = ? AND merged_into_item_id IS NULL`, targetID)
+	if err != nil {
+		return err
+	}
+	if rows, _ := res.RowsAffected(); rows == 0 {
+		return fmt.Errorf("%w: the canonical ticket became a merged duplicate", ErrItemMergeConflict)
+	}
+	return nil
+}
+
 // ItemLifecycleEmitter receives post-commit side effects for lifecycle
 // mutations. *EventCoordinator satisfies it.
 type ItemLifecycleEmitter interface {
@@ -64,6 +91,9 @@ type ItemMergeSourceResult struct {
 	MovedAttachments int  `json:"moved_attachments"`
 	MovedLinks       int  `json:"moved_links"`
 	CommentsPrivate  bool `json:"comments_private"`
+	// ContentKeptOnSource reports that files and email threads stayed on the
+	// merged duplicate because the requesters differ.
+	ContentKeptOnSource bool `json:"content_kept_on_source,omitempty"`
 }
 
 // ItemMergeResult summarizes one merge request.
@@ -180,6 +210,12 @@ func (s *ItemLifecycleService) Merge(ctx context.Context, input ItemMergeInput) 
 
 	result := &ItemMergeResult{Target: target, Sources: make([]ItemMergeSourceResult, 0, len(sources))}
 	err = database.WithTx(s.db, func(tx database.Tx) error {
+		// Re-check the canonical's merge identity under a transaction fence so
+		// concurrent opposite-direction merges cannot both succeed and leave
+		// mutually redirecting tickets (WI-1567).
+		if err := lockCanonicalMergeTarget(ctx, tx, s.db.GetDriverName(), target.ID); err != nil {
+			return err
+		}
 		recorder := itemevents.NewRecorder(s.db)
 		now := time.Now().UTC()
 		for _, plan := range sources {
@@ -198,16 +234,28 @@ func (s *ItemLifecycleService) Merge(ctx context.Context, input ItemMergeInput) 
 			// comments become private so the canonical's requester never sees
 			// another customer's content in the portal; agents keep the full
 			// thread with per-comment attribution.
+			// thread with per-comment attribution.
 			movedComments, err := s.comments.MoveCommentsToItem(tx, int64(plan.item.ID), int64(target.ID), !plan.sameRequester)
 			if err != nil {
 				return fmt.Errorf("move comments from item %d: %w", plan.item.ID, err)
 			}
 			out.CommentsPrivate = !plan.sameRequester && movedComments > 0
-			res, err := tx.Exec(`UPDATE attachments SET item_id = ? WHERE item_id = ? AND COALESCE(entity_type, 'item') = 'item'`, target.ID, plan.item.ID)
-			if err != nil {
-				return fmt.Errorf("move attachments from item %d: %w", plan.item.ID, err)
+			if plan.sameRequester {
+				// One requester: files and email threads follow the canonical.
+				res, err := tx.Exec(`UPDATE attachments SET item_id = ? WHERE item_id = ? AND COALESCE(entity_type, 'item') = 'item'`, target.ID, plan.item.ID)
+				if err != nil {
+					return fmt.Errorf("move attachments from item %d: %w", plan.item.ID, err)
+				}
+				movedAttachments, _ = res.RowsAffected()
+			} else {
+				// Different requesters: files keep their original requester
+				// provenance on the merged duplicate. There is no per-file
+				// visibility flag, so moving customer files onto another
+				// customer's request would expose them through portal reads and
+				// downloads (WI-1566). Agents reach them through the source
+				// ticket, which stays in place as a redirect.
+				out.ContentKeptOnSource = true
 			}
-			movedAttachments, _ = res.RowsAffected()
 
 			// Re-point item links onto the canonical, dropping links that
 			// would collapse into duplicates or self-links.
@@ -251,19 +299,25 @@ func (s *ItemLifecycleService) Merge(ctx context.Context, input ItemMergeInput) 
 				return fmt.Errorf("move watchers from item %d: %w", plan.item.ID, err)
 			}
 
-			// Email threads tracked on the duplicate now append to the
-			// canonical, so it cannot accumulate independent replies.
-			if _, err := tx.Exec(`UPDATE email_message_tracking SET item_id = ? WHERE item_id = ?`, target.ID, plan.item.ID); err != nil {
-				return fmt.Errorf("re-point email threads from item %d: %w", plan.item.ID, err)
-			}
-			if _, err := tx.Exec(`UPDATE email_reply_outbox SET item_id = ? WHERE item_id = ?`, target.ID, plan.item.ID); err != nil {
-				return fmt.Errorf("re-point pending replies from item %d: %w", plan.item.ID, err)
+			// Email threads tracked on the duplicate append to the canonical so
+			// it cannot accumulate independent replies — but only when both
+			// tickets share a requester. Otherwise the original sender's
+			// replies would land as public comments on another customer's
+			// request; the thread stays with its requester on the merged
+			// duplicate (WI-1566).
+			if plan.sameRequester {
+				if _, err := tx.Exec(`UPDATE email_message_tracking SET item_id = ? WHERE item_id = ?`, target.ID, plan.item.ID); err != nil {
+					return fmt.Errorf("re-point email threads from item %d: %w", plan.item.ID, err)
+				}
+				if _, err := tx.Exec(`UPDATE email_reply_outbox SET item_id = ? WHERE item_id = ?`, target.ID, plan.item.ID); err != nil {
+					return fmt.Errorf("re-point pending replies from item %d: %w", plan.item.ID, err)
+				}
 			}
 
 			// The conditional update closes the race between the pre-checks and
 			// this transaction: a concurrent merge of the same duplicate rolls
 			// this one back instead of overwriting the pointer.
-			res, err = tx.Exec(`
+			res, err := tx.Exec(`
 				UPDATE items SET merged_into_item_id = ?, updated_at = ?
 				WHERE id = ? AND merged_into_item_id IS NULL
 			`, target.ID, now, plan.item.ID)
