@@ -1870,6 +1870,48 @@ var Catalog = []Migration{
 			END $$;
 		`,
 	},
+	{
+		Version:       "20261005_portal_customers_erased_at",
+		Name:          "Add irreversible Article 17 erasure state to portal customers (WI-1550)",
+		CheckSQLite:   sqliteColumnCheck("portal_customers", "erased_at"),
+		CheckPostgres: pgColumnCheck("portal_customers", "erased_at"),
+		SQLite:        `ALTER TABLE portal_customers ADD COLUMN erased_at DATETIME`,
+		Postgres:      `ALTER TABLE portal_customers ADD COLUMN IF NOT EXISTS erased_at TIMESTAMPTZ`,
+	},
+	{
+		Version:       "20261005_customer_erasure_records",
+		Name:          "Add DSAR erasure completion evidence table for portal customers (WI-1550)",
+		CheckSQLite:   sqliteTableCheck("customer_erasure_records"),
+		CheckPostgres: pgTableCheck("customer_erasure_records"),
+		SQLite: `
+			CREATE TABLE IF NOT EXISTS customer_erasure_records (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				portal_customer_id INTEGER NOT NULL,
+				requested_by TEXT NOT NULL,
+				requested_at DATETIME NOT NULL,
+				approved_by INTEGER NOT NULL,
+				executed_at DATETIME NOT NULL,
+				policy_version TEXT NOT NULL,
+				notes TEXT,
+				FOREIGN KEY (portal_customer_id) REFERENCES portal_customers(id) ON DELETE CASCADE
+			);
+			CREATE INDEX IF NOT EXISTS idx_customer_erasure_records_customer_id ON customer_erasure_records(portal_customer_id);
+		`,
+		Postgres: `
+			CREATE TABLE IF NOT EXISTS customer_erasure_records (
+				id SERIAL PRIMARY KEY,
+				portal_customer_id INTEGER NOT NULL,
+				requested_by TEXT NOT NULL,
+				requested_at TIMESTAMPTZ NOT NULL,
+				approved_by INTEGER NOT NULL,
+				executed_at TIMESTAMPTZ NOT NULL,
+				policy_version TEXT NOT NULL,
+				notes TEXT,
+				FOREIGN KEY (portal_customer_id) REFERENCES portal_customers(id) ON DELETE CASCADE
+			);
+			CREATE INDEX IF NOT EXISTS idx_customer_erasure_records_customer_id ON customer_erasure_records(portal_customer_id);
+		`,
+	},
 }
 
 func applySQLitePersonalLabelsPerUserUnique(db Database) (retErr error) {

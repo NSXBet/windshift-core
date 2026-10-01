@@ -610,25 +610,86 @@ func (h *PortalCustomersHandler) execCustomerWrite(w http.ResponseWriter, r *htt
 	return true
 }
 
-// DeletePortalCustomer deletes a portal customer
+// PortalCustomerErasureRequest is the DSAR intake payload for
+// POST /portal-customers/{id}/erase.
+type PortalCustomerErasureRequest struct {
+	// RequestedBy records where the erasure request came from — the data
+	// subject's email or an intake-channel reference. Required.
+	RequestedBy string `json:"requested_by"`
+	// RequestedAt is when the controller received the request; defaults to now.
+	RequestedAt *time.Time `json:"requested_at,omitempty"`
+	// Notes optionally records the controller's decision context.
+	Notes string `json:"notes,omitempty"`
+}
+
+// ErasePortalCustomer executes an irreversible Article 17 erasure (DSAR).
+// The customer row is pseudonymized, never deleted, so customer-authored
+// comments, items, item history, attachments, and approval decisions stay
+// interpretable. Distinct from the historical hard delete: erasure is a
+// documented data-subject right execution, not an administrative cleanup.
+func (h *PortalCustomersHandler) ErasePortalCustomer(w http.ResponseWriter, r *http.Request) {
+	currentUser, ok := RequireAuth(w, r)
+	if !ok {
+		return
+	}
+
+	id, ok := requireIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	body, ok := decodeJSON[PortalCustomerErasureRequest](w, r)
+	if !ok {
+		return
+	}
+
+	input := services.CustomerErasureInput{RequestedBy: body.RequestedBy, Notes: body.Notes}
+	if body.RequestedAt != nil {
+		input.RequestedAt = *body.RequestedAt
+	}
+	h.eraseCustomer(w, r, currentUser, id, input)
+}
+
+// DeletePortalCustomer is retained as a DELETE alias for erasure so existing
+// admin UI flows keep working. The controller decision is the authenticated
+// customer manager's action; the intake reference is derived from the actor
+// because the legacy endpoint carries no DSAR body.
 func (h *PortalCustomersHandler) DeletePortalCustomer(w http.ResponseWriter, r *http.Request) {
-	idStr := r.PathValue("id")
-	id, err := strconv.Atoi(idStr)
+	currentUser, ok := RequireAuth(w, r)
+	if !ok {
+		return
+	}
+
+	id, ok := requireIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	intake := fmt.Sprintf("admin:%s via customer management", currentUser.Username)
+	h.eraseCustomer(w, r, currentUser, id, services.CustomerErasureInput{RequestedBy: intake})
+}
+
+// eraseCustomer runs the shared erasure execution and writes the response:
+// 201 with the DSAR evidence on success, 409 on repeat erasure, 404 for an
+// unknown customer, and mapped service errors otherwise.
+func (h *PortalCustomersHandler) eraseCustomer(w http.ResponseWriter, r *http.Request, currentUser *models.User, customerID int, input services.CustomerErasureInput) {
+	actor := services.NewAuditActorFromRequest(r, currentUser, nil, "")
+	evidence, err := services.EraseCustomer(h.db, customerID, actor, input)
 	if err != nil {
-		respondInvalidID(w, r, "id")
+		if errors.Is(err, services.ErrCustomerAlreadyErased) {
+			respondConflict(w, r, "Portal customer has already been erased")
+			return
+		}
+		if se, ok := err.(*services.ServiceError); ok {
+			handleServiceError(w, r, se)
+			return
+		}
+		slog.Error("failed to erase portal customer", slog.String("component", "portal"), slog.Int("customer_id", customerID), slog.Any("error", err))
+		respondInternalError(w, r, err)
 		return
 	}
 
-	// Delete the portal customer
-	if !h.execCustomerWrite(w, r, `DELETE FROM portal_customers WHERE id = ?`, id) {
-		return
-	}
-
-	if user := utils.GetCurrentUser(r); user != nil {
-		logAudit(h.db, r, user, logger.ActionPortalCustomerDelete, logger.ResourcePortalCustomer, &id, "")
-	}
-
-	w.WriteHeader(http.StatusNoContent)
+	respondJSONCreated(w, evidence)
 }
 
 // GetOrganisationContacts returns all portal customers (contacts) for a given customer organisation
