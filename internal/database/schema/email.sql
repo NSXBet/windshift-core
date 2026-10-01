@@ -130,6 +130,9 @@ CREATE TABLE IF NOT EXISTS email_reply_outbox (
 	from_name TEXT NOT NULL DEFAULT '',
 	attempt_count INTEGER NOT NULL DEFAULT 0,
 	next_attempt_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	-- Set while a worker holds a delivery lease; NULL means next_attempt_at
+	-- is retry backoff rather than a claim.
+	lease_owner TEXT,
 	last_error TEXT,
 	delivered_at DATETIME,
 	-- discarded_at marks an operator's explicit "never send" decision. A

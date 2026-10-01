@@ -1573,6 +1573,13 @@ func (h *ChannelHandler) RetryEmailReply(w http.ResponseWriter, r *http.Request)
 			Message:    "Reply is already delivered or discarded",
 		})
 		return
+	case errors.Is(err, services.ErrEmailReplyInFlight):
+		respondError(w, r, &restapi.APIError{
+			StatusCode: http.StatusConflict,
+			Code:       "EMAIL_REPLY_IN_FLIGHT",
+			Message:    "Reply is being delivered right now; retry once the queue shows its final state",
+		})
+		return
 	case errors.Is(err, services.ErrSMTPNotConfigured):
 		respondError(w, r, &restapi.APIError{
 			StatusCode: http.StatusConflict,
@@ -1614,12 +1621,20 @@ func (h *ChannelHandler) DiscardEmailReply(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	discarded, err := h.channelRepo.DiscardEmailReply(ctx, id, commentID)
+	outcome, err := h.channelRepo.DiscardEmailReply(ctx, id, commentID)
 	if err != nil {
 		respondInternalError(w, r, err)
 		return
 	}
-	if !discarded {
+	if outcome == repository.EmailReplySending {
+		respondError(w, r, &restapi.APIError{
+			StatusCode: http.StatusConflict,
+			Code:       "EMAIL_REPLY_SENDING",
+			Message:    "Reply is being delivered right now and can no longer be canceled",
+		})
+		return
+	}
+	if outcome != repository.EmailReplyDiscarded {
 		respondError(w, r, &restapi.APIError{
 			StatusCode: http.StatusConflict,
 			Code:       "EMAIL_REPLY_NOT_DISCARDABLE",

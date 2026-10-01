@@ -1318,25 +1318,61 @@ func (r *ChannelRepository) ListEmailReplies(ctx context.Context, channelID int,
 	return out, nil
 }
 
-// DiscardEmailReply marks a pending outbound reply as never-send. It reports
-// whether a pending row was discarded; delivered, already-discarded, and
-// missing rows report false so callers can distinguish idempotent success
-// from a conflict.
-func (r *ChannelRepository) DiscardEmailReply(ctx context.Context, channelID, commentID int) (bool, error) {
+// EmailReplyDiscardOutcome distinguishes what a discard found, so the
+// operator API can promise cancellation only when it actually took effect.
+type EmailReplyDiscardOutcome int
+
+const (
+	// EmailReplyDiscarded: the pending row was marked never-send.
+	EmailReplyDiscarded EmailReplyDiscardOutcome = iota
+	// EmailReplyNotDiscardable: the row is delivered, already discarded, or
+	// missing.
+	EmailReplyNotDiscardable
+	// EmailReplySending: a worker still holds the delivery lease, so the mail
+	// may already be crossing the SMTP boundary (WI-1573).
+	EmailReplySending
+)
+
+// DiscardEmailReply marks a pending outbound reply as never-send. A live
+// delivery lease reports EmailReplySending instead of pretending the mail
+// was canceled; delivered, already-discarded, and missing rows report
+// EmailReplyNotDiscardable.
+func (r *ChannelRepository) DiscardEmailReply(ctx context.Context, channelID, commentID int) (EmailReplyDiscardOutcome, error) {
 	res, err := r.db.ExecWriteContext(ctx, `
 		UPDATE email_reply_outbox
 		SET discarded_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
 		WHERE channel_id = ? AND comment_id = ?
 		  AND delivered_at IS NULL AND discarded_at IS NULL
+		  AND (lease_owner IS NULL OR next_attempt_at <= CURRENT_TIMESTAMP)
 	`, channelID, commentID)
 	if err != nil {
-		return false, fmt.Errorf("discard email_reply_outbox row %d: %w", commentID, err)
+		return EmailReplyNotDiscardable, fmt.Errorf("discard email_reply_outbox row %d: %w", commentID, err)
 	}
 	rows, err := res.RowsAffected()
 	if err != nil {
-		return false, fmt.Errorf("count discarded email_reply_outbox rows: %w", err)
+		return EmailReplyNotDiscardable, fmt.Errorf("count discarded email_reply_outbox rows: %w", err)
 	}
-	return rows > 0, nil
+	if rows > 0 {
+		return EmailReplyDiscarded, nil
+	}
+
+	// Classify the refusal: a live lease means the send may already be in
+	// progress; anything else is terminal or missing.
+	var delivered, discarded, lease sql.NullTime
+	err = r.db.QueryRowContext(ctx, `
+		SELECT delivered_at, discarded_at, next_attempt_at FROM email_reply_outbox
+		WHERE channel_id = ? AND comment_id = ?
+	`, channelID, commentID).Scan(&delivered, &discarded, &lease)
+	if errors.Is(err, sql.ErrNoRows) {
+		return EmailReplyNotDiscardable, nil
+	}
+	if err != nil {
+		return EmailReplyNotDiscardable, fmt.Errorf("load email_reply_outbox row %d: %w", commentID, err)
+	}
+	if !delivered.Valid && !discarded.Valid && lease.Valid && lease.Time.After(time.Now()) {
+		return EmailReplySending, nil
+	}
+	return EmailReplyNotDiscardable, nil
 }
 
 // CreateOAuthState records an in-flight OAuth state for a channel-level

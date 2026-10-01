@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -25,14 +26,19 @@ type EmailReplyService struct {
 	idResolver *IDResolverService
 	outboxMu   sync.Mutex
 	canonical  bool
+	// leaseOwner identifies this process's delivery claims so a manual retry
+	// can tell a live claim from retry backoff (WI-1572).
+	leaseOwner string
 }
 
 // NewEmailReplyService creates a new EmailReplyService.
 func NewEmailReplyService(db database.Database, smtpSender ThreadedEmailSender) *EmailReplyService {
+	hostname, _ := os.Hostname()
 	return &EmailReplyService{
 		db:         db,
 		smtpSender: smtpSender,
 		idResolver: NewIDResolverService(db),
+		leaseOwner: fmt.Sprintf("%s-%d", hostname, os.Getpid()),
 	}
 }
 
@@ -305,13 +311,13 @@ func (s *EmailReplyService) deliverPendingReply(commentID int) (bool, error) {
 	leaseUntil := time.Now().Add(5 * time.Minute)
 	err := s.db.QueryRow(`
 		UPDATE email_reply_outbox
-		SET next_attempt_at = ?, updated_at = CURRENT_TIMESTAMP
+		SET next_attempt_at = ?, lease_owner = ?, updated_at = CURRENT_TIMESTAMP
 		WHERE comment_id = ? AND delivered_at IS NULL AND discarded_at IS NULL
 		  AND next_attempt_at <= CURRENT_TIMESTAMP
 		RETURNING comment_id, channel_id, item_id, to_email, to_name, subject,
 		       html_body, text_body, message_id, in_reply_to, references_json,
 		       from_email, from_name, attempt_count
-	`, leaseUntil, commentID).Scan(
+	`, leaseUntil, s.leaseOwner, commentID).Scan(
 		&row.CommentID, &row.ChannelID, &row.ItemID, &row.ToEmail, &row.ToName,
 		&row.Subject, &row.HTMLBody, &row.TextBody, &row.MessageID, &row.InReplyTo,
 		&row.ReferencesJSON, &row.FromEmail, &row.FromName, &row.AttemptCount,
@@ -345,7 +351,8 @@ func (s *EmailReplyService) deliverPendingReply(commentID int) (bool, error) {
 
 	if _, err := s.db.ExecWrite(`
 		UPDATE email_reply_outbox
-		SET delivered_at = CURRENT_TIMESTAMP, last_error = NULL, updated_at = CURRENT_TIMESTAMP
+		SET delivered_at = CURRENT_TIMESTAMP, last_error = NULL, lease_owner = NULL,
+		    updated_at = CURRENT_TIMESTAMP
 		WHERE comment_id = ? AND delivered_at IS NULL
 	`, row.CommentID); err != nil {
 		return false, fmt.Errorf("mark threaded email delivered: %w", err)
@@ -380,7 +387,7 @@ func (s *EmailReplyService) recordReplyFailure(commentID, previousAttempts int, 
 	if _, err := s.db.ExecWrite(`
 		UPDATE email_reply_outbox
 		SET attempt_count = attempt_count + 1, next_attempt_at = ?,
-		    last_error = ?, updated_at = CURRENT_TIMESTAMP
+		    last_error = ?, lease_owner = NULL, updated_at = CURRENT_TIMESTAMP
 		WHERE comment_id = ? AND delivered_at IS NULL
 	`, nextAttempt, sendErr.Error(), commentID); err != nil {
 		slog.Error("failed to record email reply delivery failure", "comment_id", commentID, "error", err)
@@ -427,6 +434,10 @@ func (s *EmailReplyService) getSMTPFromEmail() string {
 // the missing-row signal.
 var ErrEmailReplyNotRetryable = errors.New("email reply is not retryable")
 
+// ErrEmailReplyInFlight marks an outbox row whose delivery lease another
+// worker still holds; the operator retry must not steal it (WI-1572).
+var ErrEmailReplyInFlight = errors.New("email reply is being delivered by another worker")
+
 // RetryPendingReply attempts immediate delivery of one pending outbound
 // reply on behalf of an operator. The row's backoff lease is cleared first so
 // a stuck schedule (or an earlier failure's next_attempt_at) cannot block the
@@ -459,14 +470,21 @@ func (s *EmailReplyService) RetryPendingReply(channelID, commentID int) (deliver
 		return false, ErrSMTPNotConfigured
 	}
 
-	// Clear the backoff lease so deliverPendingReply's next_attempt_at guard
-	// lets this explicit retry through right now.
-	if _, err := s.db.ExecWrite(`
+	// Retry scheduling never steals a live claim: the reset only applies
+	// while no worker holds the delivery lease. A future next_attempt_at
+	// with a NULL owner is retry backoff and retries right now; a future
+	// next_attempt_at with an owner is another instance's in-flight send.
+	res, err := s.db.ExecWrite(`
 		UPDATE email_reply_outbox
 		SET next_attempt_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
 		WHERE channel_id = ? AND comment_id = ?
-	`, channelID, commentID); err != nil {
+		  AND (lease_owner IS NULL OR next_attempt_at <= CURRENT_TIMESTAMP)
+	`, channelID, commentID)
+	if err != nil {
 		return false, fmt.Errorf("reset email reply backoff for retry: %w", err)
+	}
+	if rows, err := res.RowsAffected(); err == nil && rows == 0 {
+		return false, ErrEmailReplyInFlight
 	}
 
 	return s.deliverPendingReply(commentID)

@@ -218,15 +218,27 @@ func EraseCustomerWithOptions(db database.Database, customerID int, actor AuditA
 		return evidence, fmt.Errorf("failed to release approval assignments: %w", err)
 	}
 
-	// De-identify retained outbound-reply queue rows addressed to the
-	// customer; the rows themselves are third-party-visible ticket history
-	// and are kept under the Art. 17(3)(b) exception.
-	if _, err := tx.Exec(`
-		UPDATE email_reply_outbox SET
-			to_email = ?, to_name = ?, updated_at = ?
-		WHERE comment_id IN (SELECT id FROM comments WHERE portal_customer_id = ?)
-	`, pseudonymEmail, pseudonymName, executedAt, customerID); err != nil {
-		return evidence, fmt.Errorf("failed to de-identify reply outbox rows: %w", err)
+	// Outbound-reply rows addressed to the customer carry the erased identity
+	// as the RECIPIENT (staff replies), not as the comment author, so match by
+	// address. Pending rows are canceled first — mail must never go out to
+	// an erased identity after erasure — then every retained row is
+	// pseudonymized; the rows are third-party-visible ticket history kept
+	// under the Art. 17(3)(b) exception (WI-1579).
+	if priorEmail != "" {
+		if _, err := tx.Exec(`
+			UPDATE email_reply_outbox SET
+				discarded_at = ?, last_error = 'canceled: recipient erased', updated_at = ?
+			WHERE UPPER(to_email) = UPPER(?) AND delivered_at IS NULL AND discarded_at IS NULL
+		`, executedAt, executedAt, priorEmail); err != nil {
+			return evidence, fmt.Errorf("failed to cancel queued replies to the erased customer: %w", err)
+		}
+		if _, err := tx.Exec(`
+			UPDATE email_reply_outbox SET
+				to_email = ?, to_name = ?, updated_at = ?
+			WHERE UPPER(to_email) = UPPER(?)
+		`, pseudonymEmail, pseudonymName, executedAt, priorEmail); err != nil {
+			return evidence, fmt.Errorf("failed to de-identify reply outbox rows: %w", err)
+		}
 	}
 
 	// Email tracking rows keep the ticket thread intact but lose the erased
