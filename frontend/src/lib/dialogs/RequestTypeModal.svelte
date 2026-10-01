@@ -27,6 +27,7 @@
   let error = $state(null);
   let success = $state(false);
   let availableWorkspaces = $state([]);
+  let resolvingWorkspaces = $state(false);
 
   // Form data
   let formData = $state({
@@ -43,20 +44,52 @@
   let isFormInitialized = $state(false);
   let lastOpenState = $state(false);
 
-  // Load workspaces filtered to channel's configured IDs
+  // Load workspaces filtered to channel's configured IDs. The directory
+  // store caches only the first server page, so a restricted channel
+  // resolves each configured id it names explicitly — the allowed set is the
+  // channel's own small list, not whatever the cache happens to hold
+  // (WI-1585). Unrestricted channels keep the cached page and gain
+  // server-backed search over the rest of the directory.
+  let workspaceSearchResults = $state(null);
+
   async function loadWorkspaces() {
     try {
-      const allWorkspaces = (await workspacesStore.load()) || [];
-      if (channelWorkspaceIds && channelWorkspaceIds.length > 0) {
-        availableWorkspaces = allWorkspaces.filter(ws => channelWorkspaceIds.includes(ws.id));
-      } else {
-        availableWorkspaces = allWorkspaces;
+      const cached = (await workspacesStore.load()) || [];
+      const byId = new Map(cached.map(ws => [ws.id, ws]));
+      const configured = channelWorkspaceIds || [];
+      const missing = configured.filter(id => !byId.has(id));
+      const fetched = await Promise.allSettled(missing.map(id => api.workspaces.get(id)));
+      for (const result of fetched) {
+        if (result.status === 'fulfilled' && result.value?.id) {
+          byId.set(result.value.id, result.value);
+        } else if (result.status === 'rejected') {
+          console.error('Failed to resolve configured workspace:', result.reason);
+        }
       }
+      availableWorkspaces = configured.length > 0
+        ? configured.map(id => byId.get(id)).filter(Boolean)
+        : [...byId.values()];
     } catch (err) {
       console.error('Failed to load workspaces:', err);
       availableWorkspaces = [];
     }
   }
+
+  // Server-backed directory search for unrestricted channels.
+  async function onWorkspaceSearch(query) {
+    const trimmed = (query || '').trim();
+    if (!trimmed) {
+      workspaceSearchResults = null;
+      return;
+    }
+    const { workspaces } = await workspacesStore.searchWorkspaces(trimmed, { limit: 25 });
+    workspaceSearchResults = workspaces;
+  }
+
+  const workspacePickerItems = $derived.by(() => {
+    if (channelWorkspaceIds && channelWorkspaceIds.length > 0) return availableWorkspaces;
+    return workspaceSearchResults ?? availableWorkspaces;
+  });
 
   // Consolidated reactive statement to handle modal state changes
   $effect(() => {
@@ -246,7 +279,10 @@
           </label>
           <BasePicker
             bind:value={formData.workspace_id}
-            items={availableWorkspaces}
+            items={workspacePickerItems}
+            serverSearch={!(channelWorkspaceIds && channelWorkspaceIds.length > 0)}
+            onSearchChange={onWorkspaceSearch}
+            loading={resolvingWorkspaces}
             placeholder={t('portal.selectWorkspace', 'Select workspace')}
             getValue={(item) => item.id}
             getLabel={(item) => item.name}
