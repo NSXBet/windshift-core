@@ -97,12 +97,9 @@ func (r *PortalCustomerRepository) FindOrCreateByEmail(ctx context.Context, name
 	return int(insertedID), true, nil
 }
 
-func (r *PortalCustomerRepository) Create(name, email string, organisationID int) (int, error) {
-	return r.CreateWithProvenance(name, email, organisationID, models.CustomerCreatedViaUnknown)
-}
-
 // CreateWithProvenance inserts a portal customer with an explicit creation
-// provenance (WI-1553); no production path uses the untagged Create.
+// provenance (WI-1553). Every production creation path must record where the
+// row came from — never introduce an untagged INSERT.
 func (r *PortalCustomerRepository) CreateWithProvenance(name, email string, organisationID int, createdVia string) (int, error) {
 	if createdVia == "" {
 		createdVia = models.CustomerCreatedViaUnknown
