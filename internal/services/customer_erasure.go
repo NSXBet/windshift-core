@@ -42,6 +42,27 @@ type CustomerErasureEvidence struct {
 // irreversible and recorded once.
 var ErrCustomerAlreadyErased = errors.New("portal customer has already been erased")
 
+// CustomerTicketedError refuses a cleanup erasure because ticket content
+// appeared for the customer (WI-1555). Reason names the marker that excluded
+// them: has_items, has_comments, or has_attachments.
+type CustomerTicketedError struct {
+	Reason string
+}
+
+func (e *CustomerTicketedError) Error() string {
+	return fmt.Sprintf("portal customer holds ticket content (%s)", e.Reason)
+}
+
+// EraseOptions tunes a single erasure execution.
+type EraseOptions struct {
+	// RefuseWhenTicketed is the bulk-cleanup guard (WI-1555): the erasure
+	// transaction re-checks ticket content inside itself, after taking the
+	// customer row lock, and refuses with *CustomerTicketedError when any
+	// items, comments, or attachments exist. The explicit DSAR path keeps
+	// this off — an approved erasure intentionally covers ticket holders.
+	RefuseWhenTicketed bool
+}
+
 // EraseCustomer executes an Article 17 erasure against a portal customer.
 // Unlike the historical hard delete, the portal_customers row is never
 // deleted: it is pseudonymized (deleted-customer-N) so customer-authored
@@ -52,6 +73,11 @@ var ErrCustomerAlreadyErased = errors.New("portal customer has already been eras
 // email-reply outbox rows and email tracking rows are de-identified. The
 // erasure decision itself is recorded as DSAR evidence.
 func EraseCustomer(db database.Database, customerID int, actor AuditActor, input CustomerErasureInput) (CustomerErasureEvidence, error) {
+	return EraseCustomerWithOptions(db, customerID, actor, input, EraseOptions{})
+}
+
+// EraseCustomerWithOptions executes an erasure with the given options.
+func EraseCustomerWithOptions(db database.Database, customerID int, actor AuditActor, input CustomerErasureInput, options EraseOptions) (CustomerErasureEvidence, error) {
 	var evidence CustomerErasureEvidence
 
 	if input.RequestedBy == "" {
@@ -93,13 +119,53 @@ func EraseCustomer(db database.Database, customerID int, actor AuditActor, input
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	// Serialize with other lifecycle writes on the same customer. On
+	// PostgreSQL the FOR UPDATE lock also conflicts with the FOR KEY SHARE
+	// locks that FK checks take on items/comments/attachments inserts, so an
+	// in-flight ticket creation for this customer blocks this transaction
+	// until it commits and is then seen by the footprint check below — the
+	// cleanup eligibility decision and the erasure are atomic with respect
+	// to content creation (WI-1555). SQLite's single writer serializes the
+	// same way.
+	customerLockQuery := `SELECT id FROM portal_customers WHERE id = ?`
+	if db.GetDriverName() == "postgres" {
+		customerLockQuery += ` FOR UPDATE`
+	}
+	var lockedID int
+	if err := tx.QueryRow(customerLockQuery, customerID).Scan(&lockedID); err != nil {
+		return evidence, fmt.Errorf("lock customer for erasure: %w", err)
+	}
+
+	// Cleanup guard: refuse when ticket content exists, checked inside the
+	// transaction so a ticket that landed after selection still excludes the
+	// customer (WI-1555).
+	if options.RefuseWhenTicketed {
+		var items, comments, attachments int
+		if err := tx.QueryRow(`
+			SELECT
+				(SELECT COUNT(*) FROM items WHERE creator_portal_customer_id = ?),
+				(SELECT COUNT(*) FROM comments WHERE portal_customer_id = ?),
+				(SELECT COUNT(*) FROM attachments WHERE uploaded_by_portal_customer_id = ?)
+		`, customerID, customerID, customerID).Scan(&items, &comments, &attachments); err != nil {
+			return evidence, fmt.Errorf("check ticket content: %w", err)
+		}
+		switch {
+		case items > 0:
+			return evidence, &CustomerTicketedError{Reason: "has_items"}
+		case comments > 0:
+			return evidence, &CustomerTicketedError{Reason: "has_comments"}
+		case attachments > 0:
+			return evidence, &CustomerTicketedError{Reason: "has_attachments"}
+		}
+	}
+
 	// Pseudonymize the row in place. The guarded WHERE makes a concurrent
 	// second erasure a no-op instead of a second evidence row. Booleans are
 	// bound as parameters: SQLite stores is_primary as INTEGER while Postgres
 	// uses BOOLEAN and rejects integer comparisons. Deactivation rides along
 	// (erasure implies access loss) so every auth path's deactivated_at
 	// check covers erased customers even before their sessions are reaped.
-	if _, err := tx.Exec(`
+	if res, err := tx.Exec(`
 		UPDATE portal_customers SET
 			name = ?,
 			email = ?,
@@ -115,6 +181,11 @@ func EraseCustomer(db database.Database, customerID int, actor AuditActor, input
 		WHERE id = ? AND erased_at IS NULL
 	`, pseudonymName, pseudonymEmail, false, executedAt, executedAt, executedAt, customerID); err != nil {
 		return evidence, fmt.Errorf("failed to pseudonymize customer: %w", err)
+	} else if rows, rowsErr := res.RowsAffected(); rowsErr == nil && rows == 0 {
+		// The guarded WHERE means zero rows affected can only mean a
+		// concurrent erasure committed between the state check and this
+		// transaction.
+		return evidence, ErrCustomerAlreadyErased
 	}
 
 	// Hard-delete authentication state, drafts, and channel grants. The

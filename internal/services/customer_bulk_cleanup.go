@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -13,9 +14,18 @@ import (
 // Bulk cleanup bounds for the email-intake provenance story (WI-1553). A
 // single run erases at most MaxBulkCleanupBatch customers — accidental
 // wide-net runs stay reviewable, and repeating the call drains the backlog.
+// MaxBulkCleanupAgeDays bounds the age filter well below the ~106751-day
+// time.Duration overflow boundary (WI-1557): at the boundary the nanosecond
+// multiplication wraps and the cutoff lands in the future, silently erasing
+// recent customers instead of excluding them.
 const (
 	MaxBulkCleanupBatch          = 1000
 	DefaultBulkCleanupBatchLimit = 200
+	MaxBulkCleanupAgeDays        = 100000
+	// cleanupScanPageSize is the id-cursor page size of the candidate scan
+	// (WI-1556). Pages advance past skipped candidates so a run can reach
+	// eligible rows behind a block of ticket holders.
+	cleanupScanPageSize = 200
 )
 
 // CustomerBulkCleanupInput selects the auto-created customers a cleanup run
@@ -50,6 +60,11 @@ type CustomerBulkCleanupResult struct {
 	ScannedCount int                          `json:"scanned_count"`
 }
 
+// ErasedCount reports how many customers this run erased.
+func (r *CustomerBulkCleanupResult) ErasedCount() int {
+	return len(r.Erased)
+}
+
 // ValidateBulkCleanupCreatedVia reports whether createdVia is an accepted
 // filter value ("" = any).
 func ValidateBulkCleanupCreatedVia(createdVia string) bool {
@@ -79,6 +94,11 @@ func CleanupAutoCreatedCustomers(db database.Database, actor AuditActor, input C
 	if input.OlderThanDays < 0 {
 		return result, NewServiceError(400, "older_than_days must be >= 0")
 	}
+	// Reject before any duration arithmetic: values beyond the bound would
+	// overflow time.Duration inside the cutoff computation (WI-1557).
+	if input.OlderThanDays > MaxBulkCleanupAgeDays {
+		return result, NewServiceError(400, fmt.Sprintf("older_than_days must be <= %d", MaxBulkCleanupAgeDays))
+	}
 
 	limit := DefaultBulkCleanupBatchLimit
 	cutoff := time.Now()
@@ -93,34 +113,54 @@ func CleanupAutoCreatedCustomers(db database.Database, actor AuditActor, input C
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	candidates, err := selectCleanupCandidates(ctx, db, input.CreatedVia, cutoff, limit)
-	if err != nil {
-		return result, err
-	}
-	result.ScannedCount = len(candidates)
-
-	for _, candidate := range candidates {
-		// Safety boundary: anything that became ticket content — as a
-		// requester, commenter, or uploader — is skipped with a reason.
-		if excluded, reason, err := hasTicketContent(ctx, db, candidate.ID); err != nil {
-			result.Failed = append(result.Failed, CustomerBulkCleanupSkipped{ID: candidate.ID, Email: candidate.Email, Reason: err.Error()})
-			continue
-		} else if excluded {
-			result.Skipped = append(result.Skipped, CustomerBulkCleanupSkipped{ID: candidate.ID, Email: candidate.Email, Reason: reason})
-			continue
+	// Cursor-paginated scan (WI-1556): pages advance by pc.id so skipped
+	// candidates never stall the run — a page full of ticket holders is
+	// simply left behind and the next page is scanned. The run stops when
+	// the erase target is reached or the table is exhausted; erasures stay
+	// bounded by the target, the scan by the table size.
+	eraseTarget := limit
+	lastID := 0
+	for result.ErasedCount() < eraseTarget {
+		page, err := selectCleanupCandidates(ctx, db, input.CreatedVia, cutoff, lastID, cleanupScanPageSize)
+		if err != nil {
+			return result, err
+		}
+		if len(page) == 0 {
+			break
 		}
 
-		intake := CustomerErasureInput{
-			RequestedBy: fmt.Sprintf("bulk-cleanup created_via=%s admin:%s", input.CreatedVia, actor.Username),
-			Notes:       "Bulk cleanup of stale auto-created customers (WI-1553)",
+		for _, candidate := range page {
+			lastID = candidate.ID
+			result.ScannedCount++
+
+			intake := CustomerErasureInput{
+				RequestedBy: fmt.Sprintf("bulk-cleanup created_via=%s admin:%s", input.CreatedVia, actor.Username),
+				Notes:       "Bulk cleanup of stale auto-created customers (WI-1553)",
+			}
+			// RefuseWhenTicketed re-checks the exclusion boundary inside the
+			// erasure transaction (WI-1555): a customer that gained a ticket
+			// after selection is skipped, never erased.
+			if _, err := EraseCustomerWithOptions(db, candidate.ID, actor, intake, EraseOptions{RefuseWhenTicketed: true}); err != nil {
+				var ticketed *CustomerTicketedError
+				switch {
+				case errors.Is(err, ErrCustomerAlreadyErased):
+					result.Skipped = append(result.Skipped, CustomerBulkCleanupSkipped{ID: candidate.ID, Email: candidate.Email, Reason: "already_erased"})
+				case errors.As(err, &ticketed):
+					result.Skipped = append(result.Skipped, CustomerBulkCleanupSkipped{ID: candidate.ID, Email: candidate.Email, Reason: ticketed.Reason})
+				default:
+					// The erasure flow guards its own state (404); a failure
+					// here is recorded per customer and never aborts the
+					// batch.
+					result.Failed = append(result.Failed, CustomerBulkCleanupSkipped{ID: candidate.ID, Email: candidate.Email, Reason: err.Error()})
+				}
+				continue
+			}
+			result.Erased = append(result.Erased, CustomerBulkCleanupErased{ID: candidate.ID, Email: candidate.Email})
 		}
-		if _, err := EraseCustomer(db, candidate.ID, actor, intake); err != nil {
-			// The erasure flow guards its own state (404/409); a failure here
-			// is recorded per customer and never aborts the batch.
-			result.Failed = append(result.Failed, CustomerBulkCleanupSkipped{ID: candidate.ID, Email: candidate.Email, Reason: err.Error()})
-			continue
+
+		if len(page) < cleanupScanPageSize {
+			break
 		}
-		result.Erased = append(result.Erased, CustomerBulkCleanupErased{ID: candidate.ID, Email: candidate.Email})
 	}
 
 	// One audit event for the whole batch, mirroring the WI-1550 erasure
@@ -159,14 +199,15 @@ type bulkCleanupCandidate struct {
 // age filters (erased rows excluded). Ticket-content boundaries are checked
 // per candidate so the run report can show exactly why each holdout was
 // skipped.
-func selectCleanupCandidates(ctx context.Context, db database.Database, createdVia string, cutoff time.Time, limit int) ([]bulkCleanupCandidate, error) {
+func selectCleanupCandidates(ctx context.Context, db database.Database, createdVia string, cutoff time.Time, afterID, limit int) ([]bulkCleanupCandidate, error) {
 	query := `
 		SELECT pc.id, pc.name, pc.email
 		FROM portal_customers pc
 		WHERE pc.erased_at IS NULL
 		  AND pc.created_at < ?
+		  AND pc.id > ?
 	`
-	args := []any{cutoff}
+	args := []any{cutoff, afterID}
 	if createdVia != "" {
 		query += ` AND pc.created_via = ?`
 		args = append(args, createdVia)
@@ -189,37 +230,6 @@ func selectCleanupCandidates(ctx context.Context, db database.Database, createdV
 		out = append(out, c)
 	}
 	return out, rows.Err()
-}
-
-// customerTicketFootprint counts the ticket-content markers that exclude a
-// customer from cleanup.
-func customerTicketFootprint(ctx context.Context, db database.Database, customerID int) (items, comments, attachments int, err error) {
-	err = db.QueryRowContext(ctx, `
-		SELECT
-			(SELECT COUNT(*) FROM items WHERE creator_portal_customer_id = ?),
-			(SELECT COUNT(*) FROM comments WHERE portal_customer_id = ?),
-			(SELECT COUNT(*) FROM attachments WHERE uploaded_by_portal_customer_id = ?)
-	`, customerID, customerID, customerID).Scan(&items, &comments, &attachments)
-	return
-}
-
-// hasTicketContent reports whether the customer authored or requested ticket
-// content — the hard exclusion boundary for cleanup (WI-1553).
-func hasTicketContent(ctx context.Context, db database.Database, customerID int) (excluded bool, reason string, err error) {
-	items, comments, attachments, err := customerTicketFootprint(ctx, db, customerID)
-	if err != nil {
-		return false, "", fmt.Errorf("check ticket content: %w", err)
-	}
-	switch {
-	case items > 0:
-		return true, "has_items", nil
-	case comments > 0:
-		return true, "has_comments", nil
-	case attachments > 0:
-		return true, "has_attachments", nil
-	default:
-		return false, "", nil
-	}
 }
 
 func eraseListDetails(erased []CustomerBulkCleanupErased) []map[string]any {
