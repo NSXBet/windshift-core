@@ -615,10 +615,20 @@ func (request slaWarningThresholdRequest) input() services.SLAWarningThresholdIn
 	}
 }
 
-// ListWarningThresholds returns a workspace's SLA warning thresholds.
+// ListWarningThresholds returns a workspace's SLA warning thresholds. Item
+// viewers may read them: the warning badge on lists and boards is part of the
+// item surface, and agents hold item.view without workspace administration
+// (WI-1578). Mutations stay admin-gated.
 func (h *SLAHandler) ListWarningThresholds(w http.ResponseWriter, r *http.Request) {
-	workspaceID, ok := h.authorizeWorkspaceAdmin(w, r)
+	user, ok := RequireAuth(w, r)
 	if !ok {
+		return
+	}
+	workspaceID, ok := requireIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+	if !RequireWorkspacePermission(w, r, user.ID, workspaceID, models.PermissionItemView, h.permissionService) {
 		return
 	}
 	thresholds, err := h.settings.ListWarningThresholds(r.Context(), workspaceID)

@@ -41,10 +41,19 @@ func (request slaWarningThresholdRequest) input() services.SLAWarningThresholdIn
 
 func listSLAWarningThresholds(deps Deps) readOperation[[]models.SLAWarningThreshold] {
 	return func(r *http.Request) ([]models.SLAWarningThreshold, error) {
-		service, workspaceID, err := requireSLAThresholdAdmin(r, deps)
+		if deps.SLASettings == nil {
+			return nil, newError(http.StatusNotFound, "not_found", "SLA warning thresholds are not available")
+		}
+		// Warning state renders on item lists and boards, so item viewers may
+		// read it; only mutations need workspace administration (WI-1578).
+		user, workspaceID, err := principalAndWorkspace(r)
 		if err != nil {
 			return nil, err
 		}
+		if err := requireWorkspace(deps.Access.CanViewWorkspace, user.ID, workspaceID); err != nil {
+			return nil, err
+		}
+		service := deps.SLASettings
 		thresholds, err := service.ListWarningThresholds(r.Context(), workspaceID)
 		if err != nil {
 			return nil, internalError(err)

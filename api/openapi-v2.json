@@ -75178,6 +75178,10 @@
                       "description": "The comments private value.",
                       "type": "boolean"
                     },
+                    "content_kept_on_source": {
+                      "description": "The content kept on source value.",
+                      "type": "boolean"
+                    },
                     "merged": {
                       "description": "The merged value.",
                       "type": "boolean"
