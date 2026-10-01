@@ -37,6 +37,7 @@ import { assetReports, channelCategories, channels, requestTypes } from './chann
 import { collectionCategories, collections } from './collections.js';
 import { conditionSets } from './conditionSets.js';
 import {
+  cannedResponses,
   configurationSets,
   customFields,
   hierarchyLevels,
@@ -311,6 +312,9 @@ export const api = {
   // Item Types
   itemTypes,
   itemTemplates,
+
+  // Canned responses (WI-1138)
+  cannedResponses,
 
   // Priorities
   priorities,

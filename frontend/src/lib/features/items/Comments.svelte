@@ -22,6 +22,7 @@
 	import { agentOwnerName, loadAttributedComments } from './activityAttributionData.js';
 	import { isExpectedBackgroundSyncError } from '../../utils/backgroundSync.js';
 	import { workspacePermissions } from '../../stores/workspacePermissions.svelte.js';
+	import CannedResponsePicker from '../support/CannedResponsePicker.svelte';
 
 	const COMMENT_PAGE_SIZE = 25;
 
@@ -322,6 +323,19 @@
 		const leftTime = new Date(left.created_at).getTime();
 		const rightTime = new Date(right.created_at).getTime();
 		return leftTime - rightTime || left.id - right.id;
+	}
+
+	// Insert a canned response (WI-1138) into the composer. Private snippets
+	// flip the composer to an internal note so they never reach customers.
+	function insertCannedResponse(response) {
+		if (!response?.body) return;
+		newCommentContent = newCommentContent.trim()
+			? `${newCommentContent.trimEnd()}\n\n${response.body}`
+			: response.body;
+		if (response.is_private) {
+			isInternalComment = true;
+		}
+		editorRef?.focus();
 	}
 
 	async function submitComment() {
@@ -647,6 +661,12 @@
 				</div>
 				<div class="flex items-center justify-between mt-3">
 					<div class="flex items-center gap-4">
+						{#if workspaceId && !isPersonalWorkspace}
+							<CannedResponsePicker
+								{workspaceId}
+								onSelect={insertCannedResponse}
+							/>
+						{/if}
 						<div class="text-xs" style="color: var(--ds-text-subtle);">
 							{t('comments.markdownSupported')}
 						</div>

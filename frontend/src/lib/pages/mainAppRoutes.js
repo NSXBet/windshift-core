@@ -130,6 +130,7 @@ export const MAIN_APP_ROUTE_CONFIG = {
         'workspace-settings-action-credentials',
         'workspace-settings-recurrence',
         'workspace-settings-templates',
+        'workspace-settings-canned-responses',
         'workspace-settings-service-levels',
         'workspace-settings-danger',
       ],
@@ -474,6 +475,7 @@ export const WORKSPACE_SETTINGS_TABS = {
   'workspace-settings-action-credentials': 'action-credentials',
   'workspace-settings-recurrence': 'recurrence',
   'workspace-settings-templates': 'templates',
+  'workspace-settings-canned-responses': 'canned-responses',
   'workspace-settings-service-levels': 'service-levels',
   'workspace-settings-danger': 'danger',
 };

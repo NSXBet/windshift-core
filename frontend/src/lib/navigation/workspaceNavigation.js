@@ -13,6 +13,7 @@ import {
   IconList as List,
   IconListTree as ListTree,
   IconMapPin as MapPin,
+  IconMessageCircle2 as MessageSquareText,
   IconFlag as Milestone,
   IconPackage as Package,
   IconPlayerPlay as Play,
@@ -236,6 +237,12 @@ export const workspaceSettingsItems = [
     labelKey: 'workspaceSettings.tabs.templates',
     icon: FileStack,
     view: 'workspace-settings-templates',
+  },
+  {
+    id: 'canned-responses',
+    labelKey: 'workspaceSettings.tabs.cannedResponses',
+    icon: MessageSquareText,
+    view: 'workspace-settings-canned-responses',
   },
   {
     id: 'service-levels',

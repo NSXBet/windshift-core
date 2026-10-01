@@ -15,6 +15,7 @@
   import IssueSyncSettings from '../settings/IssueSyncSettings.svelte';
   import RecurrenceManager from '../settings/RecurrenceManager.svelte';
   import WorkspaceItemTemplates from './WorkspaceItemTemplates.svelte';
+import WorkspaceCannedResponses from './WorkspaceCannedResponses.svelte';
   import ServiceLevels from '../features/sla/ServiceLevels.svelte';
   import Button from '../components/Button.svelte';
   import PageHeader from '../layout/PageHeader.svelte';
@@ -86,6 +87,7 @@
     'action-credentials': 'workspaceSettings.headers.actionCredentials',
     recurrence: 'workspaceSettings.headers.recurrence',
     templates: 'workspaceSettings.headers.templates',
+    'canned-responses': 'workspaceSettings.headers.cannedResponses',
     'service-levels': 'workspaceSettings.headers.serviceLevels',
     danger: 'workspaceSettings.headers.danger',
   };
@@ -561,6 +563,10 @@
     {:else if activeTab === 'templates'}
         <!-- Work item templates (WI-438) -->
         <WorkspaceItemTemplates {workspaceId} />
+
+    {:else if activeTab === 'canned-responses'}
+        <!-- Canned responses (WI-1138) -->
+        <WorkspaceCannedResponses {workspaceId} />
 
     {:else if activeTab === 'service-levels'}
         <!-- Service levels (SLA) -->
