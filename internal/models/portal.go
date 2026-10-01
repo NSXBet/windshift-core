@@ -190,6 +190,7 @@ type PortalCustomer struct {
 	CustomerOrganisationID *int           `json:"customer_organisation_id,omitempty"` //nolint:misspell // matches API/database field name
 	IsPrimary              bool           `json:"is_primary"`                         // Primary contact for the organization
 	CustomFieldValues      map[string]any `json:"custom_field_values,omitempty"`
+	DeactivatedAt          *time.Time     `json:"deactivated_at,omitempty"` // Security deactivation (WI-1554); every portal auth path refuses deactivated customers
 	CreatedAt              time.Time      `json:"created_at"`
 	UpdatedAt              time.Time      `json:"updated_at"`
 	// Joined fields for API responses

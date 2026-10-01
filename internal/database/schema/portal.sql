@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS portal_customers (
 	is_primary BOOLEAN DEFAULT false,
 	dismissed_passkey_prompt_at DATETIME,
 	erased_at DATETIME, -- Set when the customer completed Article 17 erasure; the row is kept pseudonymized and never cleared
+	deactivated_at DATETIME, -- Set when an admin cut portal access; every portal auth path rejects deactivated customers; reactivation is an explicit admin action
 	created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 	FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
@@ -115,3 +116,4 @@ CREATE INDEX IF NOT EXISTS idx_customer_erasure_records_customer_id ON customer_
 
 -- migration: 20261005_portal_customers_erased_at
 -- migration: 20261005_customer_erasure_records
+-- migration: 20261006_portal_customers_deactivated_at

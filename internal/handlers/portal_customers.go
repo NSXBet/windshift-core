@@ -57,6 +57,7 @@ const portalCustomerBaseQuery = `
 		pc.id, pc.name, pc.email, pc.phone,
 		pc.user_id, pc.customer_organisation_id, pc.is_primary,
 		pc.custom_field_values,
+		pc.deactivated_at,
 		pc.created_at, pc.updated_at,
 		u.first_name AS user_first_name,
 		u.last_name AS user_last_name,
@@ -93,11 +94,13 @@ func scanPortalCustomer(scanner interface{ Scan(...any) error }) (models.PortalC
 	var userFirstName, userLastName, userEmail, orgName sql.NullString
 	var customFieldValuesStr sql.NullString
 	var createdAtStr, updatedAtStr string
+	var deactivatedAtStr sql.NullString
 
 	err := scanner.Scan(
 		&c.ID, &c.Name, &c.Email, &phone,
 		&c.UserID, &c.CustomerOrganisationID, &c.IsPrimary,
 		&customFieldValuesStr,
+		&deactivatedAtStr,
 		&createdAtStr, &updatedAtStr,
 		&userFirstName, &userLastName, &userEmail, &orgName,
 	)
@@ -111,6 +114,11 @@ func scanPortalCustomer(scanner interface{ Scan(...any) error }) (models.PortalC
 	}
 	if updatedAt, err := parseTimestamp(updatedAtStr); err == nil {
 		c.UpdatedAt = updatedAt
+	}
+	if deactivatedAtStr.Valid && deactivatedAtStr.String != "" {
+		if deactivatedAt, err := parseTimestamp(deactivatedAtStr.String); err == nil && !deactivatedAt.IsZero() {
+			c.DeactivatedAt = &deactivatedAt
+		}
 	}
 
 	// Populate nullable fields
@@ -706,6 +714,124 @@ func (h *PortalCustomersHandler) ExportPortalCustomer(w http.ResponseWriter, r *
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(payload)
+}
+
+// DeactivatePortalCustomer cuts portal access for a customer without
+// exercising the erasure right: it stamps deactivated_at, invalidates every
+// live session, and records the decision with the acting admin. All portal
+// auth paths (session validation, magic-link issuance/redemption, passkey
+// login) refuse deactivated customers.
+func (h *PortalCustomersHandler) DeactivatePortalCustomer(w http.ResponseWriter, r *http.Request) {
+	currentUser, ok := RequireAuth(w, r)
+	if !ok {
+		return
+	}
+
+	id, ok := requireIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	var name, email string
+	var deactivatedAt, erasedAt sql.NullString
+	if err := h.db.QueryRow(`SELECT name, email, deactivated_at, erased_at FROM portal_customers WHERE id = ?`, id).
+		Scan(&name, &email, &deactivatedAt, &erasedAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			respondNotFound(w, r, "customer")
+			return
+		}
+		respondInternalError(w, r, err)
+		return
+	}
+	if deactivatedAt.Valid && deactivatedAt.String != "" {
+		respondConflict(w, r, "Portal customer is already deactivated")
+		return
+	}
+	if erasedAt.Valid && erasedAt.String != "" {
+		respondConflict(w, r, "Portal customer has been erased and cannot be deactivated")
+		return
+	}
+
+	deactivated := time.Now()
+	if _, err := h.db.ExecWrite(`UPDATE portal_customers SET deactivated_at = ?, updated_at = ? WHERE id = ?`, deactivated, deactivated, id); err != nil {
+		respondInternalError(w, r, err)
+		return
+	}
+
+	// Invalidate every live session immediately; validation would refuse
+	// them anyway, but deletion removes the stored ip/user_agent access
+	// surface right away.
+	if _, err := h.db.ExecWrite(`DELETE FROM portal_customer_sessions WHERE portal_customer_id = ?`, id); err != nil {
+		slog.Error("failed to invalidate portal sessions on deactivation", slog.String("component", "portal"), slog.Int("customer_id", id), slog.Any("error", err))
+		respondInternalError(w, r, err)
+		return
+	}
+
+	if currentUser != nil {
+		logAuditWithDetails(h.db, r, currentUser, logger.ActionPortalCustomerDeactivate, logger.ResourcePortalCustomer, &id, name, map[string]any{
+			"email": email,
+		})
+	}
+
+	c, err := h.loadPortalCustomerWithRoles(int64(id))
+	if err != nil {
+		respondInternalError(w, r, err)
+		return
+	}
+	respondJSONOK(w, c)
+}
+
+// ActivatePortalCustomer re-grants portal access to a deactivated customer.
+// Reactivation is an explicit admin decision, distinct from erasure — erased
+// customers are never reactivatable.
+func (h *PortalCustomersHandler) ActivatePortalCustomer(w http.ResponseWriter, r *http.Request) {
+	currentUser, ok := RequireAuth(w, r)
+	if !ok {
+		return
+	}
+
+	id, ok := requireIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	var name, email string
+	var deactivatedAt, erasedAt sql.NullString
+	if err := h.db.QueryRow(`SELECT name, email, deactivated_at, erased_at FROM portal_customers WHERE id = ?`, id).
+		Scan(&name, &email, &deactivatedAt, &erasedAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			respondNotFound(w, r, "customer")
+			return
+		}
+		respondInternalError(w, r, err)
+		return
+	}
+	if !deactivatedAt.Valid || deactivatedAt.String == "" {
+		respondValidationError(w, r, "Portal customer is not deactivated")
+		return
+	}
+	if erasedAt.Valid && erasedAt.String != "" {
+		respondConflict(w, r, "Portal customer has been erased and cannot be reactivated")
+		return
+	}
+
+	if _, err := h.db.ExecWrite(`UPDATE portal_customers SET deactivated_at = NULL, updated_at = ? WHERE id = ?`, time.Now(), id); err != nil {
+		respondInternalError(w, r, err)
+		return
+	}
+
+	if currentUser != nil {
+		logAuditWithDetails(h.db, r, currentUser, logger.ActionPortalCustomerActivate, logger.ResourcePortalCustomer, &id, name, map[string]any{
+			"email": email,
+		})
+	}
+
+	c, err := h.loadPortalCustomerWithRoles(int64(id))
+	if err != nil {
+		respondInternalError(w, r, err)
+		return
+	}
+	respondJSONOK(w, c)
 }
 
 // eraseCustomer runs the shared erasure execution and writes the response:

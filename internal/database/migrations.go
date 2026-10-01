@@ -1912,6 +1912,14 @@ var Catalog = []Migration{
 			CREATE INDEX IF NOT EXISTS idx_customer_erasure_records_customer_id ON customer_erasure_records(portal_customer_id);
 		`,
 	},
+	{
+		Version:       "20261006_portal_customers_deactivated_at",
+		Name:          "Add security deactivation lifecycle state to portal customers (WI-1554)",
+		CheckSQLite:   sqliteColumnCheck("portal_customers", "deactivated_at"),
+		CheckPostgres: pgColumnCheck("portal_customers", "deactivated_at"),
+		SQLite:        `ALTER TABLE portal_customers ADD COLUMN deactivated_at DATETIME`,
+		Postgres:      `ALTER TABLE portal_customers ADD COLUMN IF NOT EXISTS deactivated_at TIMESTAMPTZ`,
+	},
 }
 
 func applySQLitePersonalLabelsPerUserUnique(db Database) (retErr error) {

@@ -169,6 +169,16 @@ export const portalCustomers = {
       method: 'PUT',
       body: JSON.stringify({ customer_organisation_id: customerOrganisationId }),
     }),
+  deactivate: (id) =>
+    fetchAPI(`/portal-customers/${id}/deactivate`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    }),
+  activate: (id) =>
+    fetchAPI(`/portal-customers/${id}/activate`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    }),
 };
 
 // Contact Roles Management (requires customers.manage permission)

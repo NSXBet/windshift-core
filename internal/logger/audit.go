@@ -642,6 +642,8 @@ const (
 	ActionPortalCustomerUpdateOrg  = "portal_customer.update_organisation" //nolint:misspell // British spelling
 	ActionPortalCustomerErase      = "portal_customer.erase"
 	ActionPortalCustomerDataExport = "portal_customer.data_export"
+	ActionPortalCustomerDeactivate = "portal_customer.deactivate"
+	ActionPortalCustomerActivate   = "portal_customer.activate"
 
 	// Time project permission management
 	ActionTimeProjectAddManager    = "time_project.add_manager"

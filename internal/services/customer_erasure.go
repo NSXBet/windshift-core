@@ -96,7 +96,9 @@ func EraseCustomer(db database.Database, customerID int, actor AuditActor, input
 	// Pseudonymize the row in place. The guarded WHERE makes a concurrent
 	// second erasure a no-op instead of a second evidence row. Booleans are
 	// bound as parameters: SQLite stores is_primary as INTEGER while Postgres
-	// uses BOOLEAN and rejects integer comparisons.
+	// uses BOOLEAN and rejects integer comparisons. Deactivation rides along
+	// (erasure implies access loss) so every auth path's deactivated_at
+	// check covers erased customers even before their sessions are reaped.
 	if _, err := tx.Exec(`
 		UPDATE portal_customers SET
 			name = ?,
@@ -107,10 +109,11 @@ func EraseCustomer(db database.Database, customerID int, actor AuditActor, input
 			customer_organisation_id = NULL,
 			is_primary = ?,
 			dismissed_passkey_prompt_at = NULL,
+			deactivated_at = COALESCE(deactivated_at, ?),
 			erased_at = ?,
 			updated_at = ?
 		WHERE id = ? AND erased_at IS NULL
-	`, pseudonymName, pseudonymEmail, false, executedAt, executedAt, customerID); err != nil {
+	`, pseudonymName, pseudonymEmail, false, executedAt, executedAt, executedAt, customerID); err != nil {
 		return evidence, fmt.Errorf("failed to pseudonymize customer: %w", err)
 	}
 
