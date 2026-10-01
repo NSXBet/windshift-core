@@ -67,6 +67,15 @@ func registerWorkspaceBundleRoutes(b *routeBuilder, deps Deps) {
 		if err := services.SanitizeWorkspaceBundle(&bundle); err != nil {
 			return nil, newError(http.StatusBadRequest, "invalid_request", err.Error())
 		}
+		// An embedded configuration-set template provisions global
+		// configuration entities and replaces the workspace's assignment —
+		// powers the standalone config-set import gates behind system
+		// administration (WI-1559). Reject before any content is written.
+		if bundle.ConfigurationSet != nil {
+			if _, err := requireSystemAdmin(r, deps); err != nil {
+				return nil, err
+			}
+		}
 		// The importer needs create rights over both content kinds the
 		// bundle carries; individual entities re-check through their own
 		// application services.
