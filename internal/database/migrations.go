@@ -2054,6 +2054,10 @@ var Catalog = []Migration{
 		`,
 	},
 	{
+		// Incidents had a never-read dedup_key column and scheduled incident
+		// notifications kept no escalation-rule reference (WI-1536). The drop
+		// removes the dead column; the state table rebuild adds the missing
+		// foreign key after clearing rows whose rule no longer exists.
 		Version: "20261006_incident_state_hardening",
 		Name:    "Drop incidents.dedup_key and reference escalation rules from notification state",
 		CheckSQLite: `
@@ -2075,6 +2079,31 @@ var Catalog = []Migration{
 			) THEN 1 ELSE 0 END`,
 		SQLite: `
 			ALTER TABLE incidents DROP COLUMN dedup_key;
+			DELETE FROM incident_notification_state WHERE escalation_rule_id NOT IN (SELECT id FROM on_call_escalation_rules);
+			CREATE TABLE incident_notification_state_state_fk_rebuild (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				incident_id INTEGER NOT NULL,
+				escalation_rule_id INTEGER NOT NULL,
+				notification_rule_id INTEGER NOT NULL,
+				repeat_index INTEGER NOT NULL DEFAULT 0,
+				next_notification_at DATETIME NOT NULL,
+				created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+				updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+				FOREIGN KEY (incident_id) REFERENCES incidents(id) ON DELETE CASCADE,
+				FOREIGN KEY (escalation_rule_id) REFERENCES on_call_escalation_rules(id) ON DELETE CASCADE,
+				FOREIGN KEY (notification_rule_id) REFERENCES on_call_notification_rules(id) ON DELETE CASCADE
+			);
+			INSERT INTO incident_notification_state_state_fk_rebuild
+				SELECT id, incident_id, escalation_rule_id, notification_rule_id, repeat_index,
+					next_notification_at, created_at, updated_at
+				FROM incident_notification_state;
+			DROP TABLE incident_notification_state;
+			ALTER TABLE incident_notification_state_state_fk_rebuild RENAME TO incident_notification_state;
+			CREATE UNIQUE INDEX uq_incident_notification_state ON incident_notification_state(incident_id, notification_rule_id, repeat_index);
+			CREATE INDEX idx_incident_notification_state_due ON incident_notification_state(next_notification_at);
+		`,
+		Postgres: `
+			ALTER TABLE incidents DROP COLUMN IF EXISTS dedup_key;
 			DELETE FROM incident_notification_state WHERE escalation_rule_id NOT IN (SELECT id FROM on_call_escalation_rules);
 			ALTER TABLE incident_notification_state DROP CONSTRAINT IF EXISTS incident_notification_state_escalation_rule_fkey;
 			ALTER TABLE incident_notification_state ADD CONSTRAINT incident_notification_state_escalation_rule_fkey
