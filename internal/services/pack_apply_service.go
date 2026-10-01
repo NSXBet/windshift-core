@@ -438,16 +438,20 @@ func (s *PackApplyService) adoptOrImportConfigurationSet(ctx context.Context, wo
 // assignment. Scoping the delete to configuration_set_id would detach the set
 // from every other workspace sharing it.
 func attachConfigurationSet(ctx context.Context, db database.Database, workspaceID, configSetID int) error {
-	if _, err := db.ExecContext(ctx, `DELETE FROM workspace_configuration_sets WHERE workspace_id = ?`, workspaceID); err != nil {
-		return fmt.Errorf("attach configuration set: %w", err)
-	}
-	if _, err := db.ExecContext(ctx, `
-		INSERT INTO workspace_configuration_sets (workspace_id, configuration_set_id, created_at)
-		VALUES (?, ?, ?)
-	`, workspaceID, configSetID, time.Now()); err != nil {
-		return fmt.Errorf("attach configuration set: %w", err)
-	}
-	return nil
+	// One transaction: a crash or error between delete and insert must not
+	// leave the workspace without any assignment (WI-1534).
+	return database.WithTx(db, func(tx database.Tx) error {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM workspace_configuration_sets WHERE workspace_id = ?`, workspaceID); err != nil {
+			return fmt.Errorf("attach configuration set: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO workspace_configuration_sets (workspace_id, configuration_set_id, created_at)
+			VALUES (?, ?, ?)
+		`, workspaceID, configSetID, time.Now()); err != nil {
+			return fmt.Errorf("attach configuration set: %w", err)
+		}
+		return nil
+	})
 }
 
 // requiredStatuses returns the manifest-declared statuses that must exist

@@ -147,18 +147,23 @@ func (s *WorkspaceBundleImportService) ImportWithOptions(ctx context.Context, ac
 			return nil, fmt.Errorf("embedded configuration set: %w", err)
 		}
 		// Attach: replace this workspace's assignment (delete + insert,
-		// matching SaveWorkspaceAssignments semantics) without a transaction
-		// wrapper — the config-set import has already committed. Scoping the
-		// delete to configuration_set_id would detach the set from every other
+		// matching SaveWorkspaceAssignments semantics) in one transaction —
+		// the config-set import has already committed. Scoping the delete to
+		// configuration_set_id would detach the set from every other
 		// workspace sharing it.
-		if _, err := s.db.ExecContext(ctx, `DELETE FROM workspace_configuration_sets WHERE workspace_id = ?`, workspaceID); err != nil {
-			return nil, fmt.Errorf("attach embedded configuration set: %w", err)
-		}
-		if _, err := s.db.ExecContext(ctx, `
-			INSERT INTO workspace_configuration_sets (workspace_id, configuration_set_id, created_at)
-			VALUES (?, ?, ?)
-		`, workspaceID, configSetID, time.Now()); err != nil {
-			return nil, fmt.Errorf("attach embedded configuration set: %w", err)
+		if err := database.WithTx(s.db, func(tx database.Tx) error {
+			if _, err := tx.ExecContext(ctx, `DELETE FROM workspace_configuration_sets WHERE workspace_id = ?`, workspaceID); err != nil {
+				return fmt.Errorf("attach embedded configuration set: %w", err)
+			}
+			if _, err := tx.ExecContext(ctx, `
+				INSERT INTO workspace_configuration_sets (workspace_id, configuration_set_id, created_at)
+				VALUES (?, ?, ?)
+			`, workspaceID, configSetID, time.Now()); err != nil {
+				return fmt.Errorf("attach embedded configuration set: %w", err)
+			}
+			return nil
+		}); err != nil {
+			return nil, err
 		}
 		if s.permissions != nil {
 			_ = s.permissions.OnConfigurationSetChanged(configSetID)
