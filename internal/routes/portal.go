@@ -89,6 +89,7 @@ func RegisterPortalRoutes(deps *Deps) {
 	api.HandleH("GET /portal-customers/{id}/submissions", customersPerm(http.HandlerFunc(deps.Portal.PortalCustomer.GetCustomerSubmissions)))
 	api.HandleH("PUT /portal-customers/{id}/organisation", customersPerm(http.HandlerFunc(deps.Portal.PortalCustomer.UpdatePortalCustomerOrganisation)))
 	api.HandleH("POST /portal-customers/{id}/erase", customersPerm(deps.AuthRateLimiter.Limit(http.HandlerFunc(deps.Portal.PortalCustomer.ErasePortalCustomer))))
+	api.HandleH("GET /portal-customers/{id}/export", customersPerm(deps.AuthRateLimiter.Limit(http.HandlerFunc(deps.Portal.PortalCustomer.ExportPortalCustomer))))
 	// Retained alias for erasure so legacy delete callers exercise the DSAR flow.
 	api.HandleH("DELETE /portal-customers/{id}", customersPerm(http.HandlerFunc(deps.Portal.PortalCustomer.DeletePortalCustomer)))
 

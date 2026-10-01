@@ -669,6 +669,45 @@ func (h *PortalCustomersHandler) DeletePortalCustomer(w http.ResponseWriter, r *
 	h.eraseCustomer(w, r, currentUser, id, services.CustomerErasureInput{RequestedBy: intake})
 }
 
+// ExportPortalCustomer serves the Article 15/20 data export for one customer
+// as a JSON download. The payload structure is pinned by the service's schema
+// version so repeated DSAR exports stay comparable.
+func (h *PortalCustomersHandler) ExportPortalCustomer(w http.ResponseWriter, r *http.Request) {
+	currentUser, ok := RequireAuth(w, r)
+	if !ok {
+		return
+	}
+
+	id, ok := requireIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	actor := services.NewAuditActorFromRequest(r, currentUser, nil, "")
+	export, err := services.ExportCustomerData(h.db, id, actor)
+	if err != nil {
+		if se, ok := err.(*services.ServiceError); ok {
+			handleServiceError(w, r, se)
+			return
+		}
+		slog.Error("failed to export portal customer data", slog.String("component", "portal"), slog.Int("customer_id", id), slog.Any("error", err))
+		respondInternalError(w, r, err)
+		return
+	}
+
+	payload, err := json.Marshal(export)
+	if err != nil {
+		respondInternalError(w, r, err)
+		return
+	}
+
+	filename := fmt.Sprintf("customer-data-export-%d.json", id)
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(payload)
+}
+
 // eraseCustomer runs the shared erasure execution and writes the response:
 // 201 with the DSAR evidence on success, 409 on repeat erasure, 404 for an
 // unknown customer, and mapped service errors otherwise.
