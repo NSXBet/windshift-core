@@ -756,6 +756,12 @@ func (s *Server) initialize() error {
 	teamService := services.NewTeamService(s.db, teamRepo, leaveRepo)
 	onCallService := services.NewOnCallService(s.db, onCallRepo, leaveRepo)
 	itemRepo := repository.NewItemRepository(s.db)
+	cannedResponseService := services.NewCannedResponseService(
+		repository.NewCannedResponseRepository(s.db),
+		repository.NewUserRepository(s.db),
+		itemRepo,
+		logger.NewAuditor(s.db),
+	)
 	incidentService := services.NewIncidentService(s.db, onCallRepo, itemRepo, onCallService, teamRepo, s.notificationService)
 	teamHandler := handlers.NewTeamHandler(teamRepo, leaveRepo, repository.NewSLARepository(s.db), permService, logger.NewAuditor(s.db))
 	leaveHandler := handlers.NewLeaveHandler(leaveRepo, repository.NewUserRepository(s.db), permService)
@@ -1907,6 +1913,7 @@ func (s *Server) initialize() error {
 		PageDiagrams:                 pageDiagramService,
 		PageAccess:                   pagePermissionService,
 		PageLabels:                   pageLabelService,
+		CannedResponses:              cannedResponseService,
 		PagePublication:              knowledgePublication,
 		Worklogs:                     timeWorklogService,
 		TimeAccess:                   timePermissionService,

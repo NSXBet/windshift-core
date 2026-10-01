@@ -5718,6 +5718,86 @@
         "format": "binary",
         "type": "string"
       },
+      "GetCannedResponsesResponseIdResult": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": false,
+            "properties": {
+              "body": {
+                "description": "The body value.",
+                "type": "string"
+              },
+              "created_at": {
+                "description": "The created at value.",
+                "format": "date-time",
+                "type": "string"
+              },
+              "created_by": {
+                "description": "The created by value.",
+                "nullable": true,
+                "type": "integer"
+              },
+              "id": {
+                "description": "The id value.",
+                "type": "integer"
+              },
+              "is_active": {
+                "description": "The is active value.",
+                "type": "boolean"
+              },
+              "is_private": {
+                "description": "The is private value.",
+                "type": "boolean"
+              },
+              "last_used_at": {
+                "description": "The last used at value.",
+                "format": "date-time",
+                "nullable": true,
+                "type": "string"
+              },
+              "name": {
+                "description": "The name value.",
+                "type": "string"
+              },
+              "updated_at": {
+                "description": "The updated at value.",
+                "format": "date-time",
+                "type": "string"
+              },
+              "updated_by": {
+                "description": "The updated by value.",
+                "nullable": true,
+                "type": "integer"
+              },
+              "used_count": {
+                "description": "The used count value.",
+                "type": "integer"
+              },
+              "workspace_id": {
+                "description": "The workspace id value.",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "body",
+              "created_at",
+              "id",
+              "is_active",
+              "is_private",
+              "name",
+              "updated_at",
+              "used_count",
+              "workspace_id"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
       "GetCollectionCategoriesCategoryIdResult": {
         "additionalProperties": false,
         "properties": {
@@ -33050,6 +33130,89 @@
         ],
         "type": "object"
       },
+      "GetWorkspacesWorkspaceIdCannedResponsesResult": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "body": {
+                  "description": "The body value.",
+                  "type": "string"
+                },
+                "created_at": {
+                  "description": "The created at value.",
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "created_by": {
+                  "description": "The created by value.",
+                  "nullable": true,
+                  "type": "integer"
+                },
+                "id": {
+                  "description": "The id value.",
+                  "type": "integer"
+                },
+                "is_active": {
+                  "description": "The is active value.",
+                  "type": "boolean"
+                },
+                "is_private": {
+                  "description": "The is private value.",
+                  "type": "boolean"
+                },
+                "last_used_at": {
+                  "description": "The last used at value.",
+                  "format": "date-time",
+                  "nullable": true,
+                  "type": "string"
+                },
+                "name": {
+                  "description": "The name value.",
+                  "type": "string"
+                },
+                "updated_at": {
+                  "description": "The updated at value.",
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "updated_by": {
+                  "description": "The updated by value.",
+                  "nullable": true,
+                  "type": "integer"
+                },
+                "used_count": {
+                  "description": "The used count value.",
+                  "type": "integer"
+                },
+                "workspace_id": {
+                  "description": "The workspace id value.",
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "body",
+                "created_at",
+                "id",
+                "is_active",
+                "is_private",
+                "name",
+                "updated_at",
+                "used_count",
+                "workspace_id"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
       "GetWorkspacesWorkspaceIdEffectiveConfigResult": {
         "additionalProperties": false,
         "properties": {
@@ -51657,6 +51820,112 @@
         ],
         "type": "object"
       },
+      "PatchCannedResponsesResponseIdPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "description": "The body value.",
+            "nullable": true,
+            "type": "string"
+          },
+          "is_active": {
+            "description": "The is active value.",
+            "nullable": true,
+            "type": "boolean"
+          },
+          "is_private": {
+            "description": "The is private value.",
+            "nullable": true,
+            "type": "boolean"
+          },
+          "name": {
+            "description": "The name value.",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PatchCannedResponsesResponseIdResult": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": false,
+            "properties": {
+              "body": {
+                "description": "The body value.",
+                "type": "string"
+              },
+              "created_at": {
+                "description": "The created at value.",
+                "format": "date-time",
+                "type": "string"
+              },
+              "created_by": {
+                "description": "The created by value.",
+                "nullable": true,
+                "type": "integer"
+              },
+              "id": {
+                "description": "The id value.",
+                "type": "integer"
+              },
+              "is_active": {
+                "description": "The is active value.",
+                "type": "boolean"
+              },
+              "is_private": {
+                "description": "The is private value.",
+                "type": "boolean"
+              },
+              "last_used_at": {
+                "description": "The last used at value.",
+                "format": "date-time",
+                "nullable": true,
+                "type": "string"
+              },
+              "name": {
+                "description": "The name value.",
+                "type": "string"
+              },
+              "updated_at": {
+                "description": "The updated at value.",
+                "format": "date-time",
+                "type": "string"
+              },
+              "updated_by": {
+                "description": "The updated by value.",
+                "nullable": true,
+                "type": "integer"
+              },
+              "used_count": {
+                "description": "The used count value.",
+                "type": "integer"
+              },
+              "workspace_id": {
+                "description": "The workspace id value.",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "body",
+              "created_at",
+              "id",
+              "is_active",
+              "is_private",
+              "name",
+              "updated_at",
+              "used_count",
+              "workspace_id"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
       "PatchCollectionCategoriesCategoryIdPayload": {
         "additionalProperties": false,
         "properties": {
@@ -63408,6 +63677,38 @@
               "type": "object"
             },
             "type": "array"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "PostCannedResponsesResponseIdPreviewPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "item_id": {
+            "description": "The item id value.",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "PostCannedResponsesResponseIdPreviewResult": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": false,
+            "properties": {
+              "rendered": {
+                "description": "The rendered value.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "rendered"
+            ],
+            "type": "object"
           }
         },
         "required": [
@@ -85793,6 +86094,109 @@
         ],
         "type": "object"
       },
+      "PostWorkspacesWorkspaceIdCannedResponsesPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "description": "The body value.",
+            "type": "string"
+          },
+          "is_private": {
+            "description": "The is private value.",
+            "type": "boolean"
+          },
+          "name": {
+            "description": "The name value.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "is_private",
+          "name"
+        ],
+        "type": "object"
+      },
+      "PostWorkspacesWorkspaceIdCannedResponsesResult": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": false,
+            "properties": {
+              "body": {
+                "description": "The body value.",
+                "type": "string"
+              },
+              "created_at": {
+                "description": "The created at value.",
+                "format": "date-time",
+                "type": "string"
+              },
+              "created_by": {
+                "description": "The created by value.",
+                "nullable": true,
+                "type": "integer"
+              },
+              "id": {
+                "description": "The id value.",
+                "type": "integer"
+              },
+              "is_active": {
+                "description": "The is active value.",
+                "type": "boolean"
+              },
+              "is_private": {
+                "description": "The is private value.",
+                "type": "boolean"
+              },
+              "last_used_at": {
+                "description": "The last used at value.",
+                "format": "date-time",
+                "nullable": true,
+                "type": "string"
+              },
+              "name": {
+                "description": "The name value.",
+                "type": "string"
+              },
+              "updated_at": {
+                "description": "The updated at value.",
+                "format": "date-time",
+                "type": "string"
+              },
+              "updated_by": {
+                "description": "The updated by value.",
+                "nullable": true,
+                "type": "integer"
+              },
+              "used_count": {
+                "description": "The used count value.",
+                "type": "integer"
+              },
+              "workspace_id": {
+                "description": "The workspace id value.",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "body",
+              "created_at",
+              "id",
+              "is_active",
+              "is_private",
+              "name",
+              "updated_at",
+              "used_count",
+              "workspace_id"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
       "PostWorkspacesWorkspaceIdImportPayload": {
         "additionalProperties": false,
         "properties": {
@@ -98611,6 +99015,264 @@
         "summary": "Get item attachment thumbnail",
         "tags": [
           "Work items"
+        ],
+        "x-required-scopes": [
+          "items:read"
+        ]
+      }
+    },
+    "/canned-responses/{response_id}": {
+      "delete": {
+        "description": "Delete canned response. The server verifies resource ownership and deletion preconditions before removing the resource.",
+        "operationId": "deleteCannedResponsesResponseId",
+        "parameters": [
+          {
+            "description": "The canned response identifier.",
+            "in": "path",
+            "name": "response_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Request completed successfully with no response body."
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationError"
+          },
+          "403": {
+            "$ref": "#/components/responses/PermissionError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimitError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Delete canned response",
+        "tags": [
+          "Workspace configuration"
+        ],
+        "x-required-scopes": [
+          "workspaces:write"
+        ]
+      },
+      "get": {
+        "description": "Get canned response. Results include only resources visible to the authenticated caller; collections use their documented stable order and bounds.",
+        "operationId": "getCannedResponsesResponseId",
+        "parameters": [
+          {
+            "description": "The canned response identifier.",
+            "in": "path",
+            "name": "response_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetCannedResponsesResponseIdResult"
+                }
+              }
+            },
+            "description": "Get canned response response."
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationError"
+          },
+          "403": {
+            "$ref": "#/components/responses/PermissionError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimitError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Get canned response",
+        "tags": [
+          "Workspace configuration"
+        ],
+        "x-required-scopes": [
+          "items:read"
+        ]
+      },
+      "patch": {
+        "description": "Update canned response. The operation uses JSON Merge Patch: omitted fields remain unchanged and documented nullable fields accept null. Unknown fields are rejected.",
+        "operationId": "patchCannedResponsesResponseId",
+        "parameters": [
+          {
+            "description": "The canned response identifier.",
+            "in": "path",
+            "name": "response_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/merge-patch+json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchCannedResponsesResponseIdPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PatchCannedResponsesResponseIdResult"
+                }
+              }
+            },
+            "description": "Update canned response response."
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationError"
+          },
+          "403": {
+            "$ref": "#/components/responses/PermissionError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "409": {
+            "$ref": "#/components/responses/ConflictError"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLargeError"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaTypeError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimitError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Update canned response",
+        "tags": [
+          "Workspace configuration"
+        ],
+        "x-required-scopes": [
+          "workspaces:write"
+        ]
+      }
+    },
+    "/canned-responses/{response_id}/preview": {
+      "post": {
+        "description": "Preview canned response. The server validates resource ownership and command preconditions before persisting changes. Unknown JSON fields are rejected when the operation accepts a body.",
+        "operationId": "postCannedResponsesResponseIdPreview",
+        "parameters": [
+          {
+            "description": "The canned response identifier.",
+            "in": "path",
+            "name": "response_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostCannedResponsesResponseIdPreviewPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostCannedResponsesResponseIdPreviewResult"
+                }
+              }
+            },
+            "description": "Preview canned response response."
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationError"
+          },
+          "403": {
+            "$ref": "#/components/responses/PermissionError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLargeError"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaTypeError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimitError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Preview canned response",
+        "tags": [
+          "Workspace configuration"
         ],
         "x-required-scopes": [
           "items:read"
@@ -115563,6 +116225,140 @@
         ],
         "x-required-scopes": [
           "collections:read"
+        ]
+      }
+    },
+    "/workspaces/{workspace_id}/canned-responses": {
+      "get": {
+        "description": "List canned responses. Results include only resources visible to the authenticated caller; collections use their documented stable order and bounds.",
+        "operationId": "getWorkspacesWorkspaceIdCannedResponses",
+        "parameters": [
+          {
+            "description": "The workspace identifier.",
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetWorkspacesWorkspaceIdCannedResponsesResult"
+                }
+              }
+            },
+            "description": "List canned responses response."
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationError"
+          },
+          "403": {
+            "$ref": "#/components/responses/PermissionError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimitError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "List canned responses",
+        "tags": [
+          "Workspace configuration"
+        ],
+        "x-required-scopes": [
+          "items:read"
+        ]
+      },
+      "post": {
+        "description": "Create canned response. The server validates resource ownership and command preconditions before persisting changes. Unknown JSON fields are rejected when the operation accepts a body.",
+        "operationId": "postWorkspacesWorkspaceIdCannedResponses",
+        "parameters": [
+          {
+            "description": "The workspace identifier.",
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostWorkspacesWorkspaceIdCannedResponsesPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostWorkspacesWorkspaceIdCannedResponsesResult"
+                }
+              }
+            },
+            "description": "Create canned response response."
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationError"
+          },
+          "403": {
+            "$ref": "#/components/responses/PermissionError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "409": {
+            "$ref": "#/components/responses/ConflictError"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLargeError"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaTypeError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimitError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Create canned response",
+        "tags": [
+          "Workspace configuration"
+        ],
+        "x-required-scopes": [
+          "workspaces:write"
         ]
       }
     },

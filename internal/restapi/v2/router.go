@@ -382,6 +382,15 @@ type pageLabelApplication interface {
 	RemoveFromPage(int, int) error
 }
 
+type cannedResponseApplication interface {
+	List(workspaceID int, includeArchived bool) ([]models.CannedResponse, error)
+	Get(workspaceID, id int) (*models.CannedResponse, error)
+	Create(workspaceID int, input services.CannedResponseInput, actors ...services.AuditActor) (*models.CannedResponse, error)
+	Update(workspaceID, id int, update services.CannedResponseUpdate, actors ...services.AuditActor) (*models.CannedResponse, error)
+	Delete(workspaceID, id int, actors ...services.AuditActor) (*models.CannedResponse, error)
+	RenderPreview(workspaceID, id, itemID int, actors ...services.AuditActor) (string, error)
+}
+
 type worklogApplication interface {
 	Create(int, services.WorklogMutationInput) (*services.WorklogMutationResult, error)
 	Update(int, int, services.WorklogMutationInput) (*services.WorklogMutationResult, error)
@@ -567,6 +576,7 @@ type Deps struct {
 	PageDiagrams                 pageDiagramApplication
 	PageAccess                   pageAccess
 	PageLabels                   pageLabelApplication
+	CannedResponses              cannedResponseApplication
 	PagePublication              *services.KnowledgePublicationService
 	Worklogs                     worklogApplication
 	TimeAccess                   timeAccess
@@ -685,6 +695,9 @@ func RegisterRoutes(deps Deps) error {
 	}
 	if deps.PageLabels == nil {
 		return errors.New("v2: PageLabels is required")
+	}
+	if deps.CannedResponses == nil {
+		return errors.New("v2: CannedResponses is required")
 	}
 	if deps.PagePublication == nil {
 		return errors.New("v2: PagePublication is required")
@@ -831,6 +844,7 @@ func buildRoutes(deps Deps) []route {
 	registerItemDiagramRoutes(&builder, deps)
 	registerPageDiagramRoutes(&builder, deps)
 	registerPageLabelRoutes(&builder, deps)
+	registerCannedResponseRoutes(&builder, deps)
 	registerWorklogRoutes(&builder, deps)
 	registerTimeRoutes(&builder, deps)
 	registerAdminRoutes(&builder, deps)

@@ -673,6 +673,11 @@ const (
 	ActionPageLabelUpdate = "page_label.update"
 	ActionPageLabelDelete = "page_label.delete"
 
+	// Canned response management (WI-1138, workspace-level reply snippets)
+	ActionCannedResponseCreate = "canned_response.create"
+	ActionCannedResponseUpdate = "canned_response.update"
+	ActionCannedResponseDelete = "canned_response.delete"
+
 	// Knowledge page lifecycle and ACL management.
 	ActionPageCreate           = "page.create"
 	ActionPageUpdate           = "page.update"
@@ -871,6 +876,7 @@ const (
 	ResourcePortalCustomer       = "portal_customer"
 	ResourceLabel                = "label"
 	ResourceItemTemplate         = "item_template"
+	ResourceCannedResponse       = "canned_response"
 	ResourcePage                 = "page"
 	ResourcePageLabel            = "page_label"
 	ResourceAsset                = "asset"
