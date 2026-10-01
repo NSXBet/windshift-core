@@ -483,6 +483,9 @@ func canonicalChangeField(field string, customFields cql.CustomFieldMap) (string
 	case "workspace", "workspace_id", "workspaceid":
 		return "workspace_id", true
 	case "labels", "components", "milestones", "links", "watchers", "comments":
+		// Collection-valued fields are not itemevents change facts yet, so
+		// they stay unextractable: metrics referencing them fall back to
+		// inputAll and evaluate every recorded fact (WI-1532).
 		return "", false
 	}
 	return "", false

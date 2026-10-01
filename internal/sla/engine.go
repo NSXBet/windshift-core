@@ -42,6 +42,7 @@ type Engine struct {
 	clock Clock
 	cache *configCache
 	nudge func(time.Time)
+	owner string
 
 	sideEffects    SideEffectEmitter
 	inlineObserver InlineObserver
@@ -430,6 +431,14 @@ func (e *Engine) completeCycle(ctx context.Context, tx database.Tx, config *comp
 				if err := e.appendLifecycle(ctx, tx, workspaceID, cycle, eventBreached, breachedAt); err != nil {
 					return err
 				}
+				// A completion that crosses the deadline records the first
+				// breach, so it must request the same notification/action
+				// side effects a due breach job would have delivered.
+				if e.sideEffects != nil {
+					if err := e.sideEffects.EmitBreach(ctx, tx, cycle); err != nil {
+						return err
+					}
+				}
 			}
 		}
 	} else {
@@ -512,7 +521,11 @@ func (e *Engine) reGoalCycle(ctx context.Context, tx database.Tx, config *compil
 }
 
 // applyTarget sets the cycle's goal, calendar, duration, remaining, and
-// deadline from a resolved target.
+// deadline from a resolved target. breached_at is first-breach history: a
+// re-goal that grants fresh headroom (or drops the goal entirely) never
+// erases it, so compliance counts and lifecycle events stay consistent. The
+// fresh chance is the newly armed deadline; a second breach appends its own
+// lifecycle event.
 func (e *Engine) applyTarget(cycle *models.ItemSLACycle, config *compiledConfig, target goalTarget, effective time.Time) {
 	if !target.matched || target.target == nil {
 		cycle.GoalID = nil
@@ -521,7 +534,6 @@ func (e *Engine) applyTarget(cycle *models.ItemSLACycle, config *compiledConfig,
 		cycle.RemainingMs = 0
 		cycle.NextDeadlineAt = nil
 		cycle.BreachTime = nil
-		cycle.BreachedAt = nil
 		cycle.CalendarSnapshot = defaultCalendarSnapshot()
 		cycle.WithinCalendarHours = false
 		cycle.GoalQuerySnapshot = target.query
@@ -538,9 +550,6 @@ func (e *Engine) applyTarget(cycle *models.ItemSLACycle, config *compiledConfig,
 			cycle.CalendarSnapshot = encoded
 		}
 		cycle.WithinCalendarHours = calendar.compiled.WithinCalendarHours(effective)
-	}
-	if cycle.ElapsedMs < cycle.GoalDurationMs {
-		cycle.BreachedAt = nil
 	}
 	e.armDeadline(config, cycle, effective)
 }

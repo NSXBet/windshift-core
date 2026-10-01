@@ -16,7 +16,7 @@
     if (!id) return;
     const generation = ++requestGeneration;
     loaded = false;
-    const [stateList, thresholdList] = await Promise.all([getItemSLA(id), getSLAThresholds(workspace)]);
+    const [stateList, thresholdList] = await Promise.all([getItemSLA(id, workspace), getSLAThresholds(workspace)]);
     if (generation !== requestGeneration) return;
     states = stateList ?? [];
     thresholds = thresholdList ?? [];

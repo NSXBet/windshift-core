@@ -1,7 +1,9 @@
 package v2
 
 import (
+	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -13,7 +15,77 @@ import (
 // the same workspace visibility check as item reads.
 func registerSLARoutes(builder *routeBuilder, deps Deps) {
 	builder.Read("/items/{item_id}/sla", AuthAuthenticated, []string{"items:read"}, itemSLA(deps))
+	builder.Read("/workspaces/{workspace_id}/items/sla", AuthAuthenticated, []string{"items:read"}, workspaceItemsSLA(deps))
 	builder.Read("/workspaces/{workspace_id}/sla/report", AuthAuthenticated, []string{"items:read"}, workspaceSLAReport(deps))
+}
+
+// maxBatchItemSLAIDs bounds one batch read so a single request cannot fan out
+// unbounded work.
+const batchItemSLAIDLimit = 200
+
+// workspaceItemsSLA returns SLA state for many items of one workspace in a
+// single request. The workspace visibility check and the workspace-scoped
+// item lookup keep the batch exactly as restrictive as per-item reads
+// (WI-1591).
+func workspaceItemsSLA(deps Deps) readOperation[map[int][]models.ItemSLA] {
+	return func(r *http.Request) (map[int][]models.ItemSLA, error) {
+		if deps.SLA == nil {
+			return nil, newError(http.StatusNotFound, "not_found", "Workspace was not found")
+		}
+		workspaceID, err := pathID(r, "workspace_id")
+		if err != nil {
+			return nil, err
+		}
+		user, err := principal(r)
+		if err != nil {
+			return nil, err
+		}
+		if err := requireWorkspace(deps.Access.CanViewWorkspace, user.ID, workspaceID); err != nil {
+			return nil, err
+		}
+		ids, err := queryItemIDs(r, "ids", batchItemSLAIDLimit)
+		if err != nil {
+			return nil, err
+		}
+		items, err := deps.Items.FindByIDsInWorkspace(r.Context(), workspaceID, ids)
+		if err != nil {
+			return nil, internalError(err)
+		}
+		itemIDs := make([]int, 0, len(items))
+		for _, item := range items {
+			itemIDs = append(itemIDs, item.ID)
+		}
+		states, err := deps.SLA.ItemsSLA(r.Context(), workspaceID, itemIDs)
+		if err != nil {
+			return nil, internalError(err)
+		}
+		return states, nil
+	}
+}
+
+// queryItemIDs parses a comma-separated id list parameter with a hard cap.
+func queryItemIDs(r *http.Request, name string, limit int) ([]int, error) {
+	raw := strings.TrimSpace(r.URL.Query().Get(name))
+	if raw == "" {
+		return nil, newError(http.StatusBadRequest, "invalid_input", name+" is required")
+	}
+	parts := strings.Split(raw, ",")
+	seen := make(map[int]bool, len(parts))
+	ids := make([]int, 0, len(parts))
+	for _, part := range parts {
+		value, err := strconv.Atoi(strings.TrimSpace(part))
+		if err != nil || value <= 0 {
+			return nil, newError(http.StatusBadRequest, "invalid_input", name+" must be positive integers")
+		}
+		if !seen[value] {
+			seen[value] = true
+			ids = append(ids, value)
+		}
+	}
+	if len(ids) > limit {
+		return nil, newError(http.StatusBadRequest, "invalid_input", fmt.Sprintf("%s accepts at most %d ids", name, limit))
+	}
+	return ids, nil
 }
 
 func itemSLA(deps Deps) readOperation[[]models.ItemSLA] {

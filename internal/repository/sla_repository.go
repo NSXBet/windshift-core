@@ -1311,6 +1311,33 @@ func (r *SLARepository) ListCyclesForItem(ctx context.Context, itemID int) ([]mo
 	return cycles, rows.Err()
 }
 
+// ListCyclesForItems loads the cycles of many items in one query, grouped by
+// item id. Items without cycles are absent from the map.
+func (r *SLARepository) ListCyclesForItems(ctx context.Context, itemIDs []int) (map[int][]models.ItemSLACycle, error) {
+	grouped := make(map[int][]models.ItemSLACycle, len(itemIDs))
+	if len(itemIDs) == 0 {
+		return grouped, nil
+	}
+	params := make([]any, 0, len(itemIDs))
+	for _, id := range itemIDs {
+		params = append(params, id)
+	}
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT `+cycleColumns+` FROM item_sla_cycles WHERE item_id IN (`+strings.TrimSuffix(strings.Repeat("?,", len(itemIDs)), ",")+") ORDER BY item_id, metric_id, cycle_no", params...)
+	if err != nil {
+		return nil, fmt.Errorf("list item cycles: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		cycle, err := scanCycle(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan cycle: %w", err)
+		}
+		grouped[cycle.ItemID] = append(grouped[cycle.ItemID], cycle)
+	}
+	return grouped, rows.Err()
+}
+
 // GetCycle loads one cycle.
 func (r *SLARepository) GetCycle(ctx context.Context, cycleID int64) (*models.ItemSLACycle, error) {
 	row := r.db.QueryRowContext(ctx, `SELECT `+cycleColumns+` FROM item_sla_cycles WHERE id = ?`, cycleID)
@@ -1494,7 +1521,9 @@ func (r *SLARepository) UpsertJob(ctx context.Context, tx database.Tx, job *mode
 	return nil
 }
 
-// DeleteJob removes a job by identity. Missing rows are not an error.
+// DeleteJob removes a job by identity. Missing rows are not an error. Used
+// by self-re-arming recalculation jobs; claimed deadline jobs must use
+// DeleteClaimedJob so a stale runner cannot retire a replacement.
 func (r *SLARepository) DeleteJob(ctx context.Context, tx database.Tx, kind, thresholdKey string, cycleID *int64, itemID, metricID *int) error {
 	_, err := tx.ExecContext(ctx, `DELETE FROM sla_jobs
 		WHERE kind = ? AND threshold_key = ?
@@ -1504,6 +1533,18 @@ func (r *SLARepository) DeleteJob(ctx context.Context, tx database.Tx, kind, thr
 		kind, thresholdKey, nullableInt64(cycleID), nullableInt(itemID), nullableInt(metricID))
 	if err != nil {
 		return fmt.Errorf("delete SLA job: %w", err)
+	}
+	return nil
+}
+
+// DeleteClaimedJob removes exactly the row this runner claimed: the delete
+// only applies while the runner still owns the lease. An inline re-arm that
+// upserted the subject clears lease_owner, so a stale claimed job whose
+// deadline was replaced can no longer delete the replacement (WI-1575).
+func (r *SLARepository) DeleteClaimedJob(ctx context.Context, tx database.Tx, job models.SLAJob, owner string) error {
+	_, err := tx.ExecContext(ctx, `DELETE FROM sla_jobs WHERE id = ? AND lease_owner = ?`, job.ID, owner)
+	if err != nil {
+		return fmt.Errorf("delete claimed SLA job: %w", err)
 	}
 	return nil
 }
@@ -1571,6 +1612,17 @@ func (r *SLARepository) RescheduleJob(ctx context.Context, jobID int64, dueAt ti
 	return nil
 }
 
+// RescheduleOwnedJob is the lease-fenced error path: an owner whose lease
+// expired and whose job was reclaimed or re-armed cannot reschedule the row.
+func (r *SLARepository) RescheduleOwnedJob(ctx context.Context, jobID int64, owner, lastError string, dueAt time.Time) error {
+	_, err := r.db.ExecContext(ctx, `UPDATE sla_jobs SET due_at = ?, lease_owner = NULL, last_error = ?
+		WHERE id = ? AND lease_owner = ? AND state = 'pending'`, dueAt, lastError, jobID, owner)
+	if err != nil {
+		return fmt.Errorf("reschedule owned SLA job: %w", err)
+	}
+	return nil
+}
+
 // FailJob parks a job in the failed state for diagnostics.
 func (r *SLARepository) FailJob(ctx context.Context, jobID int64, lastError string) error {
 	_, err := r.db.ExecContext(ctx, `UPDATE sla_jobs SET state = 'failed', lease_owner = NULL, last_error = ? WHERE id = ?`, lastError, jobID)
@@ -1578,6 +1630,46 @@ func (r *SLARepository) FailJob(ctx context.Context, jobID int64, lastError stri
 		return fmt.Errorf("fail SLA job: %w", err)
 	}
 	return nil
+}
+
+// FailOwnedJob is the lease-fenced failure path for claimed jobs.
+func (r *SLARepository) FailOwnedJob(ctx context.Context, jobID int64, owner, lastError string) error {
+	_, err := r.db.ExecContext(ctx, `UPDATE sla_jobs SET state = 'failed', lease_owner = NULL, last_error = ?
+		WHERE id = ? AND lease_owner = ? AND state = 'pending'`, lastError, jobID, owner)
+	if err != nil {
+		return fmt.Errorf("fail owned SLA job: %w", err)
+	}
+	return nil
+}
+
+// RenewJobsLease extends the lease of jobs this owner still holds and returns
+// the ids that were renewed. A job reclaimed by another owner or re-armed by
+// an inline evaluation is not renewed; the caller must drop it unrun.
+func (r *SLARepository) RenewJobsLease(ctx context.Context, jobIDs []int64, owner string, until time.Time) ([]int64, error) {
+	if len(jobIDs) == 0 {
+		return nil, nil
+	}
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(jobIDs)), ",")
+	args := make([]any, 0, len(jobIDs)+2)
+	args = append(args, until, owner)
+	for _, id := range jobIDs {
+		args = append(args, id)
+	}
+	rows, err := r.db.QueryContext(ctx, `UPDATE sla_jobs SET due_at = ?
+		WHERE lease_owner = ? AND state = 'pending' AND id IN (`+placeholders+`) RETURNING id`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("renew SLA leases: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var renewed []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan renewed SLA lease: %w", err)
+		}
+		renewed = append(renewed, id)
+	}
+	return renewed, rows.Err()
 }
 
 // ListFailedJobs returns parked jobs for diagnostics.

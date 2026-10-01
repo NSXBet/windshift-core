@@ -292,13 +292,14 @@ type labelApplication interface {
 	Update(services.AuditActor, int, services.LabelUpdate) (*models.Label, error)
 	Delete(services.AuditActor, int) error
 	ListForItem(int) ([]models.Label, error)
-	SetForItem(int, []int) ([]models.Label, error)
-	AddToItem(int, int) ([]models.Label, error)
-	RemoveFromItem(int, int) error
+	SetForItem(services.AuditActor, int, []int) ([]models.Label, error)
+	AddToItem(services.AuditActor, int, int) ([]models.Label, error)
+	RemoveFromItem(services.AuditActor, int, int) error
 }
 
 type itemReader interface {
 	FindByID(int) (*models.Item, error)
+	FindByIDsInWorkspace(ctx context.Context, workspaceID int, ids []int) ([]*models.Item, error)
 }
 
 type resourceAccess interface {
@@ -969,6 +970,9 @@ func applyParameterCorrections(route *Route) {
 		upsertParameter(route, ParameterMetadata{Name: "job_id", In: "path", Required: true, Description: "The import job identifier.", Schema: map[string]any{"type": "string"}})
 	case "GET /workspaces/{workspace_id}/tickets/export":
 		upsertParameter(route, ParameterMetadata{Name: "workspace_id", In: "path", Required: true, Description: "The workspace identifier.", Schema: map[string]any{"type": "integer", "minimum": 1}})
+	case "GET /workspaces/{workspace_id}/items/sla":
+		upsertParameter(route, ParameterMetadata{Name: "workspace_id", In: "path", Required: true, Description: "The workspace identifier.", Schema: map[string]any{"type": "integer", "minimum": 1}})
+		upsertParameter(route, ParameterMetadata{Name: "ids", In: "query", Required: true, Description: "Comma-separated item identifiers to read. At most 200 ids per request; ids outside the workspace are ignored.", Schema: map[string]any{"type": "string", "minLength": 1}})
 	case "POST /workspaces/{workspace_id}/actions/validate":
 		upsertParameter(route, ParameterMetadata{Name: "workspace_id", In: "path", Required: true, Description: "The workspace identifier.", Schema: map[string]any{"type": "integer", "minimum": 1}})
 	case "GET /items/changes":

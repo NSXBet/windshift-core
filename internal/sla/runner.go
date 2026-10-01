@@ -22,6 +22,21 @@ type SideEffectEmitter interface {
 // SetSideEffectEmitter installs the breach/warning side-effect emitter.
 func (e *Engine) SetSideEffectEmitter(emitter SideEffectEmitter) { e.sideEffects = emitter }
 
+// SetJobOwner records the due-work loop owner this engine runs under. Claimed
+// deadline jobs are then retired with a lease fence so a stale runner cannot
+// delete a job that an inline re-arm or another claim replaced.
+func (e *Engine) SetJobOwner(owner string) { e.owner = owner }
+
+// retireClaimedJob deletes the claimed job row while this runner still owns
+// its lease. Without a configured owner the delete falls back to the subject
+// identity (single-instance semantics).
+func (e *Engine) retireClaimedJob(ctx context.Context, tx database.Tx, job models.SLAJob) error {
+	if e.owner == "" {
+		return e.repo.DeleteJob(ctx, tx, job.Kind, job.ThresholdKey, job.CycleID, job.ItemID, job.MetricID)
+	}
+	return e.repo.DeleteClaimedJob(ctx, tx, job, e.owner)
+}
+
 // RunJob executes one claimed due-work job. A successful run must delete or
 // re-arm the job; the loop only reschedules on a returned error.
 func (e *Engine) RunJob(ctx context.Context, job models.SLAJob) error {
@@ -59,10 +74,12 @@ func (e *Engine) runBreachJob(ctx context.Context, job models.SLAJob) error {
 			return err
 		}
 		// The cycle moved on: inline evaluation already re-armed whatever is
-		// current, so retire this job.
-		if cycle.Status != models.SLACycleOngoing || cycle.BreachedAt != nil ||
+		// current, so retire this job. breached_at is first-breach history, not
+		// current state; an armed deadline under a re-goaled longer target is a
+		// live job, not a stale one.
+		if cycle.Status != models.SLACycleOngoing ||
 			cycle.NextDeadlineAt == nil || !cycle.NextDeadlineAt.Equal(*job.DeadlineAt) {
-			return e.repo.DeleteJob(ctx, tx, job.Kind, job.ThresholdKey, job.CycleID, job.ItemID, job.MetricID)
+			return e.retireClaimedJob(ctx, tx, job)
 		}
 		config, workspaceID, stoppedAt, stopped, err := e.stopPrecedesDeadline(ctx, tx, cycle, *job.DeadlineAt)
 		if err != nil {
@@ -72,7 +89,9 @@ func (e *Engine) runBreachJob(ctx context.Context, job models.SLAJob) error {
 			return e.completeCycle(ctx, tx, config, workspaceID, cycle, stoppedAt)
 		}
 		deadline := *job.DeadlineAt
-		cycle.BreachedAt = &deadline
+		if cycle.BreachedAt == nil || deadline.Before(*cycle.BreachedAt) {
+			cycle.BreachedAt = &deadline
+		}
 		cycle.NextDeadlineAt = nil
 		cycle.RemainingMs = cycle.GoalDurationMs - cycle.ElapsedMs
 		if err := e.repo.UpdateCycle(ctx, tx, cycle); err != nil {
@@ -90,7 +109,7 @@ func (e *Engine) runBreachJob(ctx context.Context, job models.SLAJob) error {
 				return err
 			}
 		}
-		return e.repo.DeleteJob(ctx, tx, job.Kind, job.ThresholdKey, job.CycleID, job.ItemID, job.MetricID)
+		return e.retireClaimedJob(ctx, tx, job)
 	})
 }
 
@@ -140,9 +159,9 @@ func (e *Engine) runWarningJob(ctx context.Context, job models.SLAJob) error {
 		if err != nil {
 			return err
 		}
-		if cycle.Status != models.SLACycleOngoing || cycle.BreachedAt != nil ||
+		if cycle.Status != models.SLACycleOngoing ||
 			cycle.NextDeadlineAt == nil || !cycle.NextDeadlineAt.Equal(*job.DeadlineAt) {
-			return e.repo.DeleteJob(ctx, tx, job.Kind, job.ThresholdKey, job.CycleID, job.ItemID, job.MetricID)
+			return e.retireClaimedJob(ctx, tx, job)
 		}
 		firedAt := e.clock.Now()
 		fired, err := e.repo.MarkThresholdFired(ctx, tx, cycle.ID, job.ThresholdKey, firedAt)
@@ -150,7 +169,7 @@ func (e *Engine) runWarningJob(ctx context.Context, job models.SLAJob) error {
 			return err
 		}
 		if !fired {
-			return e.repo.DeleteJob(ctx, tx, job.Kind, job.ThresholdKey, job.CycleID, job.ItemID, job.MetricID)
+			return e.retireClaimedJob(ctx, tx, job)
 		}
 		if err := e.appendLifecycle(ctx, tx, e.workspaceForItemTx(ctx, tx, cycle.ItemID), cycle, eventWarning, firedAt); err != nil {
 			return err
@@ -160,7 +179,7 @@ func (e *Engine) runWarningJob(ctx context.Context, job models.SLAJob) error {
 				return err
 			}
 		}
-		return e.repo.DeleteJob(ctx, tx, job.Kind, job.ThresholdKey, job.CycleID, job.ItemID, job.MetricID)
+		return e.retireClaimedJob(ctx, tx, job)
 	})
 }
 

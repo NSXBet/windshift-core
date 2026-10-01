@@ -52,8 +52,16 @@ func SystemTimerFactory(d time.Duration) Timer { return systemTimer{timer: time.
 type JobStore interface {
 	NextDueAt(ctx context.Context) (time.Time, bool, error)
 	ClaimDueJobs(ctx context.Context, now time.Time, lease time.Duration, owner string, limit int) ([]models.SLAJob, error)
+	// RenewJobsLease extends the lease of the given jobs and returns the ids
+	// this owner still holds; the rest were reclaimed or re-armed and must
+	// not run.
+	RenewJobsLease(ctx context.Context, jobIDs []int64, owner string, until time.Time) ([]int64, error)
 	RescheduleJob(ctx context.Context, jobID int64, dueAt time.Time, lastError string) error
 	FailJob(ctx context.Context, jobID int64, lastError string) error
+	// RescheduleOwnedJob and FailOwnedJob are the lease-fenced error paths
+	// for claimed jobs.
+	RescheduleOwnedJob(ctx context.Context, jobID int64, owner, lastError string, dueAt time.Time) error
+	FailOwnedJob(ctx context.Context, jobID int64, owner string, lastError string) error
 	HasConfiguration(ctx context.Context) (bool, error)
 }
 
@@ -145,6 +153,10 @@ func (l *Loop) Nudge(dueAt time.Time) {
 	default:
 	}
 }
+
+// Owner returns the lease owner string this loop claims jobs under, so the
+// engine can fence claimed-job retirement to its own claims.
+func (l *Loop) Owner() string { return l.config.Owner }
 
 func (l *Loop) isActive() bool {
 	l.mu.Lock()
@@ -238,16 +250,48 @@ func (l *Loop) Run(ctx context.Context) {
 	}
 }
 
-// RunOnce claims and runs one batch of due jobs.
+// RunOnce claims and runs one batch of due jobs. Every claimed job's lease
+// is renewed before it runs: a batch that waits behind slow siblings would
+// otherwise become reclaimable mid-batch, letting another instance run the
+// same job while this one still holds a stale claim.
 func (l *Loop) RunOnce(ctx context.Context) error {
 	now := l.clock.Now()
 	jobs, err := l.store.ClaimDueJobs(ctx, now, l.config.Lease, l.config.Owner, l.config.BatchSize)
 	if err != nil {
 		return fmt.Errorf("claim due jobs: %w", err)
 	}
+	owned := make(map[int64]bool, len(jobs))
 	for _, job := range jobs {
+		owned[job.ID] = true
+	}
+	for _, job := range jobs {
+		if !owned[job.ID] {
+			continue
+		}
+		// Renew everything this instance still expects to run, then drop the
+		// jobs whose lease was lost to another claim or an inline re-arm.
+		pending := make([]int64, 0, len(owned))
+		for _, candidate := range jobs {
+			if owned[candidate.ID] {
+				pending = append(pending, candidate.ID)
+			}
+		}
+		renewed, err := l.store.RenewJobsLease(ctx, pending, l.config.Owner, l.clock.Now().Add(l.config.Lease))
+		if err != nil {
+			return fmt.Errorf("renew job leases: %w", err)
+		}
+		stillOwned := make(map[int64]bool, len(renewed))
+		for _, id := range renewed {
+			stillOwned[id] = true
+		}
+		owned = stillOwned
+		if !owned[job.ID] {
+			continue
+		}
 		if err := l.runner.RunJob(ctx, job); err != nil {
 			l.handleJobError(ctx, job, err)
+		} else {
+			delete(owned, job.ID)
 		}
 	}
 	return nil
@@ -256,12 +300,12 @@ func (l *Loop) RunOnce(ctx context.Context) error {
 func (l *Loop) handleJobError(ctx context.Context, job models.SLAJob, runErr error) {
 	message := runErr.Error()
 	if job.Attempts >= l.config.MaxAttempts {
-		if err := l.store.FailJob(ctx, job.ID, message); err != nil {
+		if err := l.store.FailOwnedJob(ctx, job.ID, l.config.Owner, message); err != nil {
 			slog.Error("SLA loop failed to park job", slog.String("component", "sla"), slog.Int64("job_id", job.ID), slog.Any("error", err))
 		}
 		return
 	}
-	if err := l.store.RescheduleJob(ctx, job.ID, l.clock.Now().Add(Backoff(job.Attempts)), message); err != nil {
+	if err := l.store.RescheduleOwnedJob(ctx, job.ID, l.config.Owner, message, l.clock.Now().Add(Backoff(job.Attempts))); err != nil {
 		slog.Error("SLA loop failed to reschedule job", slog.String("component", "sla"), slog.Int64("job_id", job.ID), slog.Any("error", err))
 	}
 }

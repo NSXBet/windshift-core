@@ -1,9 +1,11 @@
 package handlers
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -81,6 +83,110 @@ func (h *SLAHandler) GetItemSLA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respondJSONOK(w, states)
+}
+
+// maxBatchItemSLAIDs bounds one batch read.
+const batchItemSLAIDLimit = 200
+
+// GetWorkspaceItemsSLA returns SLA state for many items of one workspace in a
+// single request, so list and board badges amortize the workspace-level
+// metric, threshold, and coverage loads instead of paying them per row
+// (WI-1591). Ids outside the workspace are ignored.
+func (h *SLAHandler) GetWorkspaceItemsSLA(w http.ResponseWriter, r *http.Request) {
+	user, ok := RequireAuth(w, r)
+	if !ok {
+		return
+	}
+	workspaceID, ok := requireIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+	if !RequireWorkspacePermission(w, r, user.ID, workspaceID, models.PermissionItemView, h.permissionService) {
+		return
+	}
+	ids, idErr := parseItemIDs(r)
+	if idErr != nil {
+		respondError(w, r, idErr)
+		return
+	}
+	// Restrict the batch to items actually in the workspace.
+	scoped, err := h.filterWorkspaceItemIDs(r.Context(), workspaceID, ids)
+	if err != nil {
+		respondError(w, r, slaInternal(err))
+		return
+	}
+	states, err := h.engine.ItemsSLA(r.Context(), workspaceID, scoped)
+	if err != nil {
+		respondError(w, r, slaInternal(err))
+		return
+	}
+	respondJSONOK(w, states)
+}
+
+// parseItemIDs reads the comma-separated ids query parameter.
+func parseItemIDs(r *http.Request) ([]int, *restapi.APIError) {
+	raw := strings.TrimSpace(r.URL.Query().Get("ids"))
+	if raw == "" {
+		return nil, slaInvalidInput("ids is required")
+	}
+	seen := make(map[int]bool)
+	ids := make([]int, 0)
+	for _, part := range strings.Split(raw, ",") {
+		value, err := strconv.Atoi(strings.TrimSpace(part))
+		if err != nil || value <= 0 {
+			return nil, slaInvalidInput("ids must be positive integers")
+		}
+		if !seen[value] {
+			seen[value] = true
+			ids = append(ids, value)
+		}
+	}
+	if len(ids) > batchItemSLAIDLimit {
+		return nil, slaInvalidInput(fmt.Sprintf("ids accepts at most %d values", batchItemSLAIDLimit))
+	}
+	return ids, nil
+}
+
+func slaInvalidInput(message string) *restapi.APIError {
+	return restapi.NewAPIError(http.StatusBadRequest, restapi.ErrCodeInvalidInput, message)
+}
+
+// filterWorkspaceItemIDs resolves which of the requested ids exist in the
+// workspace, preserving request order.
+func (h *SLAHandler) filterWorkspaceItemIDs(ctx context.Context, workspaceID int, ids []int) ([]int, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")
+	args := make([]any, 0, len(ids)+1)
+	args = append(args, workspaceID)
+	for _, id := range ids {
+		args = append(args, id)
+	}
+	rows, err := h.db.QueryContext(ctx,
+		`SELECT id FROM items WHERE workspace_id = ? AND id IN (`+placeholders+`)`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	present := make(map[int]bool, len(ids))
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		present[id] = true
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	out := make([]int, 0, len(ids))
+	for _, id := range ids {
+		if present[id] {
+			out = append(out, id)
+		}
+	}
+	return out, nil
 }
 
 // ---------------------------------------------------------------------------

@@ -11405,6 +11405,45 @@
         ]
       }
     },
+    "/workspaces/{workspace_id}/items/sla": {
+      "get": {
+        "description": "Get item SLA state in batch. Results include only resources visible to the authenticated caller; collections use their documented stable order and bounds.",
+        "parameters": [
+          {
+            "Name": "workspace_id",
+            "In": "path",
+            "Description": "The workspace identifier.",
+            "Required": true,
+            "Schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "Name": "ids",
+            "In": "query",
+            "Description": "Comma-separated item identifiers to read. At most 200 ids per request; ids outside the workspace are ignored.",
+            "Required": true,
+            "Schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "400": {},
+          "401": {},
+          "403": {},
+          "404": {},
+          "429": {},
+          "500": {}
+        },
+        "summary": "Get item SLA state in batch",
+        "tags": [
+          "Work items"
+        ]
+      }
+    },
     "/workspaces/{workspace_id}/iterations": {
       "get": {
         "description": "List workspace iterations. Results include only resources visible to the authenticated caller; collections use their documented stable order and bounds.",

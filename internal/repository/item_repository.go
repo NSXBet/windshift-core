@@ -222,6 +222,41 @@ func (r *ItemRepository) FindByIDsForUpdateContext(ctx context.Context, tx datab
 	return items, nil
 }
 
+// FindByIDsInWorkspace resolves the requested item ids that exist in the
+// given workspace, preserving the requested id order. Ids belonging to other
+// workspaces are silently dropped so batch reads stay workspace-scoped.
+func (r *ItemRepository) FindByIDsInWorkspace(ctx context.Context, workspaceID int, ids []int) ([]*models.Item, error) {
+	if len(ids) == 0 {
+		return []*models.Item{}, nil
+	}
+	placeholders, args := inPlaceholders(ids)
+	args = append([]any{workspaceID}, args...)
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT `+itemBaseColumns+` FROM items WHERE workspace_id = ? AND id IN (`+placeholders+`)`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("find items in workspace: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	byID := make(map[int]*models.Item, len(ids))
+	for rows.Next() {
+		item, scanErr := scanItemBase(rows)
+		if scanErr != nil {
+			return nil, fmt.Errorf("scan item: %w", scanErr)
+		}
+		byID[item.ID] = item
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate items: %w", err)
+	}
+	out := make([]*models.Item, 0, len(ids))
+	for _, id := range ids {
+		if item, ok := byID[id]; ok {
+			out = append(out, item)
+		}
+	}
+	return out, nil
+}
+
 // LockWorkspaceItemsTx prevents new foreign-key references from being added to
 // the workspace's current items while a destructive workspace operation runs.
 // The caller must lock the workspace row first so concurrent item creation is

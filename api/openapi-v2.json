@@ -9682,10 +9682,6 @@
                       "format": "date-time",
                       "type": "string"
                     },
-                    "dedup_key": {
-                      "description": "The dedup key value.",
-                      "type": "string"
-                    },
                     "escalation_policy_id": {
                       "description": "The escalation policy id value.",
                       "nullable": true,
@@ -11004,10 +11000,6 @@
                     "created_at": {
                       "description": "The created at value.",
                       "format": "date-time",
-                      "type": "string"
-                    },
-                    "dedup_key": {
-                      "description": "The dedup key value.",
                       "type": "string"
                     },
                     "escalation_policy_id": {
@@ -12458,10 +12450,6 @@
                       "format": "date-time",
                       "type": "string"
                     },
-                    "dedup_key": {
-                      "description": "The dedup key value.",
-                      "type": "string"
-                    },
                     "escalation_policy_id": {
                       "description": "The escalation policy id value.",
                       "nullable": true,
@@ -13647,10 +13635,6 @@
                       "format": "date-time",
                       "type": "string"
                     },
-                    "dedup_key": {
-                      "description": "The dedup key value.",
-                      "type": "string"
-                    },
                     "escalation_policy_id": {
                       "description": "The escalation policy id value.",
                       "nullable": true,
@@ -14667,10 +14651,6 @@
                         "created_at": {
                           "description": "The created at value.",
                           "format": "date-time",
-                          "type": "string"
-                        },
-                        "dedup_key": {
-                          "description": "The dedup key value.",
                           "type": "string"
                         },
                         "escalation_policy_id": {
@@ -15733,10 +15713,6 @@
                         "created_at": {
                           "description": "The created at value.",
                           "format": "date-time",
-                          "type": "string"
-                        },
-                        "dedup_key": {
-                          "description": "The dedup key value.",
                           "type": "string"
                         },
                         "escalation_policy_id": {
@@ -16856,10 +16832,6 @@
                       "created_at": {
                         "description": "The created at value.",
                         "format": "date-time",
-                        "type": "string"
-                      },
-                      "dedup_key": {
-                        "description": "The dedup key value.",
                         "type": "string"
                       },
                       "escalation_policy_id": {
@@ -19929,10 +19901,6 @@
                       "format": "date-time",
                       "type": "string"
                     },
-                    "dedup_key": {
-                      "description": "The dedup key value.",
-                      "type": "string"
-                    },
                     "escalation_policy_id": {
                       "description": "The escalation policy id value.",
                       "nullable": true,
@@ -21161,10 +21129,6 @@
                   "created_at": {
                     "description": "The created at value.",
                     "format": "date-time",
-                    "type": "string"
-                  },
-                  "dedup_key": {
-                    "description": "The dedup key value.",
                     "type": "string"
                   },
                   "escalation_policy_id": {
@@ -22889,10 +22853,6 @@
                       "format": "date-time",
                       "type": "string"
                     },
-                    "dedup_key": {
-                      "description": "The dedup key value.",
-                      "type": "string"
-                    },
                     "escalation_policy_id": {
                       "description": "The escalation policy id value.",
                       "nullable": true,
@@ -23934,10 +23894,6 @@
                     "created_at": {
                       "description": "The created at value.",
                       "format": "date-time",
-                      "type": "string"
-                    },
-                    "dedup_key": {
-                      "description": "The dedup key value.",
                       "type": "string"
                     },
                     "escalation_policy_id": {
@@ -34699,6 +34655,344 @@
         ],
         "type": "object"
       },
+      "GetWorkspacesWorkspaceIdItemsSlaResult": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "completed": {
+                    "description": "The completed value.",
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "breach_time": {
+                          "description": "The breach time value.",
+                          "format": "date-time",
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "breached": {
+                          "description": "The breached value.",
+                          "type": "boolean"
+                        },
+                        "calendar_timezone": {
+                          "description": "The calendar timezone value.",
+                          "type": "string"
+                        },
+                        "coverage": {
+                          "additionalProperties": false,
+                          "description": "The coverage value.",
+                          "nullable": true,
+                          "properties": {
+                            "discrepancy": {
+                              "description": "The discrepancy value.",
+                              "type": "string"
+                            },
+                            "note": {
+                              "description": "The note value.",
+                              "type": "string"
+                            },
+                            "overlap_weekly_ms": {
+                              "description": "The overlap weekly ms value.",
+                              "type": "integer"
+                            },
+                            "reference": {
+                              "description": "The reference value.",
+                              "type": "string"
+                            },
+                            "sla_outside_team_weekly_ms": {
+                              "description": "The sla outside team weekly ms value.",
+                              "type": "integer"
+                            },
+                            "sla_weekly_ms": {
+                              "description": "The sla weekly ms value.",
+                              "type": "integer"
+                            },
+                            "team_ids": {
+                              "description": "The team ids value.",
+                              "items": {
+                                "type": "integer"
+                              },
+                              "type": "array"
+                            },
+                            "team_outside_sla_weekly_ms": {
+                              "description": "The team outside sla weekly ms value.",
+                              "type": "integer"
+                            },
+                            "team_weekly_ms": {
+                              "description": "The team weekly ms value.",
+                              "type": "integer"
+                            },
+                            "within_team_service_hours": {
+                              "description": "The within team service hours value.",
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "reference",
+                            "within_team_service_hours"
+                          ],
+                          "type": "object"
+                        },
+                        "cycle_no": {
+                          "description": "The cycle no value.",
+                          "type": "integer"
+                        },
+                        "elapsed_ms": {
+                          "description": "The elapsed ms value.",
+                          "type": "integer"
+                        },
+                        "goal_duration_ms": {
+                          "description": "The goal duration ms value.",
+                          "type": "integer"
+                        },
+                        "goal_id": {
+                          "description": "The goal id value.",
+                          "nullable": true,
+                          "type": "integer"
+                        },
+                        "next_deadline_at": {
+                          "description": "The next deadline at value.",
+                          "format": "date-time",
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "pause_started_at": {
+                          "description": "The pause started at value.",
+                          "format": "date-time",
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "paused": {
+                          "description": "The paused value.",
+                          "type": "boolean"
+                        },
+                        "remaining_ms": {
+                          "description": "The remaining ms value.",
+                          "nullable": true,
+                          "type": "integer"
+                        },
+                        "started_at": {
+                          "description": "The started at value.",
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        "status": {
+                          "description": "The status value.",
+                          "type": "string"
+                        },
+                        "stopped_at": {
+                          "description": "The stopped at value.",
+                          "format": "date-time",
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "within_calendar_hours": {
+                          "description": "The within calendar hours value.",
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "breached",
+                        "cycle_no",
+                        "elapsed_ms",
+                        "goal_duration_ms",
+                        "paused",
+                        "started_at",
+                        "status",
+                        "within_calendar_hours"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "display_format": {
+                    "description": "The display format value.",
+                    "type": "string"
+                  },
+                  "item_id": {
+                    "description": "The item id value.",
+                    "type": "integer"
+                  },
+                  "metric_id": {
+                    "description": "The metric id value.",
+                    "type": "integer"
+                  },
+                  "metric_name": {
+                    "description": "The metric name value.",
+                    "type": "string"
+                  },
+                  "ongoing": {
+                    "additionalProperties": false,
+                    "description": "The ongoing value.",
+                    "nullable": true,
+                    "properties": {
+                      "breach_time": {
+                        "description": "The breach time value.",
+                        "format": "date-time",
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "breached": {
+                        "description": "The breached value.",
+                        "type": "boolean"
+                      },
+                      "calendar_timezone": {
+                        "description": "The calendar timezone value.",
+                        "type": "string"
+                      },
+                      "coverage": {
+                        "additionalProperties": false,
+                        "description": "The coverage value.",
+                        "nullable": true,
+                        "properties": {
+                          "discrepancy": {
+                            "description": "The discrepancy value.",
+                            "type": "string"
+                          },
+                          "note": {
+                            "description": "The note value.",
+                            "type": "string"
+                          },
+                          "overlap_weekly_ms": {
+                            "description": "The overlap weekly ms value.",
+                            "type": "integer"
+                          },
+                          "reference": {
+                            "description": "The reference value.",
+                            "type": "string"
+                          },
+                          "sla_outside_team_weekly_ms": {
+                            "description": "The sla outside team weekly ms value.",
+                            "type": "integer"
+                          },
+                          "sla_weekly_ms": {
+                            "description": "The sla weekly ms value.",
+                            "type": "integer"
+                          },
+                          "team_ids": {
+                            "description": "The team ids value.",
+                            "items": {
+                              "type": "integer"
+                            },
+                            "type": "array"
+                          },
+                          "team_outside_sla_weekly_ms": {
+                            "description": "The team outside sla weekly ms value.",
+                            "type": "integer"
+                          },
+                          "team_weekly_ms": {
+                            "description": "The team weekly ms value.",
+                            "type": "integer"
+                          },
+                          "within_team_service_hours": {
+                            "description": "The within team service hours value.",
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "reference",
+                          "within_team_service_hours"
+                        ],
+                        "type": "object"
+                      },
+                      "cycle_no": {
+                        "description": "The cycle no value.",
+                        "type": "integer"
+                      },
+                      "elapsed_ms": {
+                        "description": "The elapsed ms value.",
+                        "type": "integer"
+                      },
+                      "goal_duration_ms": {
+                        "description": "The goal duration ms value.",
+                        "type": "integer"
+                      },
+                      "goal_id": {
+                        "description": "The goal id value.",
+                        "nullable": true,
+                        "type": "integer"
+                      },
+                      "next_deadline_at": {
+                        "description": "The next deadline at value.",
+                        "format": "date-time",
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "pause_started_at": {
+                        "description": "The pause started at value.",
+                        "format": "date-time",
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "paused": {
+                        "description": "The paused value.",
+                        "type": "boolean"
+                      },
+                      "remaining_ms": {
+                        "description": "The remaining ms value.",
+                        "nullable": true,
+                        "type": "integer"
+                      },
+                      "started_at": {
+                        "description": "The started at value.",
+                        "format": "date-time",
+                        "type": "string"
+                      },
+                      "status": {
+                        "description": "The status value.",
+                        "type": "string"
+                      },
+                      "stopped_at": {
+                        "description": "The stopped at value.",
+                        "format": "date-time",
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "within_calendar_hours": {
+                        "description": "The within calendar hours value.",
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "breached",
+                      "cycle_no",
+                      "elapsed_ms",
+                      "goal_duration_ms",
+                      "paused",
+                      "started_at",
+                      "status",
+                      "within_calendar_hours"
+                    ],
+                    "type": "object"
+                  },
+                  "recalculating": {
+                    "description": "The recalculating value.",
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "display_format",
+                  "item_id",
+                  "metric_id",
+                  "metric_name",
+                  "recalculating"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
       "GetWorkspacesWorkspaceIdIterationsIterationIdResult": {
         "additionalProperties": false,
         "properties": {
@@ -40568,10 +40862,6 @@
                       "format": "date-time",
                       "type": "string"
                     },
-                    "dedup_key": {
-                      "description": "The dedup key value.",
-                      "type": "string"
-                    },
                     "escalation_policy_id": {
                       "description": "The escalation policy id value.",
                       "nullable": true,
@@ -43152,10 +43442,6 @@
                           "format": "date-time",
                           "type": "string"
                         },
-                        "dedup_key": {
-                          "description": "The dedup key value.",
-                          "type": "string"
-                        },
                         "escalation_policy_id": {
                           "description": "The escalation policy id value.",
                           "nullable": true,
@@ -44216,10 +44502,6 @@
                         "created_at": {
                           "description": "The created at value.",
                           "format": "date-time",
-                          "type": "string"
-                        },
-                        "dedup_key": {
-                          "description": "The dedup key value.",
                           "type": "string"
                         },
                         "escalation_policy_id": {
@@ -45339,10 +45621,6 @@
                       "created_at": {
                         "description": "The created at value.",
                         "format": "date-time",
-                        "type": "string"
-                      },
-                      "dedup_key": {
-                        "description": "The dedup key value.",
                         "type": "string"
                       },
                       "escalation_policy_id": {
@@ -47524,10 +47802,6 @@
                   "created_at": {
                     "description": "The created at value.",
                     "format": "date-time",
-                    "type": "string"
-                  },
-                  "dedup_key": {
-                    "description": "The dedup key value.",
                     "type": "string"
                   },
                   "escalation_policy_id": {
@@ -52857,10 +53131,6 @@
                     "format": "date-time",
                     "type": "string"
                   },
-                  "dedup_key": {
-                    "description": "The dedup key value.",
-                    "type": "string"
-                  },
                   "escalation_policy_id": {
                     "description": "The escalation policy id value.",
                     "nullable": true,
@@ -54081,10 +54351,6 @@
                   "created_at": {
                     "description": "The created at value.",
                     "format": "date-time",
-                    "type": "string"
-                  },
-                  "dedup_key": {
-                    "description": "The dedup key value.",
                     "type": "string"
                   },
                   "escalation_policy_id": {
@@ -68453,10 +68719,6 @@
                             "format": "date-time",
                             "type": "string"
                           },
-                          "dedup_key": {
-                            "description": "The dedup key value.",
-                            "type": "string"
-                          },
                           "escalation_policy_id": {
                             "description": "The escalation policy id value.",
                             "nullable": true,
@@ -69498,10 +69760,6 @@
                     "created_at": {
                       "description": "The created at value.",
                       "format": "date-time",
-                      "type": "string"
-                    },
-                    "dedup_key": {
-                      "description": "The dedup key value.",
                       "type": "string"
                     },
                     "escalation_policy_id": {
@@ -70559,10 +70817,6 @@
                         "created_at": {
                           "description": "The created at value.",
                           "format": "date-time",
-                          "type": "string"
-                        },
-                        "dedup_key": {
-                          "description": "The dedup key value.",
                           "type": "string"
                         },
                         "escalation_policy_id": {
@@ -71632,10 +71886,6 @@
                         "created_at": {
                           "description": "The created at value.",
                           "format": "date-time",
-                          "type": "string"
-                        },
-                        "dedup_key": {
-                          "description": "The dedup key value.",
                           "type": "string"
                         },
                         "escalation_policy_id": {
@@ -72808,10 +73058,6 @@
                     "format": "date-time",
                     "type": "string"
                   },
-                  "dedup_key": {
-                    "description": "The dedup key value.",
-                    "type": "string"
-                  },
                   "escalation_policy_id": {
                     "description": "The escalation policy id value.",
                     "nullable": true,
@@ -73928,10 +74174,6 @@
                   "created_at": {
                     "description": "The created at value.",
                     "format": "date-time",
-                    "type": "string"
-                  },
-                  "dedup_key": {
-                    "description": "The dedup key value.",
                     "type": "string"
                   },
                   "escalation_policy_id": {
@@ -75474,10 +75716,6 @@
                       "created_at": {
                         "description": "The created at value.",
                         "format": "date-time",
-                        "type": "string"
-                      },
-                      "dedup_key": {
-                        "description": "The dedup key value.",
                         "type": "string"
                       },
                       "escalation_policy_id": {
@@ -77096,10 +77334,6 @@
                         "format": "date-time",
                         "type": "string"
                       },
-                      "dedup_key": {
-                        "description": "The dedup key value.",
-                        "type": "string"
-                      },
                       "escalation_policy_id": {
                         "description": "The escalation policy id value.",
                         "nullable": true,
@@ -78267,10 +78501,6 @@
                     "format": "date-time",
                     "type": "string"
                   },
-                  "dedup_key": {
-                    "description": "The dedup key value.",
-                    "type": "string"
-                  },
                   "escalation_policy_id": {
                     "description": "The escalation policy id value.",
                     "nullable": true,
@@ -79380,10 +79610,6 @@
                         "created_at": {
                           "description": "The created at value.",
                           "format": "date-time",
-                          "type": "string"
-                        },
-                        "dedup_key": {
-                          "description": "The dedup key value.",
                           "type": "string"
                         },
                         "escalation_policy_id": {
@@ -115940,6 +116166,76 @@
         ],
         "x-required-scopes": [
           "workspaces:read"
+        ]
+      }
+    },
+    "/workspaces/{workspace_id}/items/sla": {
+      "get": {
+        "description": "Get item SLA state in batch. Results include only resources visible to the authenticated caller; collections use their documented stable order and bounds.",
+        "operationId": "getWorkspacesWorkspaceIdItemsSla",
+        "parameters": [
+          {
+            "description": "The workspace identifier.",
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Comma-separated item identifiers to read. At most 200 ids per request; ids outside the workspace are ignored.",
+            "in": "query",
+            "name": "ids",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetWorkspacesWorkspaceIdItemsSlaResult"
+                }
+              }
+            },
+            "description": "Get item SLA state in batch response."
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationError"
+          },
+          "403": {
+            "$ref": "#/components/responses/PermissionError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimitError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Get item SLA state in batch",
+        "tags": [
+          "Work items"
+        ],
+        "x-required-scopes": [
+          "items:read"
         ]
       }
     },
