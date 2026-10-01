@@ -516,8 +516,9 @@ func (h *PortalCustomersHandler) UpdatePortalCustomerOrganisation(w http.Respons
 	}
 
 	//nolint:misspell // British spelling used in database (customer_organisation_id)
-	// Update the customer organisation assignment
-	query := `UPDATE portal_customers SET customer_organisation_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+	// Update the customer organisation assignment. Erased tombstones are
+	// immutable: a re-identification write must not resurrect them.
+	query := `UPDATE portal_customers SET customer_organisation_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND erased_at IS NULL`
 	if !h.execCustomerWrite(w, r, query, requestData.CustomerOrganisationID, customerID) {
 		return
 	}
@@ -551,7 +552,7 @@ func (h *PortalCustomersHandler) UpdatePortalCustomer(w http.ResponseWriter, r *
 		query := `
 			UPDATE portal_customers
 			SET name = ?, email = ?, phone = ?, customer_organisation_id = ?, is_primary = ?, custom_field_values = ?, updated_at = CURRENT_TIMESTAMP
-			WHERE id = ?
+			WHERE id = ? AND erased_at IS NULL
 		`
 		result, err := tx.Exec(query, input.Name, input.Email, input.Phone, input.CustomerOrganisationID, input.IsPrimary, input.CustomFieldValuesJSON, customerID)
 		if err != nil {
@@ -820,8 +821,13 @@ func (h *PortalCustomersHandler) ActivatePortalCustomer(w http.ResponseWriter, r
 		return
 	}
 
-	if _, err := h.db.ExecWrite(`UPDATE portal_customers SET deactivated_at = NULL, updated_at = ? WHERE id = ?`, time.Now(), id); err != nil {
+	res, err := h.db.ExecWrite(`UPDATE portal_customers SET deactivated_at = NULL, updated_at = ? WHERE id = ? AND erased_at IS NULL`, time.Now(), id)
+	if err != nil {
 		respondInternalError(w, r, err)
+		return
+	}
+	if affected, _ := res.RowsAffected(); affected == 0 {
+		respondConflict(w, r, "Portal customer has been erased and cannot be reactivated")
 		return
 	}
 

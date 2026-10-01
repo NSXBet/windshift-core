@@ -36,6 +36,7 @@ let decidingApproval = $state(false);
 
 let requestsLoadId = 0;
 let commentsLoadId = 0;
+let attachmentsLoadId = 0;
 let draftsLoadId = 0;
 let approvalsLoadId = 0;
 let approvalDetailLoadId = 0;
@@ -92,29 +93,35 @@ async function loadComments(itemId) {
 async function loadAttachments(itemId) {
   const slug = context.getSlug();
   if (!slug) return;
+  const loadId = ++attachmentsLoadId;
   try {
     const result = await api.portal.getRequestAttachments(slug, itemId);
-    attachments = result || [];
+    if (loadId === attachmentsLoadId) attachments = result || [];
   } catch (err) {
     // Attachments stay empty on failure; the timeline must still render.
     console.error('Failed to load attachments:', err);
-    attachments = [];
+    if (loadId === attachmentsLoadId) attachments = [];
   }
 }
 
 async function addAttachment(file) {
   const slug = context.getSlug();
   if (!file || !selectedRequest || !slug) return;
+  const requestId = selectedRequest.id;
   try {
     uploadingAttachment = true;
-    const result = await api.portal.addRequestAttachment(slug, selectedRequest.id, file);
+    const result = await api.portal.addRequestAttachment(slug, requestId, file);
     // The upload endpoint answers with an AttachmentUploadResponse wrapper;
     // list entries are bare attachment objects.
     const attachment = result?.attachment ?? result;
-    attachments = [...attachments, attachment];
+    if (selectedRequest?.id === requestId) {
+      attachments = [...attachments, attachment];
+    }
   } catch (err) {
     console.error('Failed to upload attachment:', err);
-    errorToast(err?.message || 'Failed to upload file. Please try again.');
+    if (selectedRequest?.id === requestId) {
+      errorToast(err?.message || 'Failed to upload file. Please try again.');
+    }
   } finally {
     uploadingAttachment = false;
   }
@@ -155,6 +162,7 @@ async function addComment() {
 }
 
 function closeRequestDetail() {
+  attachmentsLoadId += 1;
   selectedRequest = null;
   comments = [];
   newComment = '';

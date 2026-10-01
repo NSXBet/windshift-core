@@ -223,7 +223,7 @@ func (p *Processor) senderIsRateLimited(ctx context.Context, channelID int, conf
 	err := p.db.QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM email_message_tracking
 		WHERE channel_id = ? AND LOWER(from_email) = ? AND direction = 'inbound'
-		  AND item_id IS NOT NULL AND processed_at > ?
+		  AND item_id IS NOT NULL AND comment_id IS NULL AND processed_at > ?
 	`, channelID, strings.ToLower(senderEmail), time.Now().Add(-emailRateLimitWindow)).Scan(&recent)
 	if err != nil {
 		slog.Warn("failed to count recent sender tickets; skipping rate limit",

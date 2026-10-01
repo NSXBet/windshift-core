@@ -98,6 +98,15 @@ func (s *ItemLifecycleService) Merge(ctx context.Context, input ItemMergeInput) 
 	if err := s.requireEdit(input.ActorUserID, target.WorkspaceID); err != nil {
 		return nil, err
 	}
+	var targetMergedInto *int
+	if err := s.db.QueryRowContext(ctx,
+		`SELECT merged_into_item_id FROM items WHERE id = ?`, target.ID,
+	).Scan(&targetMergedInto); err != nil {
+		return nil, fmt.Errorf("load merge state for target %d: %w", target.ID, err)
+	}
+	if targetMergedInto != nil {
+		return nil, fmt.Errorf("%w: the canonical ticket is itself a merged duplicate", ErrItemMergeConflict)
+	}
 
 	// Stable source order, no duplicates within the request.
 	seen := make(map[int]bool, len(input.SourceItemIDs))
@@ -194,7 +203,7 @@ func (s *ItemLifecycleService) Merge(ctx context.Context, input ItemMergeInput) 
 				return fmt.Errorf("move comments from item %d: %w", plan.item.ID, err)
 			}
 			out.CommentsPrivate = !plan.sameRequester && movedComments > 0
-			res, err := tx.Exec(`UPDATE attachments SET item_id = ? WHERE item_id = ?`, target.ID, plan.item.ID)
+			res, err := tx.Exec(`UPDATE attachments SET item_id = ? WHERE item_id = ? AND COALESCE(entity_type, 'item') = 'item'`, target.ID, plan.item.ID)
 			if err != nil {
 				return fmt.Errorf("move attachments from item %d: %w", plan.item.ID, err)
 			}
@@ -355,6 +364,7 @@ func (s *ItemLifecycleService) Split(ctx context.Context, input ItemSplitInput) 
 			AssigneeID:              input.AssigneeID,
 			CreatorID:               &input.ActorUserID,
 			CreatorPortalCustomerID: input.PortalCustomerID,
+			ChannelID:               source.ChannelID,
 		})
 		if err != nil {
 			return 0, err
@@ -392,7 +402,7 @@ func (s *ItemLifecycleService) Split(ctx context.Context, input ItemSplitInput) 
 		}
 		if len(input.AttachmentIDs) > 0 {
 			query := fmt.Sprintf(`
-				UPDATE attachments SET item_id = ? WHERE item_id = ? AND id IN (%s)
+				UPDATE attachments SET item_id = ? WHERE item_id = ? AND COALESCE(entity_type, 'item') = 'item' AND id IN (%s)
 			`, placeholderList(input.AttachmentIDs))
 			args := append([]any{newChildID, source.ID}, intSliceToAny(input.AttachmentIDs)...)
 			res, err := tx.Exec(query, args...)

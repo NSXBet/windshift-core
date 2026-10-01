@@ -270,3 +270,6 @@ CREATE TABLE IF NOT EXISTS item_import_rows (
 	FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
 	FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE
 );
+
+CREATE INDEX IF NOT EXISTS idx_item_import_rows_job_id ON item_import_rows(job_id);
+CREATE INDEX IF NOT EXISTS idx_item_import_rows_item_id ON item_import_rows(item_id);

@@ -22,6 +22,7 @@ import { fetchV2Data } from '../../api/core.js';
   let items = $state([]);
   let loadingItems = $state(false);
   let itemsTruncated = $state(false);
+  let itemsLoadId = 0;
 
   // Bulk selection state.
   let selectedIds = $state(new Set());
@@ -91,6 +92,7 @@ import { fetchV2Data } from '../../api/core.js';
       items = [];
       return;
     }
+    const loadId = ++itemsLoadId;
     loadingItems = true;
     try {
       const query = new URLSearchParams({
@@ -100,13 +102,19 @@ import { fetchV2Data } from '../../api/core.js';
         page_size: String(QUEUE_PAGE_SIZE),
         sort: '-updated_at',
       });
-      items = (await fetchV2Data(`/items?${query.toString()}`)) ?? [];
+      const result = (await fetchV2Data(`/items?${query.toString()}`)) ?? [];
+      if (loadId !== itemsLoadId) return;
+      items = result;
       itemsTruncated = activeQueueCount > items.length;
+      selectedIds = new Set(
+        [...selectedIds].filter((id) => items.some((item) => item.id === id))
+      );
     } catch (error) {
+      if (loadId !== itemsLoadId) return;
       items = [];
       errorToast(t('supportQueue.loadFailed'));
     } finally {
-      loadingItems = false;
+      if (loadId === itemsLoadId) loadingItems = false;
     }
   }
 

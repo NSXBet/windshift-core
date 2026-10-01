@@ -208,7 +208,26 @@ func (s *SLAMetricService) build(ctx context.Context, workspaceID int, input SLA
 	if err := s.validateTargets(ctx, workspaceID, metric.Goals); err != nil {
 		return nil, err
 	}
+	if err := validateNativeGoalQueries(metric.Goals); err != nil {
+		return nil, err
+	}
 	return metric, nil
+}
+
+// validateNativeGoalQueries compiles every native goal's QL before the metric
+// is persisted. Imported goals keep their original queries (validated through
+// the import path) and are skipped here.
+func validateNativeGoalQueries(goals []models.SLAGoal) error {
+	for i := range goals {
+		status := goals[i].ImportStatus
+		if status != "" && !strings.EqualFold(status, "native") {
+			continue
+		}
+		if err := sla.ValidateGoalQuery(goals[i].QLQuery); err != nil {
+			return fmt.Errorf("%w: goal %d: %v", ErrSLAMetricInvalid, i, err)
+		}
+	}
+	return nil
 }
 
 func validateSLAConditions(conditions []models.SLACondition) error {

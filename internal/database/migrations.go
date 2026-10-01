@@ -1930,6 +1930,34 @@ var Catalog = []Migration{
 		SQLite:   `ALTER TABLE portal_customers ADD COLUMN created_via TEXT NOT NULL DEFAULT 'unknown'`,
 		Postgres: `ALTER TABLE portal_customers ADD COLUMN IF NOT EXISTS created_via TEXT NOT NULL DEFAULT 'unknown'`,
 	},
+	{
+		Version:       "20261006_item_import_rows_lookup_indexes",
+		Name:          "Index ticket import mapping by job and item (WI-1596)",
+		CheckSQLite:   sqliteIndexCheck("idx_item_import_rows_job_id"),
+		CheckPostgres: pgIndexCheck("idx_item_import_rows_job_id"),
+		SQLite: `
+			CREATE INDEX IF NOT EXISTS idx_item_import_rows_job_id ON item_import_rows(job_id);
+			CREATE INDEX IF NOT EXISTS idx_item_import_rows_item_id ON item_import_rows(item_id);
+		`,
+		Postgres: `
+			CREATE INDEX IF NOT EXISTS idx_item_import_rows_job_id ON item_import_rows(job_id);
+			CREATE INDEX IF NOT EXISTS idx_item_import_rows_item_id ON item_import_rows(item_id);
+		`,
+	},
+	{
+		Version:       "20261006_email_tracking_sender_indexes",
+		Name:          "Index email sender lookups by channel and normalized address (WI-1597)",
+		CheckSQLite:   sqliteIndexCheck("idx_email_message_tracking_sender"),
+		CheckPostgres: pgIndexCheck("idx_email_message_tracking_sender"),
+		SQLite: `
+			CREATE INDEX IF NOT EXISTS idx_email_message_tracking_sender ON email_message_tracking(from_email);
+			CREATE INDEX IF NOT EXISTS idx_email_message_tracking_channel_sender_time ON email_message_tracking(channel_id, LOWER(from_email), processed_at);
+		`,
+		Postgres: `
+			CREATE INDEX IF NOT EXISTS idx_email_message_tracking_sender ON email_message_tracking(from_email);
+			CREATE INDEX IF NOT EXISTS idx_email_message_tracking_channel_sender_time ON email_message_tracking(channel_id, LOWER(from_email), processed_at);
+		`,
+	},
 }
 
 func applySQLitePersonalLabelsPerUserUnique(db Database) (retErr error) {

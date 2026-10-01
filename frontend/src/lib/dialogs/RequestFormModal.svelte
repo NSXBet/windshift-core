@@ -256,6 +256,7 @@
     currentStep = steps[0] || 1;
     resumedDraft = null;
     error = null;
+    applyPrefill(prefill);
   }
 
   function validateCurrentStep() {

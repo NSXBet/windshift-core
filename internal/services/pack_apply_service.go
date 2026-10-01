@@ -212,6 +212,10 @@ func (s *PackApplyService) applyWorkspaceStages(ctx context.Context, req PackApp
 		if err != nil {
 			return s.failReport(report, PackStageContent, err.Error())
 		}
+		if failed := failedContentOutcomeDetails(result.Outcomes); len(failed) > 0 {
+			return s.failReport(report, PackStageContent,
+				fmt.Sprintf("content bundle reported %d failed entity(ies): %s", len(failed), strings.Join(failed, "; ")))
+		}
 		s.appendStage(report, PackStageContent, PackStageStatusOK,
 			fmt.Sprintf("pages %d, items %d, links %d", result.PagesImported, result.ItemsImported, result.ItemLinksImported))
 	} else {
@@ -244,6 +248,29 @@ func (s *PackApplyService) failReport(report *PackApplyReport, stage, detail str
 	s.appendStage(report, stage, PackStageStatusFailed, detail)
 	report.Status = PackApplyStatusFailed
 	return report, nil
+}
+
+// failedContentOutcomeDetails summarizes the content entities a bundle import
+// could not write, so the apply report can fail instead of claiming success for
+// missing seed content.
+func failedContentOutcomeDetails(outcomes []WorkspaceBundleImportOutcome) []string {
+	var failed []string
+	for _, o := range outcomes {
+		if o.Status != "failed" {
+			continue
+		}
+		label := o.Entity
+		if o.Name != "" {
+			label += " " + o.Name
+		} else if o.Ref != "" {
+			label += " " + o.Ref
+		}
+		if o.Detail != "" {
+			label += ": " + o.Detail
+		}
+		failed = append(failed, label)
+	}
+	return failed
 }
 
 // VerifyBuiltinPack resolves an embedded pack and validates its manifest and

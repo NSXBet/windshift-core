@@ -91,9 +91,10 @@ func (s *ConfigSetConformanceService) Repair(ctx context.Context, configSetID in
 		selected[id] = true
 	}
 
-	// Group repairable drift rows by entity. An entity key is the section
-	// plus the entity name (the first path segment of the row name); the
-	// links section repairs as one unit.
+	// Group repairable drift rows by entity. The entity name is resolved
+	// against the canonical template's entity names so names that contain the
+	// drift-path separator ("/") stay unambiguous; the links section repairs
+	// as one unit.
 	entities := map[string]*conformanceEntityPlan{}
 	var order []string
 	for _, d := range all {
@@ -103,13 +104,11 @@ func (s *ConfigSetConformanceService) Repair(ctx context.Context, configSetID in
 		if len(selected) > 0 && !selected[d.ID] {
 			continue
 		}
-		entityName := d.Name
-		if section := d.Section; section == "links" {
-			entityName = "*"
-		} else if idx := strings.Index(d.Name, "/"); idx >= 0 {
-			entityName = d.Name[:idx]
+		entityName := "*"
+		if d.Section != "links" {
+			entityName = resolveConformanceEntityName(canonical, d.Section, d.Name)
 		}
-		key := d.Section + "|" + entityName
+		key := d.Section + "|" + strings.ToLower(entityName)
 		if _, ok := entities[key]; !ok {
 			entities[key] = &conformanceEntityPlan{section: d.Section, name: entityName}
 			order = append(order, key)
@@ -122,11 +121,17 @@ func (s *ConfigSetConformanceService) Repair(ctx context.Context, configSetID in
 		return s.finishRepairResult(ctx, configSetID, canonical, result)
 	}
 
+	workflowIDsByName, err := s.referencedWorkflowIDsByName(ctx, configSetID)
+	if err != nil {
+		return nil, err
+	}
+
 	r := &conformanceRepairer{
-		svc:       s,
-		canonical: canonical,
-		now:       time.Now(),
-		ctx:       ctx,
+		svc:               s,
+		canonical:         canonical,
+		now:               time.Now(),
+		ctx:               ctx,
+		workflowIDsByName: workflowIDsByName,
 	}
 
 	// One transaction for the whole repair; each entity is wrapped in a
@@ -233,6 +238,10 @@ type conformanceRepairer struct {
 	savepointN int
 	current    *conformanceEntityPlan
 	outcomes   []ConfigSetConformanceRepairOutcome
+	// workflowIDsByName maps a lowercased workflow name to the id of a workflow
+	// the addressed configuration set actually references. Repair mutates only
+	// these rows, never a same-named workflow owned by another set.
+	workflowIDsByName map[string]int
 }
 
 // conformanceEntityPlan groups the drift rows repair touches for one entity
@@ -508,10 +517,7 @@ func (r *conformanceRepairer) repairWorkflows(entity *conformanceEntityPlan) err
 		if !entityCovers(entity, "workflows", want.Name) {
 			continue
 		}
-		workflowID, err := r.lookupID("workflows", "name", want.Name)
-		if err != nil {
-			return err
-		}
+		workflowID := r.workflowIDsByName[lowerStr(want.Name)]
 		if workflowID == 0 {
 			if err := r.tx.QueryRowContext(r.ctx, `
 				INSERT INTO workflows (name, description, is_default, created_at, updated_at)
@@ -948,16 +954,135 @@ func (r *conformanceRepairer) repairLinks(configSetID int) error {
 }
 
 // entityCovers reports whether the plan for this entity includes the given
-// entity name (the first path segment of a drift row's name).
+// canonical entity name. Entity names are compared whole: a name may itself
+// contain the drift-path separator, so no path stripping happens here.
 func entityCovers(entity *conformanceEntityPlan, section, entityName string) bool {
 	if entity.section != section {
 		return false
 	}
-	name := entityName
-	if idx := strings.Index(name, "/"); idx >= 0 {
-		name = name[:idx]
+	return strings.EqualFold(entityName, entity.name)
+}
+
+// resolveConformanceEntityName maps a drift row name ("<entity>/<path...>") to
+// the canonical entity it belongs to. Entity names may contain the drift-path
+// separator, so the longest canonical name that is either an exact match or a
+// path prefix wins. Rows whose entity only exists live (not in the canonical
+// template) fall back to their first path segment.
+func resolveConformanceEntityName(canonical *ConfigSetTemplate, section, driftName string) string {
+	best := ""
+	for _, name := range conformanceEntityNames(canonical, section) {
+		if driftName != name && !strings.HasPrefix(driftName, name+"/") {
+			continue
+		}
+		if len(name) > len(best) {
+			best = name
+		}
 	}
-	return strings.EqualFold(name, entity.name)
+	if best != "" {
+		return best
+	}
+	if idx := strings.Index(driftName, "/"); idx >= 0 {
+		return driftName[:idx]
+	}
+	return driftName
+}
+
+// conformanceEntityNames lists the canonical entity names for one section.
+func conformanceEntityNames(canonical *ConfigSetTemplate, section string) []string {
+	if canonical == nil {
+		return nil
+	}
+	p := &canonical.Payload
+	switch section {
+	case "custom_fields":
+		names := make([]string, 0, len(p.CustomFields))
+		for _, e := range p.CustomFields {
+			names = append(names, e.Name)
+		}
+		return names
+	case "statuses":
+		names := make([]string, 0, len(p.Statuses))
+		for _, e := range p.Statuses {
+			names = append(names, e.Name)
+		}
+		return names
+	case "item_types":
+		names := make([]string, 0, len(p.ItemTypes))
+		for _, e := range p.ItemTypes {
+			names = append(names, e.Name)
+		}
+		return names
+	case "priorities":
+		names := make([]string, 0, len(p.Priorities))
+		for _, e := range p.Priorities {
+			names = append(names, e.Name)
+		}
+		return names
+	case "link_types":
+		names := make([]string, 0, len(p.LinkTypes))
+		for _, e := range p.LinkTypes {
+			names = append(names, e.Name)
+		}
+		return names
+	case "screens":
+		names := make([]string, 0, len(p.Screens))
+		for _, e := range p.Screens {
+			names = append(names, e.Name)
+		}
+		return names
+	case "workflows":
+		names := make([]string, 0, len(p.Workflows))
+		for _, e := range p.Workflows {
+			names = append(names, e.Name)
+		}
+		return names
+	case "condition_sets":
+		names := make([]string, 0, len(p.ConditionSets))
+		for _, e := range p.ConditionSets {
+			names = append(names, e.Name)
+		}
+		return names
+	case "approval_sets":
+		names := make([]string, 0, len(p.ApprovalSets))
+		for _, e := range p.ApprovalSets {
+			names = append(names, e.Name)
+		}
+		return names
+	}
+	return nil
+}
+
+// referencedWorkflowIDsByName returns the workflows the addressed configuration
+// set references (its primary workflow and every item-type overlay workflow),
+// keyed by lowercased name. Repair uses this instead of a global name lookup so
+// a same-named workflow owned by another set is never modified.
+func (s *ConfigSetConformanceService) referencedWorkflowIDsByName(ctx context.Context, configSetID int) (map[string]int, error) {
+	out := map[string]int{}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT wf.id, wf.name
+		FROM workflows wf
+		WHERE wf.id IN (
+			SELECT workflow_id FROM configuration_sets WHERE id = ? AND workflow_id IS NOT NULL
+			UNION
+			SELECT workflow_id FROM configuration_set_item_types WHERE configuration_set_id = ? AND workflow_id IS NOT NULL
+		)
+	`, configSetID, configSetID)
+	if err != nil {
+		return nil, fmt.Errorf("load referenced workflows for set %d: %w", configSetID, err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var id int
+		var name string
+		if err := rows.Scan(&id, &name); err != nil {
+			return nil, fmt.Errorf("scan referenced workflow: %w", err)
+		}
+		out[lowerStr(name)] = id
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate referenced workflows: %w", err)
+	}
+	return out, nil
 }
 
 func nullIfZero(id int) any {

@@ -14,7 +14,7 @@ import (
 // CustomerDataExportSchemaVersion pins the export payload structure so
 // repeated DSAR exports are comparable across executions. Bump on any
 // field-level change.
-const CustomerDataExportSchemaVersion = 1
+const CustomerDataExportSchemaVersion = 2
 
 // CustomerDataExport is the Article 15/20 export payload: every personal-data
 // category Windshift holds about one portal customer. Sections are ordered
@@ -27,6 +27,7 @@ type CustomerDataExport struct {
 	ExportedAt        string                             `json:"exported_at"`
 	Customer          CustomerExportProfile              `json:"customer"`
 	RequestedItems    []CustomerExportItem               `json:"requested_items"`
+	Drafts            []CustomerExportDraft              `json:"drafts"`
 	Comments          []CustomerExportComment            `json:"comments"`
 	ApprovalDecisions []CustomerExportApprovalDecision   `json:"approval_decisions"`
 	Attachments       []CustomerExportAttachmentMetadata `json:"attachments"`
@@ -48,13 +49,28 @@ type CustomerExportProfile struct {
 }
 
 type CustomerExportItem struct {
-	ID           int     `json:"id"`
-	ItemKey      string  `json:"item_key"`
-	Title        string  `json:"title"`
-	Status       *string `json:"status"`
-	WorkspaceKey string  `json:"workspace_key"`
-	ItemNumber   int     `json:"item_number"`
-	CreatedAt    *string `json:"created_at"`
+	ID                int             `json:"id"`
+	ItemKey           string          `json:"item_key"`
+	Title             string          `json:"title"`
+	Description       string          `json:"description"`
+	Status            *string         `json:"status"`
+	WorkspaceKey      string          `json:"workspace_key"`
+	ItemNumber        int             `json:"item_number"`
+	CustomFieldValues json.RawMessage `json:"custom_field_values"`
+	CreatedAt         *string         `json:"created_at"`
+}
+
+// CustomerExportDraft is one unfinished portal submission: the personal data a
+// customer entered but has not yet submitted.
+type CustomerExportDraft struct {
+	ID                int             `json:"id"`
+	RequestTypeID     int             `json:"request_type_id"`
+	Title             string          `json:"title"`
+	Description       string          `json:"description"`
+	CustomFieldValues json.RawMessage `json:"custom_field_values"`
+	CurrentStep       int             `json:"current_step"`
+	CreatedAt         *string         `json:"created_at"`
+	UpdatedAt         *string         `json:"updated_at"`
 }
 
 type CustomerExportComment struct {
@@ -120,6 +136,7 @@ func ExportCustomerData(db database.Database, customerID int, actor AuditActor) 
 		SchemaVersion:     CustomerDataExportSchemaVersion,
 		ExportedAt:        time.Now().UTC().Format(time.RFC3339),
 		RequestedItems:    []CustomerExportItem{},
+		Drafts:            []CustomerExportDraft{},
 		Comments:          []CustomerExportComment{},
 		ApprovalDecisions: []CustomerExportApprovalDecision{},
 		Attachments:       []CustomerExportAttachmentMetadata{},
@@ -178,9 +195,11 @@ func ExportCustomerData(db database.Database, customerID int, actor AuditActor) 
 	}
 	export.Customer.Roles = roles
 
-	// Requested items with display keys and status names.
+	// Requested items with display keys, status names, submitted bodies and
+	// custom-field values.
 	itemRows, err := db.Query(`
-		SELECT i.id, COALESCE(w.key, ''), i.workspace_item_number, i.title, COALESCE(s.name, ''), i.created_at
+		SELECT i.id, COALESCE(w.key, ''), i.workspace_item_number, i.title, COALESCE(i.description, ''),
+		       i.custom_field_values, COALESCE(s.name, ''), i.created_at
 		FROM items i
 		JOIN workspaces w ON w.id = i.workspace_id
 		LEFT JOIN statuses s ON s.id = i.status_id
@@ -193,17 +212,51 @@ func ExportCustomerData(db database.Database, customerID int, actor AuditActor) 
 	for itemRows.Next() {
 		var item CustomerExportItem
 		var createdAt string
-		if err := itemRows.Scan(&item.ID, &item.WorkspaceKey, &item.ItemNumber, &item.Title, &item.Status, &createdAt); err != nil {
+		var customFields sql.NullString
+		if err := itemRows.Scan(&item.ID, &item.WorkspaceKey, &item.ItemNumber, &item.Title, &item.Description, &customFields, &item.Status, &createdAt); err != nil {
 			return export, fmt.Errorf("scan requested item: %w", err)
 		}
 		if item.WorkspaceKey != "" {
 			item.ItemKey = fmt.Sprintf("%s-%d", item.WorkspaceKey, item.ItemNumber)
+		}
+		if customFields.Valid && customFields.String != "" && json.Valid([]byte(customFields.String)) {
+			item.CustomFieldValues = json.RawMessage(customFields.String)
 		}
 		item.CreatedAt = &createdAt
 		export.RequestedItems = append(export.RequestedItems, item)
 	}
 	if err := itemRows.Err(); err != nil {
 		return export, fmt.Errorf("iterate requested items: %w", err)
+	}
+
+	// Unfinished submissions the customer saved as drafts. Drafts are the
+	// customer's own personal data, so they are disclosed alongside submitted
+	// requests.
+	draftRows, err := db.Query(`
+		SELECT id, request_type_id, title, description, custom_field_values, current_step, created_at, updated_at
+		FROM portal_request_drafts
+		WHERE portal_customer_id = ? ORDER BY id
+	`, customerID)
+	if err != nil {
+		return export, fmt.Errorf("load drafts: %w", err)
+	}
+	defer func() { _ = draftRows.Close() }()
+	for draftRows.Next() {
+		var draft CustomerExportDraft
+		var customFields sql.NullString
+		var createdAt, updatedAt string
+		if err := draftRows.Scan(&draft.ID, &draft.RequestTypeID, &draft.Title, &draft.Description, &customFields, &draft.CurrentStep, &createdAt, &updatedAt); err != nil {
+			return export, fmt.Errorf("scan draft: %w", err)
+		}
+		if customFields.Valid && customFields.String != "" && json.Valid([]byte(customFields.String)) {
+			draft.CustomFieldValues = json.RawMessage(customFields.String)
+		}
+		draft.CreatedAt = &createdAt
+		draft.UpdatedAt = &updatedAt
+		export.Drafts = append(export.Drafts, draft)
+	}
+	if err := draftRows.Err(); err != nil {
+		return export, fmt.Errorf("iterate drafts: %w", err)
 	}
 
 	commentRows, err := db.Query(`

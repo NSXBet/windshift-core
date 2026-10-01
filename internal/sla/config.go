@@ -352,6 +352,14 @@ func parseQLL(query string) (*cql.ASTNode, error) {
 	return ast, nil
 }
 
+// ValidateGoalQuery reports whether an SLA goal QL expression compiles. The
+// metric service calls it before persisting a configuration so one malformed
+// native goal cannot disable workspace-wide SLA evaluation.
+func ValidateGoalQuery(query string) error {
+	_, err := parseQLL(query)
+	return err
+}
+
 // extractQLInputFields walks a goal AST and returns the canonical item change
 // fields the goal can depend on. The second result is true when the extractor
 // met a construct it does not understand and the metric must widen to every
