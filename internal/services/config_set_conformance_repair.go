@@ -22,10 +22,19 @@ import (
 type ConfigSetConformanceService struct {
 	db   database.Database
 	repo *repository.ConfigurationSetRepository
+	// enqueueOptionRemoval schedules item-value scrubbing for removed select
+	// options; it runs inside the repair transaction. Wired at boot.
+	enqueueOptionRemoval func(tx database.Tx, fieldID int, fieldType string, removedIDs []int) error
 }
 
 func NewConfigSetConformanceService(db database.Database, repo *repository.ConfigurationSetRepository) *ConfigSetConformanceService {
 	return &ConfigSetConformanceService{db: db, repo: repo}
+}
+
+// SetOptionRemovalEnqueuer wires the custom-field cleanup scheduler so a
+// repair that shrinks an option set commits the scrubbing job atomically.
+func (s *ConfigSetConformanceService) SetOptionRemovalEnqueuer(fn func(tx database.Tx, fieldID int, fieldType string, removedIDs []int) error) {
+	s.enqueueOptionRemoval = fn
 }
 
 // Check exports the configuration set's live state and diffs it against the
@@ -214,7 +223,11 @@ func repairSections(r *conformanceRepairer, entities map[string]*conformanceEnti
 			r.failEntity(entity, fmt.Sprintf("repair could not commit: %v", err))
 			continue
 		}
-		r.succeedEntity(entity)
+		// The repairer may have recorded its own per-entity outcomes (e.g. a
+		// manual-attention skip); only then is the blanket success skipped.
+		if !entity.resolved {
+			r.succeedEntity(entity)
+		}
 	}
 }
 
@@ -250,6 +263,9 @@ type conformanceEntityPlan struct {
 	section string
 	name    string
 	rows    []ConfigSetConformanceDrift
+	// resolved marks that the repairer already recorded outcomes for this
+	// entity, so the generic success pass must not overwrite them.
+	resolved bool
 }
 
 func (r *conformanceRepairer) succeedEntity(entity *conformanceEntityPlan) {
@@ -261,6 +277,13 @@ func (r *conformanceRepairer) succeedEntity(entity *conformanceEntityPlan) {
 func (r *conformanceRepairer) failEntity(entity *conformanceEntityPlan, detail string) {
 	for _, row := range entity.rows {
 		r.outcome(row, "failed", detail)
+	}
+}
+
+// outcomeRows records one outcome per drift row addressed by an entity.
+func (r *conformanceRepairer) outcomeRows(rows []ConfigSetConformanceDrift, status, detail string) {
+	for _, row := range rows {
+		r.outcome(row, status, detail)
 	}
 }
 
@@ -315,17 +338,95 @@ func (r *conformanceRepairer) repairCustomFields(entity *conformanceEntityPlan) 
 			}
 			continue
 		}
-		if err = r.exec(`
-			UPDATE custom_field_definitions
-			SET field_type = ?, description = ?, required = ?, options = ?, display_order = ?,
-			    applies_to_portal_customers = ?, applies_to_customer_organisations = ?, updated_at = ?
-			WHERE id = ?
-		`, models.CanonicalCustomFieldType(want.FieldType), want.Description, want.Required, want.Options, want.DisplayOrder,
-			want.AppliesToPortalCustomers, want.AppliesToCustomerOrganisations, r.now, id); err != nil {
-			return fmt.Errorf("restore custom field: %w", err)
+		if err := r.repairExistingCustomField(entity, id, want); err != nil {
+			return err
 		}
 	}
 	return nil
+}
+
+// repairExistingCustomField restores an existing custom field through the
+// provisioning semantics: the field type never changes after creation, and a
+// shrinking select option set enqueues item-value scrubbing instead of
+// leaving dangling option ids in item data (WI-1529).
+func (r *conformanceRepairer) repairExistingCustomField(entity *conformanceEntityPlan, fieldID int, want ConfigSetTplCustomField) error {
+	var liveType string
+	var liveOptions string
+	if err := r.tx.QueryRowContext(r.ctx,
+		`SELECT field_type, COALESCE(options, '') FROM custom_field_definitions WHERE id = ?`, fieldID,
+	).Scan(&liveType, &liveOptions); err != nil {
+		return fmt.Errorf("load custom field %q: %w", want.Name, err)
+	}
+
+	wantType := models.CanonicalCustomFieldType(want.FieldType)
+	typeDrift := liveType != wantType
+
+	// Option removals on select-like fields enqueue a scrubbing job in the
+	// repair transaction; on a type change the stored values no longer match
+	// either shape, so a type-drifted field is left for manual attention.
+	removedOptions := removedSelectOptionIDs(liveOptions, want.Options, wantType)
+	if typeDrift && len(removedOptions) > 0 {
+		entity.resolved = true
+		r.outcomeRows(entity.rows, "skipped", fmt.Sprintf(
+			"field type %q cannot be restored to %q after creation; options left untouched so no dangling option ids are introduced",
+			liveType, wantType))
+		return nil
+	}
+
+	if err := r.exec(`
+		UPDATE custom_field_definitions
+		SET description = ?, required = ?, options = ?, display_order = ?,
+		    applies_to_portal_customers = ?, applies_to_customer_organisations = ?, updated_at = ?
+		WHERE id = ?
+	`, want.Description, want.Required, want.Options, want.DisplayOrder,
+		want.AppliesToPortalCustomers, want.AppliesToCustomerOrganisations, r.now, fieldID); err != nil {
+		return fmt.Errorf("restore custom field: %w", err)
+	}
+
+	if len(removedOptions) > 0 {
+		if r.svc.enqueueOptionRemoval == nil {
+			return fmt.Errorf("custom field %q: option set shrank but no cleanup scheduler is wired", want.Name)
+		}
+		if err := r.svc.enqueueOptionRemoval(r.tx, fieldID, wantType, removedOptions); err != nil {
+			return fmt.Errorf("enqueue option cleanup for custom field %q: %w", want.Name, err)
+		}
+	}
+
+	detail := ""
+	if typeDrift {
+		entity.resolved = true
+		detail = fmt.Sprintf("field type %q cannot be changed after creation; resolve the type manually", liveType)
+	}
+	r.outcomeRows(entity.rows, "repaired", detail)
+	return nil
+}
+
+// removedSelectOptionIDs returns the option ids present in oldOptionsJSON but
+// missing from newOptionsJSON. Non-select fields and unparseable payloads
+// return no removals: repair never enqueues scrubbing it cannot reason about.
+func removedSelectOptionIDs(oldOptionsJSON, newOptionsJSON, fieldType string) []int {
+	if fieldType != "select" && fieldType != "multiselect" {
+		return nil
+	}
+	oldOpts, err := models.ParseSelectOptions(oldOptionsJSON)
+	if err != nil {
+		return nil
+	}
+	newOpts, err := models.ParseSelectOptions(newOptionsJSON)
+	if err != nil {
+		return nil
+	}
+	kept := make(map[int]bool, len(newOpts.Items))
+	for _, item := range newOpts.Items {
+		kept[item.ID] = true
+	}
+	var removed []int
+	for _, item := range oldOpts.Items {
+		if !kept[item.ID] {
+			removed = append(removed, item.ID)
+		}
+	}
+	return removed
 }
 
 func (r *conformanceRepairer) repairStatuses(entity *conformanceEntityPlan) error {

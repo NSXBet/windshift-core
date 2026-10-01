@@ -239,6 +239,15 @@ func New(cfg Config) (*Server, error) {
 }
 
 // initialize sets up all services and handlers.
+// newConfigSetConformanceService builds the conformance service with the
+// custom-field cleanup scheduler wired, so option-set repairs commit their
+// scrubbing jobs atomically (WI-1529).
+func newConfigSetConformanceService(db database.Database) *services.ConfigSetConformanceService {
+	svc := services.NewConfigSetConformanceService(db, repository.NewConfigurationSetRepository(db))
+	svc.SetOptionRemovalEnqueuer(scheduler.EnqueueOptionRemovalTx)
+	return svc
+}
+
 func (s *Server) initialize() error {
 	// FIXME: split initialization into focused builders and lifecycle registries.
 	cfg := s.config
@@ -1773,7 +1782,7 @@ func (s *Server) initialize() error {
 		s.db,
 		workspaceAppService,
 		repository.NewConfigurationSetRepository(s.db),
-		services.NewConfigSetConformanceService(s.db, repository.NewConfigurationSetRepository(s.db)),
+		newConfigSetConformanceService(s.db),
 		workspaceBundleImportService,
 	)
 	workspaceAppService.SetPackProvisioner(packApplyService)
@@ -1879,7 +1888,7 @@ func (s *Server) initialize() error {
 		WorkspaceRoles:               services.NewWorkspaceRoleProvisioningService(s.db, repository.NewWorkspaceRoleRepository(s.db), permService, approvalService),
 		ConfigurationSetProvisioning: services.NewConfigurationSetProvisioningService(s.db, repository.NewConfigurationSetRepository(s.db), permService, s.notificationService),
 		ConfigurationSetExport:       services.NewConfigSetExportService(s.db, repository.NewConfigurationSetRepository(s.db)),
-		ConfigSetConformance:         services.NewConfigSetConformanceService(s.db, repository.NewConfigurationSetRepository(s.db)),
+		ConfigSetConformance:         newConfigSetConformanceService(s.db),
 		WorkspaceBundleExport:        services.NewWorkspaceBundleExportService(s.db, services.NewConfigSetExportService(s.db, repository.NewConfigurationSetRepository(s.db))),
 		PackApply:                    packApplyService,
 		WorkspaceBundleImport:        workspaceBundleImportService,
