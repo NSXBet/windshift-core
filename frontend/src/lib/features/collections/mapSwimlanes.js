@@ -153,6 +153,40 @@ export function buildSwimlanes({
     }
   }
 
+  // The global (cross-workspace) scope loads no iteration or milestone
+  // catalogs, so reference-driven lanes above would silently drop every
+  // assigned card. Derive the missing lanes from card memberships, titled
+  // from embedded reference data when the card carries it (WI-1587).
+  const fallbackLabels = new Map();
+  if (dimension === 'iteration') {
+    for (const item of items) {
+      if (item.iteration_id == null) continue;
+      const key = `iteration-${item.iteration_id}`;
+      if (!fallbackLabels.has(key)) {
+        fallbackLabels.set(key, item.iteration_name || `Iteration #${item.iteration_id}`);
+      }
+    }
+  } else if (dimension === 'milestone') {
+    for (const item of items) {
+      for (const milestone of item.milestones || []) {
+        if (milestone?.id == null) continue;
+        const key = `milestone-${milestone.id}`;
+        if (!fallbackLabels.has(key)) {
+          fallbackLabels.set(
+            key,
+            milestone.name || milestone.title || `Milestone #${milestone.id}`
+          );
+        }
+      }
+    }
+  }
+  const emittedLanes = new Set(lanes.map((lane) => lane.key));
+  for (const [key, count] of membership) {
+    if (key === SWIMLANE_NONE_KEY || count === 0 || emittedLanes.has(key)) continue;
+    if (!fallbackLabels.has(key)) continue;
+    lanes.push({ key, title: fallbackLabels.get(key), color: null, sublabel: '', count });
+  }
+
   if (membership.get(SWIMLANE_NONE_KEY)) {
     lanes.push({
       key: SWIMLANE_NONE_KEY,
