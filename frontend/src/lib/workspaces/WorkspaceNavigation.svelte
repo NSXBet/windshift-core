@@ -92,6 +92,10 @@
   // First enabled view — workspace-only views cannot be collection-scoped.
   const defaultCollectionView = $derived(visibleWorkspaceViews[0]?.id || 'backlog');
 
+  // Workspace-scope nav visibility (views plus tools/test entries). Tools
+  // render in collection contexts too, so keep the workspace entry warm.
+  const enabledNavSet = $derived(new Set(viewSettingsStore.enabledNavIds(workspaceId)));
+
   // Permission-based visibility
   const canViewTests = $derived.by(() => workspacePermissions.canViewTests(workspaceId));
   const canManageActions = $derived.by(() => workspacePermissions.canManageActions(workspaceId));
@@ -103,15 +107,27 @@
   );
   const canViewPages = $derived.by(() => workspacePermissions.hasPermission(workspaceId, 'page.view'));
 
-  // Filter workspace-only views based on permissions
+  // Filter workspace-only views based on nav visibility and permissions.
   const filteredWorkspaceOnlyViews = $derived.by(() => {
     return workspaceOnlyViews.filter(view => {
+      if (!enabledNavSet.has(view.id)) return false;
       if (view.id === 'agents') return canAdmin;
       if (view.id === 'actions') return canManageActions;
       if (view.id === 'pages') return canViewPages;
       return true;
     });
   });
+  const visibleTestNavItems = $derived.by(() => {
+    if (!enabledNavSet.has('test-cases') && !enabledNavSet.has('test-runs')) {
+      return [];
+    }
+    return testNavigationItems.filter((view) => enabledNavSet.has(view.id));
+  });
+  // The navigation configuration is writable with collections:write — the
+  // same gate the board-configuration PUT enforces; admins always hold it.
+  const canConfigureNav = $derived.by(() =>
+    workspacePermissions.hasPermission(workspaceId, 'collections:write')
+  );
 
   // Gradient detection
   const gradientStyle = $derived.by(() => ($applyToAllViews && $workspaceGradientIndex > 0) ? getGradientStyle($workspaceGradientIndex) : null);
@@ -134,10 +150,12 @@
     }
   });
 
-  // Keep the enabled-views lookup warm for the current scope.
+  // Keep the enabled-views lookup warm for the current scope, plus the
+  // workspace scope so tools entries filter correctly inside collections.
   $effect(() => {
     if (workspaceId) {
       viewSettingsStore.load(workspaceId, currentCollectionId);
+      viewSettingsStore.load(workspaceId, null);
     }
   });
 
@@ -446,20 +464,37 @@
 {#snippet regularSidebarHeader()}
   <!-- Keep the collection selector visible while navigation scrolls. -->
   <div class="px-4 pt-2 mb-6">
-    <Tooltip content={t('collections.collection')} placement="right">
-      <DropdownMenu
-        triggerText={collectionDisplayName}
-        triggerTestid="workspace-collection-select"
-        items={collectionDropdownItems}
-        maxWidth="max-w-full"
-        matchTriggerWidth={true}
-        showChevron={true}
-        placement="bottom-start"
-        triggerClass="w-full text-left font-medium rounded !px-3 !py-2.5 !text-sm transition-colors"
-        triggerStyle="background-color: var(--ds-surface); border: 1px solid var(--ds-border); color: var(--ds-text);"
-        triggerAlignment="between"
-      />
-    </Tooltip>
+    <div class="flex items-center gap-1.5">
+      <Tooltip content={t('collections.collection')} placement="right">
+        <DropdownMenu
+          triggerText={collectionDisplayName}
+          triggerTestid="workspace-collection-select"
+          items={collectionDropdownItems}
+          maxWidth="max-w-full"
+          matchTriggerWidth={true}
+          showChevron={true}
+          placement="bottom-start"
+          triggerClass="w-full text-left font-medium rounded !px-3 !py-2.5 !text-sm transition-colors flex-1 min-w-0"
+          triggerStyle="background-color: var(--ds-surface); border: 1px solid var(--ds-border); color: var(--ds-text);"
+          triggerAlignment="between"
+        />
+      </Tooltip>
+      {#if canConfigureNav && !$currentWorkspace?.is_personal}
+        <Tooltip content={t('navConfig.configureTitle')} placement="right">
+          <a
+            href={currentCollectionId
+              ? `/workspaces/${workspaceId}/collections/${currentCollectionId}/navigation`
+              : `/workspaces/${workspaceId}/navigation`}
+            data-testid="workspace-nav-config-button"
+            class="shrink-0 inline-flex items-center justify-center w-9 h-9 rounded transition-colors hover:bg-[var(--ds-background-neutral)]"
+            style="color: var(--ds-text-subtle);"
+            aria-label={t('navConfig.configureTitle')}
+          >
+            <Settings size={16} />
+          </a>
+        </Tooltip>
+      {/if}
+    </div>
   </div>
 {/snippet}
 
@@ -502,7 +537,7 @@
 
       {#if $moduleSettings.test_management_enabled && canViewTests && !currentCollectionId}
         {@render sectionDivider()}
-        {#each testNavigationItems as view (view.id)}
+        {#each visibleTestNavItems as view (view.id)}
           {@render collapsedNavIcon({ href: getTestNavigationUrl(view.id), label: viewLabel(view), icon: view.icon, isActive: activeTestNavId === view.id })}
         {/each}
       {/if}
@@ -632,7 +667,7 @@
 
           {#if testsExpanded}
             <div id="workspace-tests-navigation" class="space-y-1" data-testid="workspace-tests-navigation">
-              {#each testNavigationItems as view (view.id)}
+              {#each visibleTestNavItems as view (view.id)}
                 {@render navLink({ href: getTestNavigationUrl(view.id), label: viewLabel(view), tooltip: viewTooltip(view), icon: view.icon, isActive: activeTestNavId === view.id })}
               {/each}
             </div>

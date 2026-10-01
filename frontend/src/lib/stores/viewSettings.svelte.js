@@ -1,9 +1,22 @@
 import { api } from '../api.js';
-import { workspaceViewItems } from '../navigation/workspaceNavigation.js';
+import {
+  testNavigationItems,
+  workspaceOnlyViews,
+  workspaceViewItems,
+} from '../navigation/workspaceNavigation.js';
 
 // Every collection-scoped view, used whenever a scope has no explicit
 // enabled-views setting or its lookup fails.
 const ALL_VIEW_IDS = workspaceViewItems.map((view) => view.id);
+
+// Every toggleable workspace nav item (views plus the workspace-only tools
+// and test-management entries), used as the workspace-scope fallback. The
+// ids mirror models.WorkspaceNavItemIDs on the backend.
+export const ALL_NAV_IDS = [
+  ...ALL_VIEW_IDS,
+  ...workspaceOnlyViews.map((view) => view.id),
+  ...testNavigationItems.map((view) => view.id),
+];
 
 /** @typedef {{ views: string[], inherited: boolean, loaded: boolean }} ViewSettingsEntry */
 
@@ -61,6 +74,16 @@ function createViewSettingsStore() {
     return entries[scopeKey(workspaceId, collectionId)]?.views ?? ALL_VIEW_IDS;
   }
 
+  /**
+   * Effective workspace nav ids (views plus tools/test entries) for the
+   * workspace default context. Only the workspace scope can toggle the
+   * non-view entries, so collection scopes are never consulted here.
+   * Everything enabled while unloaded.
+   */
+  function enabledNavIds(workspaceId) {
+    return entries[scopeKey(workspaceId, null)]?.views ?? ALL_NAV_IDS;
+  }
+
   /** The raw scope entry (reactive), or null before the first load. */
   function entryFor(workspaceId, collectionId = null) {
     return entries[scopeKey(workspaceId, collectionId)] ?? null;
@@ -87,10 +110,12 @@ function createViewSettingsStore() {
     load,
     entryFor,
     enabledViewIds,
+    enabledNavIds,
     inherited,
     invalidate,
     invalidateWorkspace,
     allViewIds: ALL_VIEW_IDS,
+    allNavIds: ALL_NAV_IDS,
   };
 }
 

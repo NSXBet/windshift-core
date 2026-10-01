@@ -622,7 +622,7 @@ func (s *CollectionApplicationService) PutBoardConfiguration(actor AuditActor, s
 	if err := validateBoardConfiguration(input); err != nil {
 		return nil, err
 	}
-	if err := validateViewSettings(input.ViewSettings); err != nil {
+	if err := validateViewSettings(input.ViewSettings, scope.CollectionID != nil); err != nil {
 		return nil, err
 	}
 	if scope.WorkspaceID != nil {
@@ -782,10 +782,13 @@ func validateBoardConfiguration(input models.BoardConfigurationRequest) error {
 	return nil
 }
 
-// validateViewSettings checks an explicit enabled-views key: known view
-// ids, no duplicates, at least one view. A null key (pointer to a nil slice)
-// is the reset form and passes.
-func validateViewSettings(settings *models.ViewSettings) error {
+// validateViewSettings checks an explicit enabled-views key: known nav
+// ids for the scope, no duplicates, at least one entry. A null key
+// (pointer to a nil slice) is the reset form and passes. Workspace-scope
+// overrides may toggle any workspace nav item; collection-scope overrides
+// are limited to the collection-scoped views because tools and
+// test-management entries only render in the workspace default context.
+func validateViewSettings(settings *models.ViewSettings, collectionScope bool) error {
 	if settings == nil || settings.EnabledViews == nil {
 		return nil
 	}
@@ -796,14 +799,17 @@ func validateViewSettings(settings *models.ViewSettings) error {
 	if len(views) == 0 {
 		return collectionValidation("enabled_views must contain at least one view")
 	}
-	known := make(map[string]struct{}, len(models.BoardViewIDs))
-	for _, id := range models.BoardViewIDs {
+	known := make(map[string]struct{}, len(models.WorkspaceNavItemIDs))
+	for _, id := range models.WorkspaceNavItemIDs {
 		known[id] = struct{}{}
 	}
 	seen := make(map[string]struct{}, len(views))
 	for _, id := range views {
 		if _, ok := known[id]; !ok {
 			return collectionValidation(fmt.Sprintf("unknown view %q in enabled_views", id))
+		}
+		if collectionScope && !models.IsCollectionViewID(id) {
+			return collectionValidation(fmt.Sprintf("view %q can only be toggled at the workspace scope", id))
 		}
 		if _, dup := seen[id]; dup {
 			return collectionValidation(fmt.Sprintf("duplicate view %q in enabled_views", id))
@@ -850,14 +856,12 @@ func mergeViewSettings(current, update *models.ViewSettings) *models.ViewSetting
 }
 
 // applyEffectiveViewSettings resolves the effective view settings for a
-// collection-scoped configuration: the collection's own override, or the
-// workspace default, or every view enabled. Collection-scoped rows carry no
-// workspace id, so it is resolved from the collection record when needed.
+// collection-scoped configuration: the collection's own view override (with
+// workspace-scope non-view ids inherited underneath), or the workspace
+// effective set, or every collection view enabled. Collection-scoped rows
+// carry no workspace id, so it is resolved from the collection record when
+// needed.
 func (s *CollectionApplicationService) applyEffectiveViewSettings(config *models.BoardConfiguration) error {
-	if config.ViewSettings.HasEnabledViewsOverride() {
-		return nil
-	}
-	config.ViewSettingsInherited = true
 	allViews := func() *models.ViewSettings {
 		views := slices.Clone(models.BoardViewIDs)
 		return &models.ViewSettings{EnabledViews: &views}
@@ -870,17 +874,33 @@ func (s *CollectionApplicationService) applyEffectiveViewSettings(config *models
 		}
 		workspaceID = collection.WorkspaceID
 	}
-	if workspaceID == nil {
-		config.ViewSettings = allViews()
+	wsConfig, wsErr := func() (*models.BoardConfiguration, error) {
+		if workspaceID == nil {
+			return nil, repository.ErrNotFound
+		}
+		return s.boards.GetByWorkspaceID(*workspaceID)
+	}()
+	if config.CollectionID != nil && config.ViewSettings.HasEnabledViewsOverride() {
+		// The collection override speaks only for the collection-scoped
+		// views; workspace-only nav ids always inherit from the workspace
+		// row. Merge both parts in canonical registry order.
+		views := slices.Clone(*config.ViewSettings.EnabledViews)
+		if wsErr == nil && wsConfig.ViewSettings.HasEnabledViewsOverride() {
+			views = mergeNavIDs(views, *wsConfig.ViewSettings.EnabledViews)
+		}
+		config.ViewSettings = &models.ViewSettings{EnabledViews: &views}
 		return nil
 	}
-	wsConfig, err := s.boards.GetByWorkspaceID(*workspaceID)
-	if errors.Is(err, repository.ErrNotFound) {
-		config.ViewSettings = allViews()
+	if config.ViewSettings.HasEnabledViewsOverride() {
 		return nil
 	}
-	if err != nil {
-		return err
+	config.ViewSettingsInherited = true
+	if wsErr != nil {
+		if errors.Is(wsErr, repository.ErrNotFound) {
+			config.ViewSettings = allViews()
+			return nil
+		}
+		return wsErr
 	}
 	if wsConfig.ViewSettings.HasEnabledViewsOverride() {
 		views := slices.Clone(*wsConfig.ViewSettings.EnabledViews)
@@ -889,6 +909,27 @@ func (s *CollectionApplicationService) applyEffectiveViewSettings(config *models
 	}
 	config.ViewSettings = allViews()
 	return nil
+}
+
+// mergeNavIDs returns the union of override and inherited ids, ordered by
+// the canonical WorkspaceNavItemIDs registry so API responses are stable.
+func mergeNavIDs(override, inherited []string) []string {
+	present := make(map[string]struct{}, len(override)+len(inherited))
+	for _, id := range override {
+		present[id] = struct{}{}
+	}
+	for _, id := range inherited {
+		if !models.IsCollectionViewID(id) {
+			present[id] = struct{}{}
+		}
+	}
+	merged := make([]string, 0, len(present))
+	for _, id := range models.WorkspaceNavItemIDs {
+		if _, ok := present[id]; ok {
+			merged = append(merged, id)
+		}
+	}
+	return merged
 }
 
 func sanitizeBoardConfiguration(input *models.BoardConfigurationRequest) {

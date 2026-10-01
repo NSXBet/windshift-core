@@ -282,13 +282,14 @@
     if (redirect) navigate(redirect, { replace: true });
   });
 
-  // Redirect direct navigation to a view the scope has disabled. The load is
-  // awaited through the reactive entry so the decision uses real settings,
-  // and waits for the workspace record so the default view is known.
+  // Redirect direct navigation to a view or nav entry the scope has
+  // disabled. The load is awaited through the reactive entry so the decision
+  // uses real settings, and waits for the workspace record so the default
+  // view is known.
   $effect(() => {
     const route = $currentRoute;
-    const viewId = route.view?.startsWith('workspace-') ? route.view.slice('workspace-'.length) : null;
-    if (!viewId || !viewSettingsStore.allViewIds.includes(viewId)) return;
+    const viewId = route.view?.startsWith('workspace-') ? route.view.slice('workspace-'.length) : route.view;
+    if (!viewId || !viewSettingsStore.allNavIds.includes(viewId)) return;
     const workspaceId = route.params?.id;
     if (!workspaceId) return;
     if (!$currentWorkspace?.id) return; // hydration re-runs this effect

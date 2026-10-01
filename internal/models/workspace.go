@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 )
@@ -322,13 +323,38 @@ func (p IterationPatch) Apply(existing Iteration) Iteration {
 // settings can toggle, in navigation order.
 var BoardViewIDs = []string{"backlog", "board", "list", "tree", "map", "roadmap"}
 
+// WorkspaceNavItemIDs lists every navigable workspace entry that view
+// visibility settings can toggle at the workspace scope: the
+// collection-scoped BoardViewIDs plus the workspace-only tools and
+// test-management nav entries (the ids used by the frontend navigation
+// registry). Overview, look-and-feel, and settings are deliberately
+// absent: overview is the disabled-view redirect fallback and the others
+// are admin affordances, not workspace feature surfaces.
+var WorkspaceNavItemIDs = append(slices.Clone(BoardViewIDs),
+	"agents", "iterations", "milestones", "analytics", "actions", "pages",
+	"test-cases", "test-sets", "test-templates", "test-runs", "test-reports",
+)
+
+// IsWorkspaceNavID reports whether id is a workspace-scope nav item.
+func IsWorkspaceNavID(id string) bool {
+	return slices.Contains(WorkspaceNavItemIDs, id)
+}
+
+// IsCollectionViewID reports whether id is one of the collection-scoped
+// views, the only ids a per-collection override may toggle.
+func IsCollectionViewID(id string) bool {
+	return slices.Contains(BoardViewIDs, id)
+}
+
 // ViewSettings holds view-scoped settings for a board configuration scope.
 // New settings are added as keys of this object instead of new columns.
 type ViewSettings struct {
-	// EnabledViews limits which collection-scoped views are visible and
-	// reachable. nil means inherit: all views for a workspace scope, the
-	// workspace's effective set for a collection scope. A pointer to a nil
-	// slice resets an override to the inherited default.
+	// EnabledViews limits which nav entries are visible and reachable. A
+	// workspace-scope override may contain any WorkspaceNavItemIDs entry; a
+	// collection-scope override only the collection-scoped views. nil means
+	// inherit: all nav items for a workspace scope, the workspace's
+	// effective set for a collection scope. A pointer to a nil slice resets
+	// an override to the inherited default.
 	EnabledViews *[]string `json:"enabled_views,omitempty"`
 }
 

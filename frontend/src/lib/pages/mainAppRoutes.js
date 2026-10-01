@@ -42,6 +42,7 @@ export const MAIN_APP_COMPONENT_LOADERS = {
   'asset-settings': () => import('../features/assets/AssetManager.svelte'),
   'channel-manager': () => import('../features/channels/ManagerChannels.svelte'),
   'workspace-queue': () => import('../features/support/SupportQueue.svelte'),
+  'workspace-nav-config': () => import('../workspaces/NavigationConfigPage.svelte'),
   'workspace-board': () => import('../features/collections/CollectionBoard.svelte'),
   'workspace-board-config': () => import('../settings/BoardConfigurationPage.svelte'),
   'workspace-backlog': () => import('../features/collections/CollectionBacklog.svelte'),
@@ -266,6 +267,18 @@ export const MAIN_APP_ROUTE_CONFIG = {
     'Loading Board Configuration...',
     'Failed to load Board Configuration',
     { getProps: workspaceCollectionProps }
+  ),
+  'workspace-nav-config': route(
+    'Loading Navigation Settings...',
+    'Failed to load Navigation Settings',
+    {
+      getProps: (currentRoute) => ({
+        workspaceId: Number(currentRoute.params.id),
+        collectionId: currentRoute.params.collectionId
+          ? Number(currentRoute.params.collectionId)
+          : null,
+      }),
+    }
   ),
   'workspace-queue': route('Loading Queue...', 'Failed to load Queue', {
     getProps: (currentRoute) => ({

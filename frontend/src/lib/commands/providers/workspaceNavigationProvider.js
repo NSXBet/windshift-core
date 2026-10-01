@@ -53,7 +53,9 @@ export function workspaceNavigationProvider(ctx) {
   }
 
   if (!collectionId) {
+    const enabledNav = new Set(viewSettingsStore.enabledNavIds(workspaceId));
     for (const view of workspaceOnlyViews) {
+      if (!enabledNav.has(view.id)) continue;
       if (view.id === 'agents' && !workspacePermissions.canAdminWorkspace(workspaceId)) continue;
       const label = t(view.labelKey);
       out.push(
@@ -74,7 +76,9 @@ export function workspaceNavigationProvider(ctx) {
     workspacePermissions.canViewTests(workspaceId) &&
     !collectionId
   ) {
+    const enabledNav = new Set(viewSettingsStore.enabledNavIds(workspaceId));
     for (const view of testNavigationItems) {
+      if (!enabledNav.has(view.id)) continue;
       const slug = view.id === 'test-cases' ? 'tests' : `tests/${view.id.replace(/^test-/, '')}`;
       const label = t(view.labelKey);
       out.push(

@@ -47,6 +47,7 @@ const routes = {
   '/zammad/:correlationKey': 'zammad-resolve',
   // Routes without collection (show all workspace items)
   '/workspaces/:id/queue': 'workspace-queue',
+  '/workspaces/:id/navigation': 'workspace-nav-config',
   '/workspaces/:id/board': 'workspace-board',
   '/workspaces/:id/board/configure': 'workspace-board-config',
   '/workspaces/:id/backlog': 'workspace-backlog',
@@ -71,6 +72,7 @@ const routes = {
   // Routes with collection ID filtering
   '/workspaces/:id/collections/:collectionId/board': 'workspace-board',
   '/workspaces/:id/collections/:collectionId/board/configure': 'workspace-board-config',
+  '/workspaces/:id/collections/:collectionId/navigation': 'workspace-nav-config',
   '/workspaces/:id/collections/:collectionId/backlog': 'workspace-backlog',
   '/workspaces/:id/collections/:collectionId/list': 'workspace-list',
   '/workspaces/:id/collections/:collectionId/tree': 'workspace-tree',
