@@ -14,7 +14,7 @@ import (
 // manage the catalog.
 func registerCannedResponseRoutes(builder *routeBuilder, deps Deps) {
 	const responses = "/workspaces/{workspace_id}/canned-responses"
-	const response = "/canned-responses/{response_id}"
+	const response = responses + "/{response_id}"
 	builder.Read(responses, AuthAuthenticated, []string{"items:read"}, listCannedResponses(deps))
 	builder.JSON(http.MethodPost, responses, http.StatusCreated, false, AuthAuthenticated, []string{"workspaces:write"}, createCannedResponse(deps))
 	builder.Read(response, AuthAuthenticated, []string{"items:read"}, getCannedResponse(deps))
