@@ -4,20 +4,13 @@ import { viewSettingsStore } from '../stores/viewSettings.svelte.js';
 // workspace-<view> route suffix.
 const GUARDED_VIEW_IDS = new Set(viewSettingsStore.allViewIds);
 
-// Workspace-scope nav entries this guard protects. Their route views are
-// workspace-<id> for tools and the bare test ids for test management; both
-// map back to the nav id and redirect to the workspace default view when
-// the workspace nav settings disable them.
+// Workspace-only nav entries this guard protects. Their route views are
+// workspace-<id>; direct URLs to disabled entries redirect to the workspace
+// default view, matching the disabled-view contract. Test-management routes
+// are not guarded: test entries are not nav-configurable.
 const GUARDED_NAV_VIEW_IDS = new Set(
   viewSettingsStore.allNavIds.filter((id) => !GUARDED_VIEW_IDS.has(id))
 );
-const TEST_ROUTE_VIEW_TO_NAV_ID = new Map([
-  ['test-cases', 'test-cases'],
-  ['test-sets', 'test-sets'],
-  ['test-templates', 'test-templates'],
-  ['test-runs', 'test-runs'],
-  ['test-reports', 'test-reports'],
-]);
 
 /**
  * Resolves the redirect for a route pointing at a view the current scope has
@@ -26,23 +19,18 @@ const TEST_ROUTE_VIEW_TO_NAV_ID = new Map([
  */
 export function getDisabledViewRedirect(route, workspace, viewSettings = viewSettingsStore) {
   const view = route?.view;
-  if (!view) return null;
+  if (!view?.startsWith('workspace-')) return null;
+  const viewId = view.slice('workspace-'.length);
   const workspaceId = route?.params?.id;
   if (!workspaceId) return null;
 
-  // Workspace-scope nav entries: disabled entries bounce to the workspace
-  // default view; the test routes use their own view names.
-  const navId = view.startsWith('workspace-')
-    ? view.slice('workspace-'.length)
-    : TEST_ROUTE_VIEW_TO_NAV_ID.get(view);
-  if (navId && GUARDED_NAV_VIEW_IDS.has(navId)) {
+  // Workspace-only nav entries bounce to the workspace root when disabled.
+  if (GUARDED_NAV_VIEW_IDS.has(viewId)) {
     const enabled = new Set(viewSettings.enabledNavIds(workspaceId));
-    if (!enabled.has(navId)) return `/workspaces/${workspaceId}`;
+    if (!enabled.has(viewId)) return `/workspaces/${workspaceId}`;
     return null;
   }
 
-  if (!view.startsWith('workspace-')) return null;
-  const viewId = view.slice('workspace-'.length);
   if (!GUARDED_VIEW_IDS.has(viewId)) return null;
 
   const collectionId = route?.params?.collectionId ?? null;

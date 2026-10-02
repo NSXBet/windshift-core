@@ -76,9 +76,9 @@ export function workspaceNavigationProvider(ctx) {
     workspacePermissions.canViewTests(workspaceId) &&
     !collectionId
   ) {
-    const enabledNav = new Set(viewSettingsStore.enabledNavIds(workspaceId));
+    // Test entries are not nav-configurable; module and permission gating
+    // decide their visibility.
     for (const view of testNavigationItems) {
-      if (!enabledNav.has(view.id)) continue;
       const slug = view.id === 'test-cases' ? 'tests' : `tests/${view.id.replace(/^test-/, '')}`;
       const label = t(view.labelKey);
       out.push(

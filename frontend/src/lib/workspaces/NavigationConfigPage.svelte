@@ -32,12 +32,13 @@
   let collectionName = $state('');
   let defaultView = $state(null);
 
-  // Mirrors the sidebar's row order: overview, views, tests, tools. Rows
-  // without a toggle are fixed affordances rendered for orientation.
+  // Mirrors the sidebar's row order: overview, views, tests, tools. Fixed
+  // sections render without toggles for orientation; test entries are not
+  // nav-configurable (module and permission gating decide their visibility).
   const sections = [
     { id: 'overview', title: null, fixed: true, rows: [{ id: 'overview', labelKey: 'workspaceSettings.views.overview', icon: Home }] },
     { id: 'views', title: t('settings.boardConfig.views'), rows: workspaceViewItems },
-    { id: 'tests', title: t('commandPalette.commands.tests.label'), moduleGated: true, rows: testNavigationItems },
+    { id: 'tests', title: t('commandPalette.commands.tests.label'), fixed: true, moduleGated: true, rows: testNavigationItems },
     {
       id: 'tools',
       title: t('actions.config.tools'),
@@ -111,8 +112,10 @@
 
   // Server invariants mirrored as disabled toggles: the workspace default
   // view must stay enabled and the set must never empty out.
-  function canToggleOff(row, fixed) {
-    if (fixed) return false;
+  // Whether a toggleable row may be switched off: the workspace default
+  // view must stay enabled and the set must never empty out. Only consulted
+  // for rows that are currently on.
+  function canToggleOff(row) {
     if (!isCollectionScope && row.id === defaultView) return false;
     if (enabled.length <= 1) return false;
     return true;
@@ -128,9 +131,6 @@
     writeChain = writeChain.then(async () => {
       try {
         await persistCurrent();
-        applyEffectiveViews(
-          await api.collections.getBoardConfiguration(collectionId ?? null, workspaceId ?? null)
-        );
       } catch (error) {
         enabled = before;
         errorToast(t('navConfig.saveError', { error: error?.message || error }));
@@ -158,13 +158,13 @@
         completed_item_retention_days: config?.completed_item_retention_days ?? null,
         view_settings: { enabled_views: [...enabled] },
       };
-      if (config?.id) {
-        config = await api.collections.updateBoardConfiguration(
-          collectionId, config.id, payload, workspaceId
-        );
-      } else {
-        config = await api.collections.createBoardConfiguration(collectionId, workspaceId, payload);
-      }
+      // The PUT response carries the saved config with its effective view
+      // settings; adopt it without touching the local toggle state so rows
+      // do not re-render from a refetch.
+      config = config?.id
+        ? await api.collections.updateBoardConfiguration(collectionId, config.id, payload, workspaceId)
+        : await api.collections.createBoardConfiguration(collectionId, workspaceId, payload);
+      inherited = Boolean(config?.view_settings_inherited) || !config?.view_settings;
       if (collectionId) {
         viewSettingsStore.invalidate(workspaceId, collectionId);
       } else {
@@ -253,9 +253,10 @@
     {#if isCollectionScope}
       <button
         type="button"
-        class="mt-6 inline-flex items-center gap-2 text-sm rounded px-3 py-2 transition-colors hover:bg-[var(--ds-background-neutral)]"
+        class="mt-6 inline-flex items-center gap-2 text-sm rounded px-3 py-2 transition-colors hover:bg-[var(--ds-background-neutral)] disabled:opacity-50"
         style="color: var(--ds-text-subtle);"
         data-testid="nav-config-reset"
+        disabled={saving}
         onclick={resetToInherited}
       >
         <Rotate size={15} />
@@ -268,7 +269,8 @@
 {#snippet navRow(row, section)}
   {@const ItemIcon = row.icon}
   {@const label = t(row.labelKey)}
-  {@const on = row.fixed || isEnabled(row.id)}
+  {@const locked = row.fixed || section.fixed}
+  {@const on = locked || isEnabled(row.id)}
   <div
     class="flex items-center justify-between gap-4 px-4 py-3 transition-opacity {on ? '' : 'opacity-40 hover:opacity-70'}"
     data-testid={`nav-config-row-${row.id}`}
@@ -283,12 +285,12 @@
           <div class="text-xs" style="color: var(--ds-text-subtle);">{t('navConfig.adminOnlyHint')}</div>
         {:else if section.moduleGated && !$moduleSettings.test_management_enabled}
           <div class="text-xs" style="color: var(--ds-text-subtle);">{t('navConfig.moduleHint')}</div>
-        {:else if !row.fixed && !isCollectionScope && row.id === defaultView}
+        {:else if !locked && !isCollectionScope && row.id === defaultView}
           <div class="text-xs" style="color: var(--ds-text-subtle);">{t('navConfig.defaultViewHint')}</div>
         {/if}
       </div>
     </div>
-    {#if row.fixed}
+    {#if locked}
       <span class="text-xs shrink-0" style="color: var(--ds-text-subtle);">
         {t('navConfig.alwaysVisible')}
       </span>
@@ -297,7 +299,7 @@
         <Toggle
           size="small"
           checked={on}
-          disabled={saving || (!on && !canToggleOff(row, section.fixed))}
+          disabled={on && !canToggleOff(row)}
           ariaLabel={label}
           dataTestid={`nav-config-toggle-${row.id}`}
           onchange={() => toggleRow(row)}

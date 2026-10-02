@@ -1,22 +1,15 @@
 import { api } from '../api.js';
-import {
-  testNavigationItems,
-  workspaceOnlyViews,
-  workspaceViewItems,
-} from '../navigation/workspaceNavigation.js';
+import { workspaceOnlyViews, workspaceViewItems } from '../navigation/workspaceNavigation.js';
 
 // Every collection-scoped view, used whenever a scope has no explicit
 // enabled-views setting or its lookup fails.
 const ALL_VIEW_IDS = workspaceViewItems.map((view) => view.id);
 
 // Every toggleable workspace nav item (views plus the workspace-only tools
-// and test-management entries), used as the workspace-scope fallback. The
-// ids mirror models.WorkspaceNavItemIDs on the backend.
-export const ALL_NAV_IDS = [
-  ...ALL_VIEW_IDS,
-  ...workspaceOnlyViews.map((view) => view.id),
-  ...testNavigationItems.map((view) => view.id),
-];
+// entries), used as the workspace-scope fallback. The ids mirror
+// models.WorkspaceNavItemIDs on the backend; test-management entries are
+// not toggleable and stay gated by module and permission only.
+export const ALL_NAV_IDS = [...ALL_VIEW_IDS, ...workspaceOnlyViews.map((view) => view.id)];
 
 /** @typedef {{ views: string[], inherited: boolean, loaded: boolean }} ViewSettingsEntry */
 

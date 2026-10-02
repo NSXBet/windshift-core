@@ -118,10 +118,9 @@
     });
   });
   const visibleTestNavItems = $derived.by(() => {
-    if (!enabledNavSet.has('test-cases') && !enabledNavSet.has('test-runs')) {
-      return [];
-    }
-    return testNavigationItems.filter((view) => enabledNavSet.has(view.id));
+    // Test entries are not nav-configurable; module and permission gating
+    // decide their visibility.
+    return testNavigationItems;
   });
   // The navigation configuration is writable with collections:write — the
   // same gate the board-configuration PUT enforces; admins always hold it.
@@ -464,37 +463,20 @@
 {#snippet regularSidebarHeader()}
   <!-- Keep the collection selector visible while navigation scrolls. -->
   <div class="px-4 pt-2 mb-6">
-    <div class="flex items-center gap-1.5">
-      <Tooltip content={t('collections.collection')} placement="right">
-        <DropdownMenu
-          triggerText={collectionDisplayName}
-          triggerTestid="workspace-collection-select"
-          items={collectionDropdownItems}
-          maxWidth="max-w-full"
-          matchTriggerWidth={true}
-          showChevron={true}
-          placement="bottom-start"
-          triggerClass="w-full text-left font-medium rounded !px-3 !py-2.5 !text-sm transition-colors flex-1 min-w-0"
-          triggerStyle="background-color: var(--ds-surface); border: 1px solid var(--ds-border); color: var(--ds-text);"
-          triggerAlignment="between"
-        />
-      </Tooltip>
-      {#if canConfigureNav && !$currentWorkspace?.is_personal}
-        <Tooltip content={t('navConfig.configureTitle')} placement="right">
-          <a
-            href={currentCollectionId
-              ? `/workspaces/${workspaceId}/collections/${currentCollectionId}/navigation`
-              : `/workspaces/${workspaceId}/navigation`}
-            data-testid="workspace-nav-config-button"
-            class="shrink-0 inline-flex items-center justify-center w-9 h-9 rounded transition-colors hover:bg-[var(--ds-background-neutral)]"
-            style="color: var(--ds-text-subtle);"
-            aria-label={t('navConfig.configureTitle')}
-          >
-            <Settings size={16} />
-          </a>
-        </Tooltip>
-      {/if}
-    </div>
+    <Tooltip content={t('collections.collection')} placement="right">
+      <DropdownMenu
+        triggerText={collectionDisplayName}
+        triggerTestid="workspace-collection-select"
+        items={collectionDropdownItems}
+        maxWidth="max-w-full"
+        matchTriggerWidth={true}
+        showChevron={true}
+        placement="bottom-start"
+        triggerClass="w-full text-left font-medium rounded !px-3 !py-2.5 !text-sm transition-colors"
+        triggerStyle="background-color: var(--ds-surface); border: 1px solid var(--ds-border); color: var(--ds-text);"
+        triggerAlignment="between"
+      />
+    </Tooltip>
   </div>
 {/snippet}
 
@@ -676,14 +658,31 @@
       {/if}
 
       <div class="mt-4 pt-4 border-t" style="border-color: var(--ds-border);">
-        <button
-          type="button"
-          class="section-toggle w-full flex items-center justify-between text-xs font-semibold uppercase tracking-wide mb-2 transition-colors"
-          onclick={toggleWorkspaceToolsSection}
-        >
-          <span>{t('actions.config.tools')}</span>
-          <ChevronDown class={`w-4 h-4 transition-transform ${workspaceToolsExpanded ? 'rotate-180' : ''}`} />
-        </button>
+        <div class="flex items-center justify-between gap-1">
+          <button
+            type="button"
+            class="section-toggle flex-1 min-w-0 flex items-center justify-between text-xs font-semibold uppercase tracking-wide mb-2 transition-colors"
+            onclick={toggleWorkspaceToolsSection}
+          >
+            <span>{t('actions.config.tools')}</span>
+            <ChevronDown class={`w-4 h-4 transition-transform ${workspaceToolsExpanded ? 'rotate-180' : ''}`} />
+          </button>
+          {#if canConfigureNav}
+            <Tooltip content={t('navConfig.configureTitle')} placement="right">
+              <a
+                href={currentCollectionId
+                  ? `/workspaces/${workspaceId}/collections/${currentCollectionId}/navigation`
+                  : `/workspaces/${workspaceId}/navigation`}
+                data-testid="workspace-nav-config-button"
+                class="shrink-0 inline-flex items-center justify-center w-6 h-6 mb-2 rounded transition-colors hover:bg-[var(--ds-background-neutral)]"
+                style="color: var(--ds-text-subtle);"
+                aria-label={t('navConfig.configureTitle')}
+              >
+                <Settings size={14} />
+              </a>
+            </Tooltip>
+          {/if}
+        </div>
 
         {#if workspaceToolsExpanded}
           <div class="space-y-1" data-testid="workspace-tools-navigation">

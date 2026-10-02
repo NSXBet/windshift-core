@@ -325,14 +325,14 @@ var BoardViewIDs = []string{"backlog", "board", "list", "tree", "map", "roadmap"
 
 // WorkspaceNavItemIDs lists every navigable workspace entry that view
 // visibility settings can toggle at the workspace scope: the
-// collection-scoped BoardViewIDs plus the workspace-only tools and
-// test-management nav entries (the ids used by the frontend navigation
-// registry). Overview, look-and-feel, and settings are deliberately
-// absent: overview is the disabled-view redirect fallback and the others
-// are admin affordances, not workspace feature surfaces.
+// collection-scoped BoardViewIDs plus the workspace-only tools entries (the
+// ids used by the frontend navigation registry). Test-management entries are
+// deliberately absent — they are core navigation for testing workspaces — as
+// are overview, look-and-feel, and settings: overview is the disabled-view
+// redirect fallback and the others are admin affordances, not workspace
+// feature surfaces.
 var WorkspaceNavItemIDs = append(slices.Clone(BoardViewIDs),
 	"agents", "iterations", "milestones", "analytics", "actions", "pages",
-	"test-cases", "test-sets", "test-templates", "test-runs", "test-reports",
 )
 
 // IsWorkspaceNavID reports whether id is a workspace-scope nav item.
