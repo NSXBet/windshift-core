@@ -9,6 +9,7 @@
   import Toggle from '../components/Toggle.svelte';
   import Tooltip from '../components/Tooltip.svelte';
   import {
+    COLLECTION_VIEW_IDS,
     testNavigationItems,
     workspaceOnlyViews,
     workspaceViewItems,
@@ -36,7 +37,9 @@
   // sections render without toggles for orientation; test entries are not
   // nav-configurable (module and permission gating decide their visibility).
   // A global collection lives outside any workspace nav, so only the views
-  // section applies there.
+  // section applies there. A workspace collection cannot toggle the
+  // workspace-only tools either — they follow the workspace setting.
+  const isCollectionScope = $derived(Boolean(collectionId));
   const sections = $derived.by(() => {
     const viewsSection = {
       id: 'views',
@@ -46,10 +49,16 @@
     if (!workspaceId) {
       return [viewsSection];
     }
-    return [
+    const scoped = [
       { id: 'overview', title: null, fixed: true, rows: [{ id: 'overview', labelKey: 'workspaceSettings.views.overview', icon: Home }] },
       viewsSection,
       { id: 'tests', title: t('commandPalette.commands.tests.label'), fixed: true, moduleGated: true, rows: testNavigationItems },
+    ];
+    if (isCollectionScope) {
+      return scoped;
+    }
+    return [
+      ...scoped,
       {
         id: 'tools',
         title: t('actions.config.tools'),
@@ -62,7 +71,6 @@
     ];
   });
 
-  const isCollectionScope = $derived(Boolean(collectionId));
   const workspaceName = $derived($currentWorkspace?.name || t('common.workspace'));
   const canAdmin = $derived(workspacePermissions.canAdminWorkspace(workspaceId));
 
@@ -115,6 +123,12 @@
       Array.isArray(effective) && effective.length > 0
         ? [...effective]
         : [...viewSettingsStore.allNavIds];
+    if (isCollectionScope) {
+      // The collection effective set inherits workspace-only tools ids
+      // underneath any override; they are read-only in this scope and must
+      // never round-trip into its payload.
+      enabled = enabled.filter((id) => COLLECTION_VIEW_IDS.has(id));
+    }
     inherited = Boolean(data?.view_settings_inherited) || !data?.view_settings;
   }
 

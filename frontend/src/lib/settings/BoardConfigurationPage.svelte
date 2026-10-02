@@ -27,7 +27,7 @@
   import DropIndicator from '../layout/DropIndicator.svelte';
   import DragHandleDots from '../components/DragHandleDots.svelte';
   import CollectionViewSwitcher from '../features/collections/CollectionViewSwitcher.svelte';
-  import { workspaceViewItems } from '../navigation/workspaceNavigation.js';
+  import { COLLECTION_VIEW_IDS, workspaceViewItems } from '../navigation/workspaceNavigation.js';
   import { viewSettingsStore } from '../stores/viewSettings.svelte.js';
   import { objectDisplayName } from '../utils/systemLabels.js';
 
@@ -184,6 +184,11 @@
       enabledViews = Array.isArray(effectiveViews) && effectiveViews.length > 0
         ? [...effectiveViews]
         : workspaceViewItems.map((view) => view.id);
+      if (collectionId) {
+        // The collection effective set inherits workspace-only tools ids;
+        // this scope only reads and persists collection views.
+        enabledViews = enabledViews.filter((id) => COLLECTION_VIEW_IDS.has(id));
+      }
       viewsInherited = Boolean(boardConfig?.view_settings_inherited) || !boardConfig?.view_settings;
       viewsDirty = false;
       viewsResetPending = false;

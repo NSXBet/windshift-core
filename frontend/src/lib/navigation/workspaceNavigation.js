@@ -84,6 +84,13 @@ export const workspaceViewItems = [
 ];
 
 /**
+ * Collection-scoped view ids, the only entries a collection-scope navigation
+ * override may toggle; mirrors models.BoardViewIDs on the backend.
+ * @type {Set<string>}
+ */
+export const COLLECTION_VIEW_IDS = new Set(workspaceViewItems.map((view) => view.id));
+
+/**
  * Workspace tools which are not scoped to a collection.
  * @type {WorkspaceView[]}
  */
