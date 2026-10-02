@@ -6440,6 +6440,69 @@
         ],
         "type": "object"
       },
+      "GetCollectionsCollectionIdQueuesResult": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "builtin": {
+                  "description": "The builtin value.",
+                  "type": "boolean"
+                },
+                "count": {
+                  "description": "The count value.",
+                  "type": "integer"
+                },
+                "description": {
+                  "description": "The description value.",
+                  "type": "string"
+                },
+                "filter_state": {
+                  "description": "The filter state value.",
+                  "nullable": true,
+                  "type": "string"
+                },
+                "id": {
+                  "description": "The id value.",
+                  "type": "integer"
+                },
+                "key": {
+                  "description": "The key value.",
+                  "type": "string"
+                },
+                "name": {
+                  "description": "The name value.",
+                  "type": "string"
+                },
+                "position": {
+                  "description": "The position value.",
+                  "type": "integer"
+                },
+                "ql": {
+                  "description": "The ql value.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "builtin",
+                "count",
+                "id",
+                "name",
+                "position",
+                "ql"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
       "GetCollectionsCollectionIdResult": {
         "additionalProperties": false,
         "properties": {
@@ -48789,6 +48852,10 @@
             "items": {
               "additionalProperties": false,
               "properties": {
+                "builtin": {
+                  "description": "The builtin value.",
+                  "type": "boolean"
+                },
                 "count": {
                   "description": "The count value.",
                   "type": "integer"
@@ -48796,6 +48863,15 @@
                 "description": {
                   "description": "The description value.",
                   "type": "string"
+                },
+                "filter_state": {
+                  "description": "The filter state value.",
+                  "nullable": true,
+                  "type": "string"
+                },
+                "id": {
+                  "description": "The id value.",
+                  "type": "integer"
                 },
                 "key": {
                   "description": "The key value.",
@@ -48805,16 +48881,21 @@
                   "description": "The name value.",
                   "type": "string"
                 },
+                "position": {
+                  "description": "The position value.",
+                  "type": "integer"
+                },
                 "ql": {
                   "description": "The ql value.",
                   "type": "string"
                 }
               },
               "required": [
+                "builtin",
                 "count",
-                "description",
-                "key",
+                "id",
                 "name",
+                "position",
                 "ql"
               ],
               "type": "object"
@@ -56135,6 +56216,89 @@
               "is_default",
               "name",
               "sort_order"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "PatchQueuesQueueIdPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "filter_state": {
+            "description": "The filter state value.",
+            "nullable": true,
+            "type": "string"
+          },
+          "name": {
+            "description": "The name value.",
+            "type": "string"
+          },
+          "ql_query": {
+            "description": "The ql query value.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "ql_query"
+        ],
+        "type": "object"
+      },
+      "PatchQueuesQueueIdResult": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": false,
+            "properties": {
+              "builtin": {
+                "description": "The builtin value.",
+                "type": "boolean"
+              },
+              "count": {
+                "description": "The count value.",
+                "type": "integer"
+              },
+              "description": {
+                "description": "The description value.",
+                "type": "string"
+              },
+              "filter_state": {
+                "description": "The filter state value.",
+                "nullable": true,
+                "type": "string"
+              },
+              "id": {
+                "description": "The id value.",
+                "type": "integer"
+              },
+              "key": {
+                "description": "The key value.",
+                "type": "string"
+              },
+              "name": {
+                "description": "The name value.",
+                "type": "string"
+              },
+              "position": {
+                "description": "The position value.",
+                "type": "integer"
+              },
+              "ql": {
+                "description": "The ql value.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "builtin",
+              "count",
+              "id",
+              "name",
+              "position",
+              "ql"
             ],
             "type": "object"
           }
@@ -63764,6 +63928,89 @@
               "id",
               "name",
               "updated_at"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "PostCollectionsCollectionIdQueuesPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "filter_state": {
+            "description": "The filter state value.",
+            "nullable": true,
+            "type": "string"
+          },
+          "name": {
+            "description": "The name value.",
+            "type": "string"
+          },
+          "ql_query": {
+            "description": "The ql query value.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "ql_query"
+        ],
+        "type": "object"
+      },
+      "PostCollectionsCollectionIdQueuesResult": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": false,
+            "properties": {
+              "builtin": {
+                "description": "The builtin value.",
+                "type": "boolean"
+              },
+              "count": {
+                "description": "The count value.",
+                "type": "integer"
+              },
+              "description": {
+                "description": "The description value.",
+                "type": "string"
+              },
+              "filter_state": {
+                "description": "The filter state value.",
+                "nullable": true,
+                "type": "string"
+              },
+              "id": {
+                "description": "The id value.",
+                "type": "integer"
+              },
+              "key": {
+                "description": "The key value.",
+                "type": "string"
+              },
+              "name": {
+                "description": "The name value.",
+                "type": "string"
+              },
+              "position": {
+                "description": "The position value.",
+                "type": "integer"
+              },
+              "ql": {
+                "description": "The ql value.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "builtin",
+              "count",
+              "id",
+              "name",
+              "position",
+              "ql"
             ],
             "type": "object"
           }
@@ -91938,6 +92185,89 @@
         ],
         "type": "object"
       },
+      "PostWorkspacesWorkspaceKeyQueuesPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "filter_state": {
+            "description": "The filter state value.",
+            "nullable": true,
+            "type": "string"
+          },
+          "name": {
+            "description": "The name value.",
+            "type": "string"
+          },
+          "ql_query": {
+            "description": "The ql query value.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "ql_query"
+        ],
+        "type": "object"
+      },
+      "PostWorkspacesWorkspaceKeyQueuesResult": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": false,
+            "properties": {
+              "builtin": {
+                "description": "The builtin value.",
+                "type": "boolean"
+              },
+              "count": {
+                "description": "The count value.",
+                "type": "integer"
+              },
+              "description": {
+                "description": "The description value.",
+                "type": "string"
+              },
+              "filter_state": {
+                "description": "The filter state value.",
+                "nullable": true,
+                "type": "string"
+              },
+              "id": {
+                "description": "The id value.",
+                "type": "integer"
+              },
+              "key": {
+                "description": "The key value.",
+                "type": "string"
+              },
+              "name": {
+                "description": "The name value.",
+                "type": "string"
+              },
+              "position": {
+                "description": "The position value.",
+                "type": "integer"
+              },
+              "ql": {
+                "description": "The ql value.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "builtin",
+              "count",
+              "id",
+              "name",
+              "position",
+              "ql"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
       "PutAdminObjectTranslationsObjectTypeObjectIdFieldLocalePayload": {
         "additionalProperties": false,
         "properties": {
@@ -92410,6 +92740,161 @@
               "updated_at"
             ],
             "type": "object"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "PutCollectionsCollectionIdQueuesBuiltinsBuiltinKeyPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "hidden": {
+            "description": "The hidden value.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "hidden"
+        ],
+        "type": "object"
+      },
+      "PutCollectionsCollectionIdQueuesBuiltinsBuiltinKeyResult": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "builtin": {
+                  "description": "The builtin value.",
+                  "type": "boolean"
+                },
+                "count": {
+                  "description": "The count value.",
+                  "type": "integer"
+                },
+                "description": {
+                  "description": "The description value.",
+                  "type": "string"
+                },
+                "filter_state": {
+                  "description": "The filter state value.",
+                  "nullable": true,
+                  "type": "string"
+                },
+                "id": {
+                  "description": "The id value.",
+                  "type": "integer"
+                },
+                "key": {
+                  "description": "The key value.",
+                  "type": "string"
+                },
+                "name": {
+                  "description": "The name value.",
+                  "type": "string"
+                },
+                "position": {
+                  "description": "The position value.",
+                  "type": "integer"
+                },
+                "ql": {
+                  "description": "The ql value.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "builtin",
+                "count",
+                "id",
+                "name",
+                "position",
+                "ql"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "PutCollectionsCollectionIdQueuesOrderPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "ids": {
+            "description": "Resource IDs in preferred response order. At most 500 IDs are accepted; duplicates use their first occurrence and missing or invisible resources are omitted.",
+            "items": {
+              "type": "integer"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "ids"
+        ],
+        "type": "object"
+      },
+      "PutCollectionsCollectionIdQueuesOrderResult": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "builtin": {
+                  "description": "The builtin value.",
+                  "type": "boolean"
+                },
+                "count": {
+                  "description": "The count value.",
+                  "type": "integer"
+                },
+                "description": {
+                  "description": "The description value.",
+                  "type": "string"
+                },
+                "filter_state": {
+                  "description": "The filter state value.",
+                  "nullable": true,
+                  "type": "string"
+                },
+                "id": {
+                  "description": "The id value.",
+                  "type": "integer"
+                },
+                "key": {
+                  "description": "The key value.",
+                  "type": "string"
+                },
+                "name": {
+                  "description": "The name value.",
+                  "type": "string"
+                },
+                "position": {
+                  "description": "The position value.",
+                  "type": "integer"
+                },
+                "ql": {
+                  "description": "The ql value.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "builtin",
+                "count",
+                "id",
+                "name",
+                "position",
+                "ql"
+              ],
+              "type": "object"
+            },
+            "type": "array"
           }
         },
         "required": [
@@ -94410,6 +94895,161 @@
               "workspace_id"
             ],
             "type": "object"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "PutWorkspacesWorkspaceKeyQueuesBuiltinsBuiltinKeyPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "hidden": {
+            "description": "The hidden value.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "hidden"
+        ],
+        "type": "object"
+      },
+      "PutWorkspacesWorkspaceKeyQueuesBuiltinsBuiltinKeyResult": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "builtin": {
+                  "description": "The builtin value.",
+                  "type": "boolean"
+                },
+                "count": {
+                  "description": "The count value.",
+                  "type": "integer"
+                },
+                "description": {
+                  "description": "The description value.",
+                  "type": "string"
+                },
+                "filter_state": {
+                  "description": "The filter state value.",
+                  "nullable": true,
+                  "type": "string"
+                },
+                "id": {
+                  "description": "The id value.",
+                  "type": "integer"
+                },
+                "key": {
+                  "description": "The key value.",
+                  "type": "string"
+                },
+                "name": {
+                  "description": "The name value.",
+                  "type": "string"
+                },
+                "position": {
+                  "description": "The position value.",
+                  "type": "integer"
+                },
+                "ql": {
+                  "description": "The ql value.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "builtin",
+                "count",
+                "id",
+                "name",
+                "position",
+                "ql"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "PutWorkspacesWorkspaceKeyQueuesOrderPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "ids": {
+            "description": "Resource IDs in preferred response order. At most 500 IDs are accepted; duplicates use their first occurrence and missing or invisible resources are omitted.",
+            "items": {
+              "type": "integer"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "ids"
+        ],
+        "type": "object"
+      },
+      "PutWorkspacesWorkspaceKeyQueuesOrderResult": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "builtin": {
+                  "description": "The builtin value.",
+                  "type": "boolean"
+                },
+                "count": {
+                  "description": "The count value.",
+                  "type": "integer"
+                },
+                "description": {
+                  "description": "The description value.",
+                  "type": "string"
+                },
+                "filter_state": {
+                  "description": "The filter state value.",
+                  "nullable": true,
+                  "type": "string"
+                },
+                "id": {
+                  "description": "The id value.",
+                  "type": "integer"
+                },
+                "key": {
+                  "description": "The key value.",
+                  "type": "string"
+                },
+                "name": {
+                  "description": "The name value.",
+                  "type": "string"
+                },
+                "position": {
+                  "description": "The position value.",
+                  "type": "integer"
+                },
+                "ql": {
+                  "description": "The ql value.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "builtin",
+                "count",
+                "id",
+                "name",
+                "position",
+                "ql"
+              ],
+              "type": "object"
+            },
+            "type": "array"
           }
         },
         "required": [
@@ -99907,6 +100547,299 @@
         ],
         "x-required-scopes": [
           "collections:read"
+        ]
+      }
+    },
+    "/collections/{collection_id}/queues": {
+      "get": {
+        "description": "List collection support queues. Results include only resources visible to the authenticated caller; collections use their documented stable order and bounds.",
+        "operationId": "getCollectionsCollectionIdQueues",
+        "parameters": [
+          {
+            "description": "The collection identifier.",
+            "in": "path",
+            "name": "collection_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetCollectionsCollectionIdQueuesResult"
+                }
+              }
+            },
+            "description": "List collection support queues response."
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationError"
+          },
+          "403": {
+            "$ref": "#/components/responses/PermissionError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimitError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "List collection support queues",
+        "tags": [
+          "Work items"
+        ],
+        "x-required-scopes": [
+          "items:read"
+        ]
+      },
+      "post": {
+        "description": "Create a collection support queue. The server validates resource ownership and command preconditions before persisting changes. Unknown JSON fields are rejected when the operation accepts a body.",
+        "operationId": "postCollectionsCollectionIdQueues",
+        "parameters": [
+          {
+            "description": "The collection identifier.",
+            "in": "path",
+            "name": "collection_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostCollectionsCollectionIdQueuesPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostCollectionsCollectionIdQueuesResult"
+                }
+              }
+            },
+            "description": "Create a collection support queue response."
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationError"
+          },
+          "403": {
+            "$ref": "#/components/responses/PermissionError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLargeError"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaTypeError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimitError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Create a collection support queue",
+        "tags": [
+          "Work items"
+        ],
+        "x-required-scopes": [
+          "collections:write"
+        ]
+      }
+    },
+    "/collections/{collection_id}/queues/builtins/{builtin_key}": {
+      "put": {
+        "description": "Hide or restore a built-in collection queue. The server validates resource ownership and command preconditions before persisting changes. Unknown JSON fields are rejected when the operation accepts a body.",
+        "operationId": "putCollectionsCollectionIdQueuesBuiltinsBuiltinKey",
+        "parameters": [
+          {
+            "description": "The collection identifier.",
+            "in": "path",
+            "name": "collection_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The stable built-in queue key.",
+            "in": "path",
+            "name": "builtin_key",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutCollectionsCollectionIdQueuesBuiltinsBuiltinKeyPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PutCollectionsCollectionIdQueuesBuiltinsBuiltinKeyResult"
+                }
+              }
+            },
+            "description": "Hide or restore a built-in collection queue response."
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationError"
+          },
+          "403": {
+            "$ref": "#/components/responses/PermissionError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLargeError"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaTypeError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimitError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Hide or restore a built-in collection queue",
+        "tags": [
+          "Work items"
+        ],
+        "x-required-scopes": [
+          "collections:write"
+        ]
+      }
+    },
+    "/collections/{collection_id}/queues/order": {
+      "put": {
+        "description": "Reorder collection support queues. The server validates resource ownership and command preconditions before persisting changes. Unknown JSON fields are rejected when the operation accepts a body.",
+        "operationId": "putCollectionsCollectionIdQueuesOrder",
+        "parameters": [
+          {
+            "description": "The collection identifier.",
+            "in": "path",
+            "name": "collection_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutCollectionsCollectionIdQueuesOrderPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PutCollectionsCollectionIdQueuesOrderResult"
+                }
+              }
+            },
+            "description": "Reorder collection support queues response."
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationError"
+          },
+          "403": {
+            "$ref": "#/components/responses/PermissionError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLargeError"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaTypeError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimitError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Reorder collection support queues",
+        "tags": [
+          "Work items"
+        ],
+        "x-required-scopes": [
+          "collections:write"
         ]
       }
     },
@@ -110099,6 +111032,139 @@
         ],
         "x-required-scopes": [
           "items:read"
+        ]
+      }
+    },
+    "/queues/{queue_id}": {
+      "delete": {
+        "description": "Delete a support queue. The server verifies resource ownership and deletion preconditions before removing the resource.",
+        "operationId": "deleteQueuesQueueId",
+        "parameters": [
+          {
+            "description": "The queue identifier.",
+            "in": "path",
+            "name": "queue_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Request completed successfully with no response body."
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationError"
+          },
+          "403": {
+            "$ref": "#/components/responses/PermissionError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLargeError"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaTypeError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimitError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Delete a support queue",
+        "tags": [
+          "Work items"
+        ],
+        "x-required-scopes": [
+          "collections:write"
+        ]
+      },
+      "patch": {
+        "description": "Update a support queue. The operation uses JSON Merge Patch: omitted fields remain unchanged and documented nullable fields accept null. Unknown fields are rejected.",
+        "operationId": "patchQueuesQueueId",
+        "parameters": [
+          {
+            "description": "The queue identifier.",
+            "in": "path",
+            "name": "queue_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/merge-patch+json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchQueuesQueueIdPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PatchQueuesQueueIdResult"
+                }
+              }
+            },
+            "description": "Update a support queue response."
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationError"
+          },
+          "403": {
+            "$ref": "#/components/responses/PermissionError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLargeError"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaTypeError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimitError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Update a support queue",
+        "tags": [
+          "Work items"
+        ],
+        "x-required-scopes": [
+          "collections:write"
         ]
       }
     },
@@ -128223,6 +129289,242 @@
         ],
         "x-required-scopes": [
           "items:read"
+        ]
+      },
+      "post": {
+        "description": "Create a support queue. The server validates resource ownership and command preconditions before persisting changes. Unknown JSON fields are rejected when the operation accepts a body.",
+        "operationId": "postWorkspacesWorkspaceKeyQueues",
+        "parameters": [
+          {
+            "description": "The workspace key.",
+            "in": "path",
+            "name": "workspace_key",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostWorkspacesWorkspaceKeyQueuesPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostWorkspacesWorkspaceKeyQueuesResult"
+                }
+              }
+            },
+            "description": "Create a support queue response."
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationError"
+          },
+          "403": {
+            "$ref": "#/components/responses/PermissionError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLargeError"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaTypeError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimitError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Create a support queue",
+        "tags": [
+          "Work items"
+        ],
+        "x-required-scopes": [
+          "collections:write"
+        ]
+      }
+    },
+    "/workspaces/{workspace_key}/queues/builtins/{builtin_key}": {
+      "put": {
+        "description": "Hide or restore a built-in queue. The server validates resource ownership and command preconditions before persisting changes. Unknown JSON fields are rejected when the operation accepts a body.",
+        "operationId": "putWorkspacesWorkspaceKeyQueuesBuiltinsBuiltinKey",
+        "parameters": [
+          {
+            "description": "The workspace key.",
+            "in": "path",
+            "name": "workspace_key",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "description": "The stable built-in queue key.",
+            "in": "path",
+            "name": "builtin_key",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutWorkspacesWorkspaceKeyQueuesBuiltinsBuiltinKeyPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PutWorkspacesWorkspaceKeyQueuesBuiltinsBuiltinKeyResult"
+                }
+              }
+            },
+            "description": "Hide or restore a built-in queue response."
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationError"
+          },
+          "403": {
+            "$ref": "#/components/responses/PermissionError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLargeError"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaTypeError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimitError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Hide or restore a built-in queue",
+        "tags": [
+          "Work items"
+        ],
+        "x-required-scopes": [
+          "collections:write"
+        ]
+      }
+    },
+    "/workspaces/{workspace_key}/queues/order": {
+      "put": {
+        "description": "Reorder support queues. The server validates resource ownership and command preconditions before persisting changes. Unknown JSON fields are rejected when the operation accepts a body.",
+        "operationId": "putWorkspacesWorkspaceKeyQueuesOrder",
+        "parameters": [
+          {
+            "description": "The workspace key.",
+            "in": "path",
+            "name": "workspace_key",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutWorkspacesWorkspaceKeyQueuesOrderPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PutWorkspacesWorkspaceKeyQueuesOrderResult"
+                }
+              }
+            },
+            "description": "Reorder support queues response."
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationError"
+          },
+          "403": {
+            "$ref": "#/components/responses/PermissionError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLargeError"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaTypeError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimitError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Reorder support queues",
+        "tags": [
+          "Work items"
+        ],
+        "x-required-scopes": [
+          "collections:write"
         ]
       }
     }

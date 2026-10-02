@@ -3296,6 +3296,135 @@
         ]
       }
     },
+    "/collections/{collection_id}/queues": {
+      "get": {
+        "description": "List collection support queues. Results include only resources visible to the authenticated caller; collections use their documented stable order and bounds.",
+        "parameters": [
+          {
+            "Name": "collection_id",
+            "In": "path",
+            "Description": "The collection identifier.",
+            "Required": true,
+            "Schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "401": {},
+          "403": {},
+          "404": {},
+          "429": {},
+          "500": {}
+        },
+        "summary": "List collection support queues",
+        "tags": [
+          "Work items"
+        ]
+      },
+      "post": {
+        "description": "Create a collection support queue. The server validates resource ownership and command preconditions before persisting changes. Unknown JSON fields are rejected when the operation accepts a body.",
+        "parameters": [
+          {
+            "Name": "collection_id",
+            "In": "path",
+            "Description": "The collection identifier.",
+            "Required": true,
+            "Schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "400": {},
+          "401": {},
+          "403": {},
+          "404": {},
+          "413": {},
+          "415": {},
+          "429": {},
+          "500": {}
+        },
+        "summary": "Create a collection support queue",
+        "tags": [
+          "Work items"
+        ]
+      }
+    },
+    "/collections/{collection_id}/queues/builtins/{builtin_key}": {
+      "put": {
+        "description": "Hide or restore a built-in collection queue. The server validates resource ownership and command preconditions before persisting changes. Unknown JSON fields are rejected when the operation accepts a body.",
+        "parameters": [
+          {
+            "Name": "collection_id",
+            "In": "path",
+            "Description": "The collection identifier.",
+            "Required": true,
+            "Schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "Name": "builtin_key",
+            "In": "path",
+            "Description": "The stable built-in queue key.",
+            "Required": true,
+            "Schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "400": {},
+          "401": {},
+          "403": {},
+          "404": {},
+          "413": {},
+          "415": {},
+          "429": {},
+          "500": {}
+        },
+        "summary": "Hide or restore a built-in collection queue",
+        "tags": [
+          "Work items"
+        ]
+      }
+    },
+    "/collections/{collection_id}/queues/order": {
+      "put": {
+        "description": "Reorder collection support queues. The server validates resource ownership and command preconditions before persisting changes. Unknown JSON fields are rejected when the operation accepts a body.",
+        "parameters": [
+          {
+            "Name": "collection_id",
+            "In": "path",
+            "Description": "The collection identifier.",
+            "Required": true,
+            "Schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "400": {},
+          "401": {},
+          "403": {},
+          "404": {},
+          "413": {},
+          "415": {},
+          "429": {},
+          "500": {}
+        },
+        "summary": "Reorder collection support queues",
+        "tags": [
+          "Work items"
+        ]
+      }
+    },
     "/collections/{collection_id}/sharing": {
       "patch": {
         "description": "Update collection sharing. The operation uses JSON Merge Patch: omitted fields remain unchanged and documented nullable fields accept null. Unknown fields are rejected.",
@@ -8361,6 +8490,63 @@
           "500": {}
         },
         "summary": "Search query language completion values",
+        "tags": [
+          "Work items"
+        ]
+      }
+    },
+    "/queues/{queue_id}": {
+      "delete": {
+        "description": "Delete a support queue. The server verifies resource ownership and deletion preconditions before removing the resource.",
+        "parameters": [
+          {
+            "Name": "queue_id",
+            "In": "path",
+            "Description": "The queue identifier.",
+            "Required": true,
+            "Schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "401": {},
+          "403": {},
+          "404": {},
+          "429": {},
+          "500": {}
+        },
+        "summary": "Delete a support queue",
+        "tags": [
+          "Work items"
+        ]
+      },
+      "patch": {
+        "description": "Update a support queue. The operation uses JSON Merge Patch: omitted fields remain unchanged and documented nullable fields accept null. Unknown fields are rejected.",
+        "parameters": [
+          {
+            "Name": "queue_id",
+            "In": "path",
+            "Description": "The queue identifier.",
+            "Required": true,
+            "Schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "400": {},
+          "401": {},
+          "403": {},
+          "404": {},
+          "413": {},
+          "415": {},
+          "429": {},
+          "500": {}
+        },
+        "summary": "Update a support queue",
         "tags": [
           "Work items"
         ]
@@ -17634,6 +17820,107 @@
           "500": {}
         },
         "summary": "List support queue presets",
+        "tags": [
+          "Work items"
+        ]
+      },
+      "post": {
+        "description": "Create a support queue. The server validates resource ownership and command preconditions before persisting changes. Unknown JSON fields are rejected when the operation accepts a body.",
+        "parameters": [
+          {
+            "Name": "workspace_key",
+            "In": "path",
+            "Description": "The workspace key.",
+            "Required": true,
+            "Schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "400": {},
+          "401": {},
+          "403": {},
+          "404": {},
+          "413": {},
+          "415": {},
+          "429": {},
+          "500": {}
+        },
+        "summary": "Create a support queue",
+        "tags": [
+          "Work items"
+        ]
+      }
+    },
+    "/workspaces/{workspace_key}/queues/builtins/{builtin_key}": {
+      "put": {
+        "description": "Hide or restore a built-in queue. The server validates resource ownership and command preconditions before persisting changes. Unknown JSON fields are rejected when the operation accepts a body.",
+        "parameters": [
+          {
+            "Name": "workspace_key",
+            "In": "path",
+            "Description": "The workspace key.",
+            "Required": true,
+            "Schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "Name": "builtin_key",
+            "In": "path",
+            "Description": "The stable built-in queue key.",
+            "Required": true,
+            "Schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "400": {},
+          "401": {},
+          "403": {},
+          "404": {},
+          "413": {},
+          "415": {},
+          "429": {},
+          "500": {}
+        },
+        "summary": "Hide or restore a built-in queue",
+        "tags": [
+          "Work items"
+        ]
+      }
+    },
+    "/workspaces/{workspace_key}/queues/order": {
+      "put": {
+        "description": "Reorder support queues. The server validates resource ownership and command preconditions before persisting changes. Unknown JSON fields are rejected when the operation accepts a body.",
+        "parameters": [
+          {
+            "Name": "workspace_key",
+            "In": "path",
+            "Description": "The workspace key.",
+            "Required": true,
+            "Schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "400": {},
+          "401": {},
+          "403": {},
+          "404": {},
+          "413": {},
+          "415": {},
+          "429": {},
+          "500": {}
+        },
+        "summary": "Reorder support queues",
         "tags": [
           "Work items"
         ]

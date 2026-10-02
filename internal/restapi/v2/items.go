@@ -177,14 +177,6 @@ func registerItemRoutes(builder *routeBuilder, app *services.ItemApplicationServ
 		result, err := app.BatchAncestors(r.Context(), user.ID, ids)
 		return result, itemError(err)
 	})
-	builder.Read("/workspaces/{workspace_key}/queues", AuthAuthenticated, []string{"items:read"}, func(r *http.Request) ([]services.SupportQueueDefinition, error) {
-		user, err := principal(r)
-		if err != nil {
-			return nil, err
-		}
-		queues, err := app.SupportQueues(r.Context(), user.ID, strings.TrimSpace(r.PathValue("workspace_key")))
-		return queues, itemError(err)
-	})
 	builder.Read("/workspaces/{workspace_key}/items/{item_number}", AuthAuthenticated, []string{"items:read"}, func(r *http.Request) (*models.Item, error) {
 		user, err := principal(r)
 		if err != nil {

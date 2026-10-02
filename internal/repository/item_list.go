@@ -806,6 +806,51 @@ func (r *ItemRepository) buildWhereClause(params ItemListParams) (whereClause st
 	return whereClause, args
 }
 
+// QueueCountQuery is one compiled QL fragment to count in a batched call.
+type QueueCountQuery struct {
+	Key     string
+	Filters ItemFilters
+}
+
+// CountQLQueries runs one COUNT per query in a single statement, reusing the
+// same filter and QL plan as the item list. Results are keyed by Key. The
+// workspace ids apply to every query, so a queue count never crosses the
+// caller's accessible workspaces.
+func (r *ItemRepository) CountQLQueries(ctx context.Context, workspaceIDs []int, queries []QueueCountQuery) (map[string]int64, error) {
+	if len(queries) == 0 {
+		return map[string]int64{}, nil
+	}
+	from := ItemListFilterFromClause()
+	var builder strings.Builder
+	args := make([]any, 0, len(queries)*2)
+	for i, query := range queries {
+		where, whereArgs := r.buildWhereClause(ItemListParams{WorkspaceIDs: workspaceIDs, Filters: query.Filters})
+		if i > 0 {
+			builder.WriteString(" UNION ALL ")
+		}
+		fmt.Fprintf(&builder, "SELECT %d AS idx, COUNT(*) AS n %s %s", i, from, where)
+		args = append(args, whereArgs...)
+	}
+	rows, err := r.db.QueryContext(ctx, builder.String(), args...)
+	if err != nil {
+		return nil, fmt.Errorf("count queue queries: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	result := make(map[string]int64, len(queries))
+	for rows.Next() {
+		var idx int
+		var count int64
+		if err := rows.Scan(&idx, &count); err != nil {
+			return nil, fmt.Errorf("scan queue count: %w", err)
+		}
+		if idx < 0 || idx >= len(queries) {
+			continue
+		}
+		result[queries[idx].Key] = count
+	}
+	return result, rows.Err()
+}
+
 // buildOrderByClause constructs the ORDER BY clause.
 // It supports system field identifiers (from systemFieldSortColumns) and custom field IDs
 // (which sort via JSON extraction from i.custom_field_values).
