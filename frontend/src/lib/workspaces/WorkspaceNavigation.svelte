@@ -237,6 +237,7 @@
     items.push({
       id: 'default',
       type: 'regular',
+      testid: 'workspace-collection-option-default',
       title: `${workspaceName} — ${t('collections.allItems')}`,
       badge: currentCollectionId === null ? '✓' : null,
       badgeClass: currentCollectionId === null ? '' : '',
@@ -250,6 +251,7 @@
       const collectionItems = collections.map(collection => ({
         id: `collection-${collection.id}`,
         type: 'regular',
+        testid: `workspace-collection-option-${collection.id}`,
         title: collection.name,
         subtitle: collection.description || undefined,
         badge: currentCollectionId == collection.id ? '✓' : null,
@@ -630,6 +632,9 @@
             {t('collections.collection')}
           </div>
           {@render navLink({ href: `/collections/${currentCollectionId}?workspace=${workspaceId}`, label: t('collections.editCollection'), icon: Pencil, isActive: false })}
+          {#if canConfigureNav}
+            {@render navLink({ href: `/workspaces/${workspaceId}/collections/${currentCollectionId}/nav-config`, label: t('navConfig.configureTitle'), icon: Settings, testId: 'workspace-nav-config-collection', isActive: $currentRoute.view === 'workspace-nav-config' })}
+          {/if}
         </div>
       {/if}
 
@@ -667,12 +672,10 @@
             <span>{t('actions.config.tools')}</span>
             <ChevronDown class={`w-4 h-4 transition-transform ${workspaceToolsExpanded ? 'rotate-180' : ''}`} />
           </button>
-          {#if canConfigureNav}
+          {#if canConfigureNav && !currentCollectionId}
             <Tooltip content={t('navConfig.configureTitle')} placement="right">
               <a
-                href={currentCollectionId
-                  ? `/workspaces/${workspaceId}/collections/${currentCollectionId}/navigation`
-                  : `/workspaces/${workspaceId}/navigation`}
+                href={`/workspaces/${workspaceId}/nav-config`}
                 data-testid="workspace-nav-config-button"
                 class="shrink-0 inline-flex items-center justify-center w-6 h-6 mb-2 rounded transition-colors hover:bg-[var(--ds-background-neutral)]"
                 style="color: var(--ds-text-subtle);"
