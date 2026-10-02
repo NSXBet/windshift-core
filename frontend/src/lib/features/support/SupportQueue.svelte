@@ -7,6 +7,7 @@ import { fetchV2Data } from '../../api/core.js';
   import { authStore, workspaceDataStore } from '../../stores';
   import { navigate } from '../../router.js';
   import { MoreHorizontal } from '@lucide/svelte';
+  import Button from '../../components/Button.svelte';
   import { createDeleteItemHandler, createItemActionsBuilder } from '../../utils/workItemTableHelpers.js';
   import { getListColumnLabel, listGridMinWidth, listGridTemplateColumns } from '../../utils/workItemListColumns.js';
   import { useGradientStyles } from '../../stores/workspaceGradient.svelte.js';
@@ -279,7 +280,7 @@ import { fetchV2Data } from '../../api/core.js';
   {#if loadingQueues}
     <div class="flex items-center gap-2 py-8" data-testid="support-queue-loading">
       <Spinner class="w-4 h-4" />
-      <span class="text-ds-text-subtle">{t('supportQueue.loading')}</span>
+      <span style="color: var(--ctx-text-subtle, var(--ds-text-subtle));">{t('supportQueue.loading')}</span>
     </div>
   {:else}
     <div class="flex flex-wrap items-center justify-between gap-4 mb-4">
@@ -290,11 +291,10 @@ import { fetchV2Data } from '../../api/core.js';
             role="tab"
             aria-selected={entry.key === activeQueueKey}
             class="px-3 py-1.5 rounded-md text-sm border transition-colors"
-            class:border-transparent={entry.key !== activeQueueKey}
             style={
               entry.key === activeQueueKey
-                ? 'background-color: var(--ctx-accent, var(--ds-accent)); color: var(--ctx-text-on-accent, var(--ds-text-on-accent, #fff)); border-color: var(--ctx-accent, var(--ds-accent));'
-                : 'background-color: var(--ctx-background-neutral, var(--ds-background-neutral)); color: var(--ctx-text, var(--ds-text)); border-color: var(--ctx-border, var(--ds-border));'
+                ? 'color: var(--ctx-active-text, var(--ds-accent-blue)); background-color: var(--ctx-active-bg, var(--ds-accent-blue-subtler)); border-color: var(--ctx-border, var(--ds-border)); backdrop-filter: var(--ctx-backdrop, none);'
+                : 'color: var(--ctx-text-subtle, var(--ds-text-subtle)); background-color: transparent; border-color: var(--ctx-border, var(--ds-border)); backdrop-filter: var(--ctx-backdrop, none);'
             }
             data-testid={`support-queue-tab-${entry.key}`}
             onclick={() => selectQueue(entry.key)}
@@ -302,7 +302,7 @@ import { fetchV2Data } from '../../api/core.js';
             {entry.name}
             <span
               class="ml-1.5 inline-block rounded-full text-xs px-1.5"
-              style="background-color: var(--ctx-background-neutral-strong, var(--ds-background-neutral-strong, rgba(0,0,0,0.08)));"
+              style="background-color: var(--ctx-surface-overlay, var(--ds-surface-overlay)); backdrop-filter: var(--ctx-backdrop, none);"
               data-testid={`support-queue-count-${entry.key}`}
             >
               {entry.count}
@@ -320,23 +320,23 @@ import { fetchV2Data } from '../../api/core.js';
     {#if selectedIds.size > 0}
       <div
         class="flex flex-wrap items-center gap-2 mb-3 px-3 py-2 rounded-md border"
-        style="border-color: var(--ctx-border, var(--ds-border)); background-color: var(--ctx-background-neutral, var(--ds-background-neutral));"
+        style="border-color: var(--ctx-border, var(--ds-border)); background-color: var(--ctx-surface, var(--ds-background-neutral)); backdrop-filter: var(--ctx-backdrop, none);"
         data-testid="support-queue-bulk-bar"
       >
-        <span class="text-sm text-ds-text">{t('supportQueue.bulkBar', { n: selectedIds.size })}</span>
-        <button
-          type="button"
-          class="px-2.5 py-1 rounded text-sm border"
+        <span class="text-sm" style="color: var(--ctx-text, var(--ds-text));">{t('supportQueue.bulkBar', { n: selectedIds.size })}</span>
+        <Button
+          variant="ghost"
+          size="small"
           style="border-color: var(--ctx-border, var(--ds-border));"
-          data-testid="support-queue-bulk-assign-me"
+          dataTestid="support-queue-bulk-assign-me"
           disabled={bulkRunning}
           onclick={bulkAssignToMe}
         >
           {t('supportQueue.bulkAssignMe')}
-        </button>
+        </Button>
         <select
-          class="px-2 py-1 rounded text-sm border"
-          style="border-color: var(--ctx-border, var(--ds-border)); background-color: var(--ctx-surface, var(--ds-surface));"
+          class="px-2 py-1 rounded text-sm border transition-colors"
+          style="border-color: var(--ctx-border, var(--ds-border)); background-color: var(--ctx-surface-overlay, var(--ds-surface-overlay)); color: var(--ctx-text, var(--ds-text)); backdrop-filter: var(--ctx-backdrop, none);"
           data-testid="support-queue-bulk-team-select"
           bind:value={bulkTeamId}
         >
@@ -345,25 +345,24 @@ import { fetchV2Data } from '../../api/core.js';
             <option value={String(team.id)}>{team.name}</option>
           {/each}
         </select>
-        <button
-          type="button"
-          class="px-2.5 py-1 rounded text-sm border"
+        <Button
+          variant="ghost"
+          size="small"
           style="border-color: var(--ctx-border, var(--ds-border));"
-          data-testid="support-queue-bulk-team-apply"
+          dataTestid="support-queue-bulk-team-apply"
           disabled={bulkRunning || !bulkTeamId}
           onclick={bulkAssignToTeam}
         >
           {t('supportQueue.bulkApplyTeam')}
-        </button>
-        <button
-          type="button"
-          class="px-2.5 py-1 rounded text-sm"
-          style="color: var(--ctx-text-subtle, var(--ds-text-subtle));"
-          data-testid="support-queue-bulk-clear"
+        </Button>
+        <Button
+          variant="ghost"
+          size="small"
+          dataTestid="support-queue-bulk-clear"
           onclick={clearSelection}
         >
           {t('supportQueue.bulkClear')}
-        </button>
+        </Button>
       </div>
     {/if}
 
@@ -451,7 +450,7 @@ import { fetchV2Data } from '../../api/core.js';
       </div>
 
       {#if itemsTruncated}
-        <p class="mt-2 text-xs text-ds-text-subtle" style="color: var(--ctx-text-subtle, var(--ds-text-subtle));">
+        <p class="mt-2 text-xs" style="color: var(--ctx-text-subtle, var(--ds-text-subtle));">
           {t('supportQueue.showingFirst', { n: items.length })}
         </p>
       {/if}
