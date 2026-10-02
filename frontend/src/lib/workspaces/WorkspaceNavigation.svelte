@@ -14,7 +14,7 @@
     IconSparkles as Sparkles,
     IconPencil as Pencil,
   } from '@tabler/icons-svelte-runes';
-  import { workspaceViewItems, workspaceOnlyViews, testNavigationItems, visibleWorkspaceSettingsItems, workspaceSettingsViews, workspaceSettingsRoute } from '../navigation/workspaceNavigation.js';
+  import { workspaceViewItems, workspaceOnlyViews, testNavigationItems, visibleWorkspaceSettingsItems, workspaceSettingsViews, workspaceSettingsRoute, WORKSPACE_SCOPED_VIEW_IDS } from '../navigation/workspaceNavigation.js';
   import { viewSettingsStore } from '../stores/viewSettings.svelte.js';
   import { navigate, currentRoute } from '../router.js';
   import { authStore, currentWorkspace, workspacePermissions } from '../stores';
@@ -367,7 +367,9 @@
   }
 
   function getNavigationUrl(view) {
-    if (workspaceOnlyViewIds.has(view) || !currentCollectionId) {
+    // Workspace-scoped views-group entries (the queue) keep their workspace
+    // route even with a collection selected; queues are workspace-level.
+    if (workspaceOnlyViewIds.has(view) || WORKSPACE_SCOPED_VIEW_IDS.has(view) || !currentCollectionId) {
       return `/workspaces/${workspaceId}/${view}`;
     }
     return `/workspaces/${workspaceId}/collections/${currentCollectionId}/${view}`;

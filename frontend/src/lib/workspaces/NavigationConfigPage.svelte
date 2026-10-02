@@ -41,10 +41,15 @@
   // workspace-only tools either — they follow the workspace setting.
   const isCollectionScope = $derived(Boolean(collectionId));
   const sections = $derived.by(() => {
+    // Collection scopes may only toggle the collection-scoped views; the
+    // workspace scope also gets the workspace-scoped views-group entries
+    // (the queue) in the same section.
     const viewsSection = {
       id: 'views',
       title: t('settings.boardConfig.views'),
-      rows: workspaceViewItems,
+      rows: isCollectionScope
+        ? workspaceViewItems.filter((view) => COLLECTION_VIEW_IDS.has(view.id))
+        : workspaceViewItems,
     };
     if (!workspaceId) {
       return [viewsSection];

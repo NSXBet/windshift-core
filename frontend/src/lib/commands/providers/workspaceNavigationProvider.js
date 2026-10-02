@@ -1,5 +1,6 @@
 import {
   testNavigationItems,
+  WORKSPACE_SCOPED_VIEW_IDS,
   workspaceOnlyViews,
   workspaceViewItems,
 } from '../../navigation/workspaceNavigation.js';
@@ -47,7 +48,12 @@ export function workspaceNavigationProvider(ctx) {
         description: t(view.tooltipKey || view.labelKey),
         bucket: BUCKET.WORKSPACE_NAVIGATION,
         keywords: [view.id, label.toLowerCase(), name.toLowerCase()],
-        url: buildViewUrl(workspaceId, view.id, collectionId),
+        // Workspace-scoped views (the queue) never take the collection prefix.
+        url: buildViewUrl(
+          workspaceId,
+          view.id,
+          WORKSPACE_SCOPED_VIEW_IDS.has(view.id) ? null : collectionId
+        ),
       })
     );
   }

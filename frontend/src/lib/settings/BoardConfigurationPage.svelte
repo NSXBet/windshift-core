@@ -52,6 +52,13 @@
   let completedItemRetentionError = $state('');
   let customFieldDefinitions = $state([]);
   let enabledViews = $state([]);
+  // Collection scopes may only toggle collection-scoped views; the workspace
+  // scope also offers the workspace-scoped views-group entry (the queue).
+  let scopeViewItems = $derived(
+    collectionId
+      ? workspaceViewItems.filter((view) => COLLECTION_VIEW_IDS.has(view.id))
+      : workspaceViewItems
+  );
   let viewsInherited = $state(true);
   let viewsDirty = $state(false);
   let viewsResetPending = $state(false);
@@ -1171,7 +1178,7 @@
             </p>
 
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-              {#each workspaceViewItems as view (view.id)}
+              {#each scopeViewItems as view (view.id)}
                 <Checkbox
                   checked={enabledViews.includes(view.id)}
                   onchange={() => toggleView(view.id)}

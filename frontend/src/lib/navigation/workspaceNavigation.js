@@ -41,7 +41,11 @@ import {
  */
 
 /**
- * Collection-scoped workspace views (visible inside collections too).
+ * Collection-scoped workspace views (visible inside collections too). The
+ * queue trails the board views as a workspace-scoped member of the views
+ * group: it is a work-item view like the others, but its routes and its
+ * toggle live at the workspace scope because queues are workspace-level
+ * CQL presets.
  * @type {WorkspaceView[]}
  */
 export const workspaceViewItems = [
@@ -81,20 +85,6 @@ export const workspaceViewItems = [
     icon: GanttChart,
     testId: 'workspace-nav-roadmap',
   },
-];
-
-/**
- * Collection-scoped view ids, the only entries a collection-scope navigation
- * override may toggle; mirrors models.BoardViewIDs on the backend.
- * @type {Set<string>}
- */
-export const COLLECTION_VIEW_IDS = new Set(workspaceViewItems.map((view) => view.id));
-
-/**
- * Workspace tools which are not scoped to a collection.
- * @type {WorkspaceView[]}
- */
-export const workspaceOnlyViews = [
   {
     id: 'queue',
     labelKey: 'supportQueue.title',
@@ -103,6 +93,29 @@ export const workspaceOnlyViews = [
     testId: 'workspace-nav-queue',
     activeViews: ['workspace-queue'],
   },
+];
+
+/**
+ * Collection-scoped view ids, the only entries a collection-scope navigation
+ * override may toggle; mirrors models.BoardViewIDs on the backend. The queue
+ * deliberately stays out: it renders in the views group but only the
+ * workspace scope can toggle it.
+ * @type {Set<string>}
+ */
+export const COLLECTION_VIEW_IDS = new Set(['backlog', 'board', 'list', 'tree', 'map', 'roadmap']);
+
+/**
+ * Views-group entries whose routes always live under the workspace, never
+ * under a collection, even when a collection is selected in the sidebar.
+ * @type {Set<string>}
+ */
+export const WORKSPACE_SCOPED_VIEW_IDS = new Set(['queue']);
+
+/**
+ * Workspace tools which are not scoped to a collection.
+ * @type {WorkspaceView[]}
+ */
+export const workspaceOnlyViews = [
   {
     id: 'agents',
     labelKey: 'users.agents.title',
