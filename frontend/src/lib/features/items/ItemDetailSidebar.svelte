@@ -21,6 +21,7 @@
   import ItemSCMLinks from './ItemSCMLinks.svelte';
   import ItemIntegrationLinks from './ItemIntegrationLinks.svelte';
   import ZammadItemPanel from './ZammadItemPanel.svelte';
+	import RequesterOpenTickets from './RequesterOpenTickets.svelte';
   import AddSCMLinkModal from '../../dialogs/AddSCMLinkModal.svelte';
   import AddIntegrationLinkModal from '../../dialogs/AddIntegrationLinkModal.svelte';
   import CreateBranchModal from '../../dialogs/CreateBranchModal.svelte';
@@ -1363,6 +1364,11 @@
     <!-- Integration Links (Notion, etc.) -->
     {#if item?.id && item?.workspace_id}
       <ZammadItemPanel itemId={item.id} workspaceId={item.workspace_id} {canEdit} />
+    {/if}
+
+    <!-- Duplicate candidates (WI-1548): the requester's other open tickets -->
+    {#if item?.id}
+      <RequesterOpenTickets itemId={item.id} />
     {/if}
 
     {#if item?.id}

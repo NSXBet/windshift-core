@@ -92,6 +92,11 @@ type ChannelConfig struct {
 	// (DefaultEmailRateLimitPerHour), 0 = unlimited, n = n. Replies to
 	// existing threads are never rate-limited.
 	EmailRateLimitPerHour *int `json:"email_rate_limit_per_hour,omitempty"`
+	// Opt-in (WI-1548): a fresh (unquoted) email from a sender with an open
+	// ticket in this channel's workspace is appended to that ticket instead of
+	// creating a duplicate. The guard is creator-or-prior-email-participant,
+	// never sender-address match alone. Default off.
+	EmailAutoAppendOpenTickets bool `json:"email_auto_append_open_tickets,omitempty"`
 
 	// Portal Configuration
 	PortalSlug         string `json:"portal_slug,omitempty"`        // URL-friendly identifier (e.g., "support-portal")

@@ -133,6 +133,9 @@ export const items = {
   /** @param {number|string} idOrKey */
   get: (idOrKey, requestOptions = {}) =>
     fetchV2Data(`/items/${encodeURIComponent(idOrKey)}`, requestOptions),
+  // Duplicate-candidates panel (WI-1548): the requester's other open tickets.
+  requesterOpenTickets: (id, requestOptions = {}) =>
+    fetchAPI(`/items/${encodeURIComponent(id)}/requester-open-tickets`, requestOptions),
   getDetailSummary: fetchItemDetailSummary,
   getByKey: (workspaceKey, itemNumber, requestOptions = {}) =>
     fetchV2Data(

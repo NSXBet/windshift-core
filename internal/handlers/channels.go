@@ -1377,6 +1377,19 @@ func (h *ChannelHandler) RequeueRateLimitedEmails(w http.ResponseWriter, r *http
 // requireInboundEmailChannel is the shared channel lookup + shape check for
 // the per-channel email endpoints.
 func (h *ChannelHandler) requireInboundEmailChannel(ctx context.Context, w http.ResponseWriter, r *http.Request, id int) bool {
+	return h.requireChannelOfTypes(ctx, w, r, id, "inbound email channel", "email")
+}
+
+// requireReplyOutboxChannel accepts inbound email channels and portal
+// channels: portal-originated tickets' customer replies live in the origin
+// (portal) channel's outbox (WI-1546), so operators manage them there.
+func (h *ChannelHandler) requireReplyOutboxChannel(ctx context.Context, w http.ResponseWriter, r *http.Request, id int) bool {
+	return h.requireChannelOfTypes(ctx, w, r, id, "inbound email or portal channel", "email", "portal")
+}
+
+// requireChannelOfTypes is the shared channel lookup + shape check for the
+// family of guards above.
+func (h *ChannelHandler) requireChannelOfTypes(ctx context.Context, w http.ResponseWriter, r *http.Request, id int, description string, types ...string) bool {
 	channel, err := h.service.GetByID(ctx, id)
 	if err != nil {
 		respondInternalError(w, r, err)
@@ -1386,11 +1399,17 @@ func (h *ChannelHandler) requireInboundEmailChannel(ctx context.Context, w http.
 		respondNotFound(w, r, "channel")
 		return false
 	}
-	if channel.Type != "email" || channel.Direction != "inbound" {
-		respondValidationError(w, r, "Channel is not an inbound email channel")
+	if channel.Direction != "inbound" {
+		respondValidationError(w, r, fmt.Sprintf("Channel is not an %s", description))
 		return false
 	}
-	return true
+	for _, t := range types {
+		if channel.Type == t {
+			return true
+		}
+	}
+	respondValidationError(w, r, fmt.Sprintf("Channel is not an %s", description))
+	return false
 }
 
 // ListEmailReplies returns the channel's outbound customer-reply queue:
@@ -1408,7 +1427,7 @@ func (h *ChannelHandler) ListEmailReplies(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	if !h.requireInboundEmailChannel(ctx, w, r, id) {
+	if !h.requireReplyOutboxChannel(ctx, w, r, id) {
 		return
 	}
 
@@ -1549,7 +1568,7 @@ func (h *ChannelHandler) RetryEmailReply(w http.ResponseWriter, r *http.Request)
 	if _, ok := h.requireChannelManageAccess(ctx, w, r, id); !ok {
 		return
 	}
-	if !h.requireInboundEmailChannel(ctx, w, r, id) {
+	if !h.requireReplyOutboxChannel(ctx, w, r, id) {
 		return
 	}
 	if h.emailReplies == nil {
@@ -1617,7 +1636,7 @@ func (h *ChannelHandler) DiscardEmailReply(w http.ResponseWriter, r *http.Reques
 	if _, ok := h.requireChannelManageAccess(ctx, w, r, id); !ok {
 		return
 	}
-	if !h.requireInboundEmailChannel(ctx, w, r, id) {
+	if !h.requireReplyOutboxChannel(ctx, w, r, id) {
 		return
 	}
 

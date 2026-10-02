@@ -95,6 +95,9 @@ export default {
   },
 
   items: {
+    requesterOpenTickets: 'Possible duplicates',
+    requesterOpenTicketsHelp:
+      "Other open tickets from the same requester — this conversation may belong on one of them. Merge to keep one thread.",
     title: 'Items',
     subtitle: 'View and manage work items',
     item: 'Item',

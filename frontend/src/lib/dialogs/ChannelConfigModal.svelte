@@ -47,6 +47,11 @@
   let smtpConfigRef = $state(null);
   let formConfigRef = $state(null);
 
+  // Inbound portal channels for the email channel's connected-portal select,
+  // and email channels linked to a portal channel (read-only list).
+  let portalOptions = $state([]);
+  let connectedMailboxes = $state([]);
+
   // Portal configuration form data
   let portalFormData = $state({
     slug: '',
@@ -90,10 +95,12 @@
     imap_password: '',
     workspace_id: null,
     item_type_id: null,
+    connected_portal_id: null,
     mailbox: 'INBOX',
     mark_as_read: true,
     delete_after_process: false,
     rate_limit_per_hour: null,
+    auto_append_open_tickets: false,
     enabled: false
   });
 
@@ -176,6 +183,8 @@
   $effect(() => {
     if (channel && isOpen) {
       persistedStatus = channel.status || 'disabled';
+      portalOptions = [];
+      connectedMailboxes = [];
       channelFormData = {
         name: channel.name || '',
         description: channel.description || '',
@@ -204,6 +213,7 @@
             ? config.portal_allowed_domains.join(', ')
             : ''
         };
+        loadConnectedMailboxes();
       } else if (channel.type === 'webhook') {
         const headersArray = config.webhook_headers
           ? Object.entries(config.webhook_headers).map(([key, value]) => ({ key, value }))
@@ -241,13 +251,16 @@
           imap_password: '',
           workspace_id: config.email_workspace_id || null,
           item_type_id: config.email_item_type_id || null,
+          connected_portal_id: config.email_connected_portal_id ?? null,
           mailbox: config.email_mailbox || 'INBOX',
           mark_as_read: config.email_mark_as_read !== false,
           delete_after_process: config.email_delete_after_process || false,
           rate_limit_per_hour: config.email_rate_limit_per_hour ?? null,
+          auto_append_open_tickets: config.email_auto_append_open_tickets || false,
           enabled: channel.status === 'enabled'
         };
         loadWorkspacesAndItemTypes();
+        loadConnectedPortalOptions();
       } else if (channel.type === 'smtp') {
         smtpFormData = {
           host: config.smtp_host || '',
@@ -285,6 +298,33 @@
       }
     } catch (error) {
       console.error('Failed to load workspaces:', error);
+    }
+  }
+
+  // Inbound portal channels offered as the email channel's connected portal.
+  // Disabled portals stay listed so an existing link always renders and can
+  // be cleared; the backend validates manage permission at save time.
+  async function loadConnectedPortalOptions() {
+    try {
+      portalOptions = await api.channels.getAll({ type: 'portal', direction: 'inbound', include_disabled: true });
+    } catch (error) {
+      console.error('Failed to load portal channels:', error);
+      portalOptions = [];
+    }
+  }
+
+  // Email channels whose senders' tickets surface in this portal, derived
+  // from each channel's email_connected_portal_id config.
+  async function loadConnectedMailboxes() {
+    try {
+      const emailChannels = await api.channels.getAll({ type: 'email', direction: 'inbound', include_disabled: true });
+      connectedMailboxes = emailChannels.filter((ch) => {
+        const chConfig = parseChannelConfig(ch.config) || {};
+        return chConfig.email_connected_portal_id === channel.id;
+      });
+    } catch (error) {
+      console.error('Failed to load connected mailboxes:', error);
+      connectedMailboxes = [];
     }
   }
 
@@ -606,6 +646,7 @@
             <ChannelPortalConfig
               bind:this={portalConfigRef}
               bind:formData={portalFormData}
+              {connectedMailboxes}
             />
           {:else if channel.type === 'webhook'}
             <ChannelWebhookConfig
@@ -622,6 +663,7 @@
               bind:formData={emailFormData}
               {workspaces}
               {itemTypes}
+              portals={portalOptions}
               bind:loading
               onLoadItemTypes={loadItemTypesForWorkspace}
               onSaveBeforeOAuth={saveEmailBeforeOAuth}
@@ -701,6 +743,7 @@
 <!-- Toast (simple inline for now) -->
 {#if showToast}
   <div
+    data-testid="channel-config-toast"
     class="fixed bottom-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg"
     style="background-color: var(--ds-surface-raised); border: 1px solid var(--ds-border);"
   >

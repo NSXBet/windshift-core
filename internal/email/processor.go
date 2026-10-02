@@ -108,10 +108,13 @@ func (p *Processor) ProcessEmail(
 		return nil, fmt.Errorf("failed to find/create portal customer: %w", err)
 	}
 
-	// 3. Check if this is a reply (find parent item by In-Reply-To/References)
+	// 3. Check if this is a reply (find parent item by In-Reply-To/References).
+	// Matching is item-scoped on purpose: a reply quoting a portal ticket's
+	// Message-IDs lands on the email channel while the ticket lives on the
+	// portal channel (WI-1546). The participant guard is the security boundary.
 	var parentItemID *int
 	if email.IsReply() {
-		parentItemID = p.findParentItem(ctx, channelID, email)
+		parentItemID = p.findParentItem(ctx, email)
 	}
 
 	// Flood protection gates NEW conversations only; replies keep flowing.
@@ -131,6 +134,10 @@ func (p *Processor) ProcessEmail(
 	if parentItemID != nil {
 		// This is a reply - add comment to existing item
 		result, err = p.addCommentFromReply(email, *parentItemID, customerID)
+	} else if appendItemID := p.findOpenTicketToAppend(ctx, customerID, config, email); appendItemID != nil {
+		// Opt-in continuation (WI-1548): the fresh email continues the sender's
+		// open ticket instead of creating a duplicate.
+		result, err = p.addCommentFromReply(email, *appendItemID, customerID)
 	} else {
 		// This is a new conversation - create item
 		result, err = p.createItemFromEmail(ctx, email, channelID, config, customerID)
@@ -376,17 +383,58 @@ func (p *Processor) connectedPortalAdmitsEmail(ctx context.Context, portalChanne
 	return true
 }
 
+// findOpenTicketToAppend implements the WI-1548 opt-in continuation: a fresh
+// (unquoted) email from a sender with an open ticket in the intake workspace
+// continues that ticket instead of creating a duplicate. Candidates are the
+// sender's open tickets in the intake workspace where they are the creator or
+// a prior email participant — never a bare sender-address match. Closed
+// tickets never qualify, and cross-workspace tickets are deliberately not
+// appended (they surface to agents as duplicate candidates instead),
+// respecting the channel's routing config.
+func (p *Processor) findOpenTicketToAppend(ctx context.Context, customerID int, config *models.ChannelConfig, email *ParsedEmail) *int {
+	if !config.EmailAutoAppendOpenTickets || config.EmailWorkspaceID == 0 {
+		return nil
+	}
+	sender := normalizedEmail(email.From.Address)
+	var itemID int
+	err := p.db.QueryRowContext(ctx, `
+		SELECT i.id FROM items i
+		LEFT JOIN statuses s ON i.status_id = s.id
+		LEFT JOIN status_categories sc ON s.category_id = sc.id
+		WHERE i.workspace_id = ?
+		  AND (sc.is_completed = false OR sc.is_completed IS NULL)
+		  AND (
+			  i.creator_portal_customer_id = ?
+			  OR EXISTS (
+				  SELECT 1 FROM email_message_tracking t
+				  WHERE t.item_id = i.id AND LOWER(t.from_email) = ?
+			  )
+		  )
+		ORDER BY i.updated_at DESC
+		LIMIT 1
+	`, config.EmailWorkspaceID, customerID, sender).Scan(&itemID)
+	if err != nil {
+		return nil
+	}
+	return &itemID
+}
+
 // findParentItem looks up the original item from In-Reply-To or References headers.
+//
+// Matching is item-scoped across channels: Message-IDs are globally unique,
+// and a conversation must survive its customer switching channels (portal
+// ticket, reply by email). Channel scoping would permanently silo the
+// customer's reply on the intake channel (WI-1547).
 //
 // Thread-hijack defense: the In-Reply-To / References headers are entirely
 // attacker-controlled. If we trusted them naively, anyone who leaks or guesses
-// a Message-ID used on a channel could post a "reply" onto that item from a
-// new email address, exposing private conversations to a third party. We match
-// only when the sender is demonstrably part of the thread — either a prior
-// participant on that tracked thread (their address appeared as from_email
-// on an earlier tracked message for the same item) or the original creator
-// of the item via the portal_customer linkage.
-func (p *Processor) findParentItem(ctx context.Context, channelID int, email *ParsedEmail) *int {
+// a Message-ID used anywhere could post a "reply" onto that item from a new
+// email address, exposing private conversations to a third party. The
+// participant guard is the security boundary: we match only when the sender is
+// demonstrably part of the item's conversation — a prior participant on its
+// tracked thread (any channel) or the original creator via the portal-customer
+// linkage.
+func (p *Processor) findParentItem(ctx context.Context, email *ParsedEmail) *int {
 	threadIDs := email.GetThreadIDs()
 	senderEmail := normalizedEmail(email.From.Address)
 
@@ -399,12 +447,12 @@ func (p *Processor) findParentItem(ctx context.Context, channelID int, email *Pa
 		}
 		err := p.db.QueryRowContext(ctx, `
 			SELECT item_id FROM email_message_tracking
-			WHERE channel_id = ? AND message_id IN (?, ?) AND item_id IS NOT NULL
-		`, channelID, canonicalID, bareID).Scan(&itemID)
+			WHERE message_id IN (?, ?) AND item_id IS NOT NULL
+		`, canonicalID, bareID).Scan(&itemID)
 		if err != nil {
 			continue
 		}
-		if !p.senderIsThreadParticipant(ctx, itemID, channelID, senderEmail) {
+		if !p.senderIsThreadParticipant(ctx, itemID, senderEmail) {
 			slog.Warn("ignoring reply: sender is not a known thread participant",
 				"item_id", itemID,
 				"message_id", messageID,
@@ -420,21 +468,29 @@ func (p *Processor) findParentItem(ctx context.Context, channelID int, email *Pa
 }
 
 // senderIsThreadParticipant reports whether senderEmail is allowed to post
-// onto the given item via an email reply.
-func (p *Processor) senderIsThreadParticipant(ctx context.Context, itemID, channelID int, senderEmail string) bool {
+// onto the given item via an email reply. The checks are item-scoped.
+//
+// Extension point for ticket participants (WI-1136): once a participants
+// field ships, add a clause accepting senders who are authorized participants
+// on the item — they must be able to reply to threads they are part of, and
+// the outbound notifier must fan out to them. The anchor rows minted for
+// portal tickets carry from_email=” so they can never satisfy the
+// prior-participant clause implicitly; participants will be granted
+// explicitly through that field.
+func (p *Processor) senderIsThreadParticipant(ctx context.Context, itemID int, senderEmail string) bool {
 	if senderEmail == "" {
 		return false
 	}
-	// Prior participant on this thread (inbound or outbound).
+	// Prior participant on this item's thread (inbound or outbound, any channel).
 	var priorCount int
 	if err := p.db.QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM email_message_tracking
-		WHERE item_id = ? AND channel_id = ? AND LOWER(from_email) = ?
-	`, itemID, channelID, senderEmail).Scan(&priorCount); err == nil && priorCount > 0 {
+		WHERE item_id = ? AND LOWER(from_email) = ?
+	`, itemID, senderEmail).Scan(&priorCount); err == nil && priorCount > 0 {
 		return true
 	}
 	// Original creator via portal customer.
-	if creatorEmail, err := repository.NewItemRepository(p.db).GetPortalCreatorEmail(itemID, channelID); err == nil {
+	if creatorEmail, err := repository.NewItemRepository(p.db).GetPortalCustomerEmailForItem(itemID); err == nil {
 		if normalizedEmail(creatorEmail) == senderEmail {
 			return true
 		}

@@ -84,14 +84,26 @@ func (s *EmailReplyService) handleCommentCreated(params HandleCommentParams, del
 		return nil
 	}
 
-	// Verify channel is email type
+	// Any existing channel works as long as the conversation is threadable:
+	// email-originated tickets thread from the customer's real messages,
+	// portal/form tickets thread from their synthetic anchor.
 	var channelType string
-	err = s.db.QueryRow("SELECT type FROM channels WHERE id = ? AND type = 'email'", *item.ChannelID).Scan(&channelType)
+	err = s.db.QueryRow("SELECT type FROM channels WHERE id = ?", *item.ChannelID).Scan(&channelType)
 	if err != nil {
-		// Not an email channel or doesn't exist — skip
+		// Channel gone — nothing to thread from, skip.
 		return nil
 	}
 
+	// Portal/form-originated tickets thread from the anchor minted at
+	// submission; the ensure covers pre-upgrade tickets (created before the
+	// anchor existed) and repairs a failed best-effort mint. It is a no-op for
+	// email channels and for items that already have their anchor.
+	maybeRecordPortalThreadAnchor(s.db, int64(params.ItemID), item.ChannelID, item.CreatorPortalCustomerID, item.Title)
+
+	// Recipient: today the creator only. When ticket participants ship
+	// (WI-1136) the fan-out widens to authorized participants — each gets
+	// their own outbox row so replies attribute per recipient, and the intake
+	// participant guard already accepts them as repliers.
 	// Look up portal customer email
 	var customerEmail, customerName string
 	err = s.db.QueryRow("SELECT email, name FROM portal_customers WHERE id = ?", *item.CreatorPortalCustomerID).Scan(&customerEmail, &customerName)
@@ -110,9 +122,9 @@ func (s *EmailReplyService) handleCommentCreated(params HandleCommentParams, del
 	}
 	rows, err := s.db.Query(`
 		SELECT message_id, subject FROM email_message_tracking
-		WHERE item_id = ? AND channel_id = ?
+		WHERE item_id = ?
 		ORDER BY processed_at ASC
-	`, params.ItemID, *item.ChannelID)
+	`, params.ItemID)
 	if err != nil {
 		return fmt.Errorf("failed to query email tracking: %w", err)
 	}
@@ -139,7 +151,8 @@ func (s *EmailReplyService) handleCommentCreated(params HandleCommentParams, del
 		return nil
 	}
 
-	// References: all Message-IDs chronologically
+	// References: all Message-IDs chronologically (item-scoped — the thread
+	// follows the conversation across channels).
 	var references []string
 	for _, rec := range records {
 		if rec.MessageID != "" {
@@ -263,6 +276,10 @@ func (s *EmailReplyService) SendAutomationNotice(itemID, actorID int, subject, m
 		return false, "no_customer", nil
 	}
 
+	// Same anchor ensure as the reply path: automation notices must thread for
+	// portal-originated tickets (and survive pre-upgrade tickets) too.
+	maybeRecordPortalThreadAnchor(s.db, int64(itemID), item.ChannelID, item.CreatorPortalCustomerID, item.Title)
+
 	var customerEmail, customerName string
 	err = s.db.QueryRow("SELECT email, name FROM portal_customers WHERE id = ?", *item.CreatorPortalCustomerID).Scan(&customerEmail, &customerName)
 	if err != nil {
@@ -272,16 +289,17 @@ func (s *EmailReplyService) SendAutomationNotice(itemID, actorID int, subject, m
 		return false, "no_email", nil
 	}
 
-	// Thread against the item's recorded Message-IDs; without tracking there
-	// is nothing to thread to, so the notice would start an orphaned thread.
+	// Thread against the item's recorded Message-IDs (item-scoped); without
+	// a thread there is nothing to reply into, so the notice would start an
+	// orphaned thread.
 	var inReplyTo string
 	var references []string
 	var originalSubject sql.NullString
 	rows, err := s.db.Query(`
 		SELECT message_id, subject FROM email_message_tracking
-		WHERE item_id = ? AND channel_id = ?
+		WHERE item_id = ?
 		ORDER BY processed_at ASC
-	`, itemID, *item.ChannelID)
+	`, itemID)
 	if err != nil {
 		return false, "", fmt.Errorf("query email tracking for customer notice: %w", err)
 	}
@@ -503,23 +521,35 @@ func (s *EmailReplyService) recordReplyFailure(commentID, previousAttempts int, 
 	}
 }
 
+// getSMTPDomain extracts the domain from the SMTP from email.
+func (s *EmailReplyService) getSMTPDomain() string {
+	return smtpDomain(s.db)
+}
+
+// getSMTPFromEmail gets the configured SMTP from email address.
+func (s *EmailReplyService) getSMTPFromEmail() string {
+	return smtpFromEmail(s.db)
+}
+
 // fallbackSMTPFromEmail is used when no default outbound SMTP channel is
 // configured or its config can't be read.
 const fallbackSMTPFromEmail = "noreply@windshift.local"
 
-// getSMTPDomain extracts the domain from the SMTP from email.
-func (s *EmailReplyService) getSMTPDomain() string {
-	fromEmail := s.getSMTPFromEmail()
+// smtpDomain extracts the domain from the default outbound SMTP from email.
+// Shared by the reply service and the portal thread-anchor minter.
+func smtpDomain(db database.Database) string {
+	fromEmail := smtpFromEmail(db)
 	if idx := strings.LastIndex(fromEmail, "@"); idx >= 0 {
 		return fromEmail[idx+1:]
 	}
 	return "windshift.local"
 }
 
-// getSMTPFromEmail gets the configured SMTP from email address.
-func (s *EmailReplyService) getSMTPFromEmail() string {
+// smtpFromEmail reads the configured from email of the default outbound SMTP
+// channel, falling back when none is configured or its config can't be read.
+func smtpFromEmail(db database.Database) string {
 	var configJSON string
-	err := s.db.QueryRow(`
+	err := db.QueryRow(`
 		SELECT COALESCE(config, '{}') FROM channels
 		WHERE type = 'smtp' AND direction = 'outbound'
 		  AND status = 'enabled' AND is_default = true

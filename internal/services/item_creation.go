@@ -368,6 +368,7 @@ func decodeItemEventFields(raw, name string) (map[string]any, error) {
 
 func (c *itemCreation) finish(itemID int) {
 	p := c.params
+	maybeRecordPortalThreadAnchor(c.db, int64(itemID), p.ChannelID, p.CreatorPortalCustomerID, p.Title)
 	if !p.SkipAssigneeTrigger && p.AssigneeID != nil {
 		triggeredBy := p.ValidatingUserID
 		if triggeredBy == 0 && p.CreatorID != nil {
