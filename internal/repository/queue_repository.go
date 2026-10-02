@@ -101,12 +101,17 @@ func (r *QueueRepository) Create(q *models.Queue) (*models.Queue, error) {
 	now := time.Now()
 	q.CreatedAt, q.UpdatedAt = now, now
 	var id int
-	err := r.db.QueryRow(`
-		INSERT INTO queues
-			(workspace_id, collection_id, name, ql_query, filter_state, position, created_by, builtin_key, is_hidden, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id
-	`, q.WorkspaceID, q.CollectionID, q.Name, q.QLQuery, q.FilterState, q.Position,
-		q.CreatedBy, q.BuiltinKey, q.IsHidden, now, now).Scan(&id)
+	err := database.WithTx(r.db, func(tx database.Tx) error {
+		if err := lockQueueCollectionScope(tx, q.WorkspaceID, q.CollectionID); err != nil {
+			return err
+		}
+		return tx.QueryRow(`
+			INSERT INTO queues
+				(workspace_id, collection_id, name, ql_query, filter_state, position, created_by, builtin_key, is_hidden, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id
+		`, q.WorkspaceID, q.CollectionID, q.Name, q.QLQuery, q.FilterState, q.Position,
+			q.CreatedBy, q.BuiltinKey, q.IsHidden, now, now).Scan(&id)
+	})
 	if err != nil {
 		if database.IsUniqueConstraintError(err) {
 			return nil, ErrDuplicateEntry
@@ -115,6 +120,64 @@ func (r *QueueRepository) Create(q *models.Queue) (*models.Queue, error) {
 	}
 	q.ID = id
 	return q, nil
+}
+
+// lockQueueCollectionScope serializes queue writes with collection scope
+// changes. A stale workspace is rejected after any in-flight move commits.
+func lockQueueCollectionScope(tx database.Tx, workspaceID int, collectionID *int) error {
+	if collectionID == nil {
+		return nil
+	}
+	var currentWorkspace int
+	err := tx.QueryRow(`
+		UPDATE collections SET updated_at = updated_at
+		WHERE id = ? AND workspace_id = ? RETURNING workspace_id
+	`, *collectionID, workspaceID).Scan(&currentWorkspace)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	}
+	return err
+}
+
+// SetBuiltinHidden persists or removes a built-in queue dismissal while
+// holding the collection scope lock through the whole operation.
+func (r *QueueRepository) SetBuiltinHidden(q *models.Queue, hidden bool) error {
+	if q == nil || q.BuiltinKey == nil {
+		return errors.New("built-in queue key is required")
+	}
+	return database.WithTx(r.db, func(tx database.Tx) error {
+		if err := lockQueueCollectionScope(tx, q.WorkspaceID, q.CollectionID); err != nil {
+			return err
+		}
+		where, args := queueScopeClause(q.WorkspaceID, q.CollectionID)
+		args = append(args, *q.BuiltinKey)
+		if !hidden {
+			_, err := tx.Exec("DELETE FROM queues WHERE "+where+" AND builtin_key = ?", args...)
+			return err
+		}
+		var id int
+		var isHidden bool
+		err := tx.QueryRow("SELECT id, is_hidden FROM queues WHERE "+where+" AND builtin_key = ?", args...).Scan(&id, &isHidden)
+		if err == nil {
+			if isHidden {
+				return nil
+			}
+			_, err = tx.Exec("UPDATE queues SET is_hidden = ?, updated_at = ? WHERE id = ?", true, time.Now(), id)
+			return err
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		_, err = tx.Exec(`
+			INSERT INTO queues
+				(workspace_id, collection_id, name, ql_query, position, created_by, builtin_key, is_hidden, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+		`, q.WorkspaceID, q.CollectionID, q.Name, q.QLQuery, q.Position, q.CreatedBy, q.BuiltinKey, true)
+		if database.IsUniqueConstraintError(err) {
+			return ErrDuplicateEntry
+		}
+		return err
+	})
 }
 
 // Update overwrites the mutable fields of a queue row.
