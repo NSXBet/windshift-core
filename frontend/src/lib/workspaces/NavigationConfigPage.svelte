@@ -35,20 +35,32 @@
   // Mirrors the sidebar's row order: overview, views, tests, tools. Fixed
   // sections render without toggles for orientation; test entries are not
   // nav-configurable (module and permission gating decide their visibility).
-  const sections = [
-    { id: 'overview', title: null, fixed: true, rows: [{ id: 'overview', labelKey: 'workspaceSettings.views.overview', icon: Home }] },
-    { id: 'views', title: t('settings.boardConfig.views'), rows: workspaceViewItems },
-    { id: 'tests', title: t('commandPalette.commands.tests.label'), fixed: true, moduleGated: true, rows: testNavigationItems },
-    {
-      id: 'tools',
-      title: t('actions.config.tools'),
-      rows: [
-        ...workspaceOnlyViews,
-        { id: 'look-and-feel', labelKey: 'lookAndFeel.title', icon: Palette, fixed: true, adminOnly: true },
-        { id: 'settings', labelKey: 'workspaceSettings.title', icon: Settings, fixed: true, adminOnly: true },
-      ],
-    },
-  ];
+  // A global collection lives outside any workspace nav, so only the views
+  // section applies there.
+  const sections = $derived.by(() => {
+    const viewsSection = {
+      id: 'views',
+      title: t('settings.boardConfig.views'),
+      rows: workspaceViewItems,
+    };
+    if (!workspaceId) {
+      return [viewsSection];
+    }
+    return [
+      { id: 'overview', title: null, fixed: true, rows: [{ id: 'overview', labelKey: 'workspaceSettings.views.overview', icon: Home }] },
+      viewsSection,
+      { id: 'tests', title: t('commandPalette.commands.tests.label'), fixed: true, moduleGated: true, rows: testNavigationItems },
+      {
+        id: 'tools',
+        title: t('actions.config.tools'),
+        rows: [
+          ...workspaceOnlyViews,
+          { id: 'look-and-feel', labelKey: 'lookAndFeel.title', icon: Palette, fixed: true, adminOnly: true },
+          { id: 'settings', labelKey: 'workspaceSettings.title', icon: Settings, fixed: true, adminOnly: true },
+        ],
+      },
+    ];
+  });
 
   const isCollectionScope = $derived(Boolean(collectionId));
   const workspaceName = $derived($currentWorkspace?.name || t('common.workspace'));

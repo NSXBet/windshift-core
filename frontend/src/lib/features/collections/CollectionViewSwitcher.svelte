@@ -2,6 +2,8 @@
   import { navigate } from '../../router.js';
   import { t } from '../../stores/i18n.svelte.js';
   import { viewSettingsStore } from '../../stores/viewSettings.svelte.js';
+  import { collectionStore } from '../../stores/collectionContext.svelte.js';
+  import { authStore } from '../../stores/auth.svelte.js';
   import { SquareKanban, Inbox, Settings, Globe } from '@lucide/svelte';
   import { workspacePermissions } from '../../stores/workspacePermissions.svelte.js';
 
@@ -22,10 +24,17 @@
   const boardEnabled = $derived(viewSettingsStore.enabledViewIds(workspaceId, collectionId).includes('board'));
   const backlogEnabled = $derived(viewSettingsStore.enabledViewIds(workspaceId, collectionId).includes('backlog'));
 
-  // Configure view writes the workspace-default board configuration, which
-  // the backend gates to `workspace.admin` — hide the entry point for
-  // non-admins so they don't reach a page they can't save.
-  let canConfigure = $derived(workspacePermissions.canAdminWorkspace(workspaceId));
+  // Views follow collection-editing rights: the workspace-default context is
+  // workspace-admin territory, while a collection's views belong to whoever
+  // can edit the collection (its creator) — mirroring the backend gates.
+  const isCollectionCreator = $derived(Boolean(
+    collectionStore.boardCollection &&
+      authStore.currentUser?.id != null &&
+      String(collectionStore.boardCollection.created_by) === String(authStore.currentUser.id)
+  ));
+  let canConfigure = $derived(
+    collectionId ? isCollectionCreator : workspacePermissions.canAdminWorkspace(workspaceId)
+  );
 
   // Styles use --ctx-* CSS vars cascaded from parent collection view
   const containerStyle = 'background-color: var(--ctx-surface, var(--ds-background-neutral)); backdrop-filter: var(--ctx-backdrop, none);';
@@ -51,6 +60,13 @@
       : `/collections/${collectionId}/board/configure`;
     navigate(url);
   }
+
+  function goToNavConfig() {
+    const url = workspaceId
+      ? `/workspaces/${workspaceId}/collections/${collectionId}/nav-config`
+      : `/collections/${collectionId}/nav-config`;
+    navigate(url);
+  }
 </script>
 
 <div class="flex rounded p-1" style={containerStyle} data-testid="board-view-switcher">
@@ -60,6 +76,7 @@
     class="view-btn px-3 py-1.5 text-sm font-medium rounded transition-colors"
     class:shadow-sm={activeView === 'board'}
     class:active={activeView === 'board'}
+    data-testid="switcher-view-board"
     onclick={activeView !== 'board' ? goToBoard : undefined}
   >
     <div class="flex items-center gap-2">
@@ -75,6 +92,7 @@
     class="view-btn px-3 py-1.5 text-sm font-medium rounded transition-colors"
     class:shadow-sm={activeView === 'backlog'}
     class:active={activeView === 'backlog'}
+    data-testid="switcher-view-backlog"
     onclick={activeView !== 'backlog' ? goToBacklog : undefined}
   >
     <div class="flex items-center gap-2">
@@ -95,6 +113,22 @@
       <div class="flex items-center gap-2">
         <Settings class="w-4 h-4" />
         {t('collections.configure')}
+      </div>
+    </button>
+  {/if}
+
+  <!-- Navigation visibility entry point for collection scopes. -->
+  {#if collectionId && canConfigure}
+    <button
+      class="view-btn px-2 py-1.5 text-sm font-medium rounded transition-colors"
+      title={t('navConfig.configureTitle')}
+      aria-label={t('navConfig.configureTitle')}
+      data-testid="collection-nav-config-button"
+      onclick={goToNavConfig}
+    >
+      <div class="flex items-center gap-2">
+        <Settings class="w-4 h-4" />
+        <span class="sr-only">{t('navConfig.configureTitle')}</span>
       </div>
     </button>
   {/if}

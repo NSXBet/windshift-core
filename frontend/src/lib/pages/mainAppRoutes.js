@@ -54,6 +54,7 @@ export const MAIN_APP_COMPONENT_LOADERS = {
   'workspace-pages-archived': () => import('../features/pages/ArchivedPagesPage.svelte'),
   'collection-board': () => import('../features/collections/CollectionBoard.svelte'),
   'collection-board-config': () => import('../settings/BoardConfigurationPage.svelte'),
+  'collection-nav-config': () => import('../workspaces/NavigationConfigPage.svelte'),
   'collection-backlog': () => import('../features/collections/CollectionBacklog.svelte'),
   'collection-list': () => import('../features/collections/CollectionList.svelte'),
   'collection-tree': () => import('../features/collections/CollectionTree.svelte'),
@@ -318,6 +319,11 @@ export const MAIN_APP_ROUTE_CONFIG = {
   'collection-board-config': route(
     'Loading Board Configuration...',
     'Failed to load Board Configuration',
+    { getProps: globalCollectionProps }
+  ),
+  'collection-nav-config': route(
+    'Loading Navigation Settings...',
+    'Failed to load Navigation Settings',
     { getProps: globalCollectionProps }
   ),
   'collection-backlog': route('Loading Backlog View...', 'Failed to load Backlog View', {

@@ -86,6 +86,7 @@ const routes = {
   // Global collection views (no workspace)
   '/collections/:id/board': 'collection-board',
   '/collections/:id/board/configure': 'collection-board-config',
+  '/collections/:id/nav-config': 'collection-nav-config',
   '/collections/:id/backlog': 'collection-backlog',
   '/collections/:id/list': 'collection-list',
   '/collections/:id/tree': 'collection-tree',

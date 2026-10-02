@@ -17,7 +17,7 @@
   import { workspaceViewItems, workspaceOnlyViews, testNavigationItems, visibleWorkspaceSettingsItems, workspaceSettingsViews, workspaceSettingsRoute } from '../navigation/workspaceNavigation.js';
   import { viewSettingsStore } from '../stores/viewSettings.svelte.js';
   import { navigate, currentRoute } from '../router.js';
-  import { currentWorkspace, workspacePermissions } from '../stores';
+  import { authStore, currentWorkspace, workspacePermissions } from '../stores';
   import { moduleSettings } from '../stores/moduleSettings.js';
   import { api } from '../api.js';
   import DropdownMenu from '../layout/DropdownMenu.svelte';
@@ -122,10 +122,23 @@
     // decide their visibility.
     return testNavigationItems;
   });
-  // The navigation configuration is writable with collections:write — the
-  // same gate the board-configuration PUT enforces; admins always hold it.
-  const canConfigureNav = $derived.by(() =>
-    workspacePermissions.hasPermission(workspaceId, 'collections:write')
+  // Entry points mirror the backend's write gates: the workspace-default
+  // navigation is workspace-admin territory, while a collection's views
+  // belong to whoever can edit the collection (its creator, with the
+  // collections:write the HTTP layer also requires).
+  const canConfigureWorkspaceNav = $derived.by(() =>
+    workspacePermissions.canAdminWorkspace(workspaceId)
+  );
+  const currentCollectionObject = $derived.by(() =>
+    collections.find((c) => String(c.id) === String(currentCollectionId)) ?? null
+  );
+  const canConfigureCollectionNav = $derived.by(() =>
+    Boolean(
+      currentCollectionObject &&
+        authStore.currentUser?.id != null &&
+        String(currentCollectionObject.created_by) === String(authStore.currentUser.id) &&
+        workspacePermissions.hasPermission(workspaceId, 'collections:write')
+    )
   );
 
   // Gradient detection
@@ -632,7 +645,7 @@
             {t('collections.collection')}
           </div>
           {@render navLink({ href: `/collections/${currentCollectionId}?workspace=${workspaceId}`, label: t('collections.editCollection'), icon: Pencil, isActive: false })}
-          {#if canConfigureNav}
+          {#if canConfigureCollectionNav}
             {@render navLink({ href: `/workspaces/${workspaceId}/collections/${currentCollectionId}/nav-config`, label: t('navConfig.configureTitle'), icon: Settings, testId: 'workspace-nav-config-collection', isActive: $currentRoute.view === 'workspace-nav-config' })}
           {/if}
         </div>
@@ -672,7 +685,7 @@
             <span>{t('actions.config.tools')}</span>
             <ChevronDown class={`w-4 h-4 transition-transform ${workspaceToolsExpanded ? 'rotate-180' : ''}`} />
           </button>
-          {#if canConfigureNav && !currentCollectionId}
+          {#if canConfigureWorkspaceNav && !currentCollectionId}
             <Tooltip content={t('navConfig.configureTitle')} placement="right">
               <a
                 href={`/workspaces/${workspaceId}/nav-config`}
