@@ -223,31 +223,16 @@ func (s *ItemApplicationService) SetBuiltinQueueHidden(actor AuditActor, workspa
 		return repository.ErrNotFound
 	}
 	repo := repository.NewQueueRepository(s.db)
-	if !hidden {
-		return repo.DeleteByBuiltinKey(scope.WorkspaceID, scope.CollectionID, builtinKey)
-	}
-	existing, err := repo.GetByBuiltinKey(scope.WorkspaceID, scope.CollectionID, builtinKey)
-	if err == nil {
-		if existing.IsHidden {
-			return nil
-		}
-		existing.IsHidden = true
-		return repo.Update(existing)
-	}
-	if !errors.Is(err, repository.ErrNotFound) {
-		return err
-	}
 	createdBy := actor.UserID
-	_, err = repo.Create(&models.Queue{
+	err = repo.SetBuiltinHidden(&models.Queue{
 		WorkspaceID:  scope.WorkspaceID,
 		CollectionID: scope.CollectionID,
 		Name:         preset.Name,
 		QLQuery:      preset.QL,
 		BuiltinKey:   &preset.Key,
-		IsHidden:     true,
 		Position:     builtinQueuePosition(preset.Key),
 		CreatedBy:    &createdBy,
-	})
+	}, hidden)
 	if errors.Is(err, repository.ErrDuplicateEntry) {
 		return nil
 	}
@@ -367,20 +352,20 @@ func (s *ItemApplicationService) queueScope(workspaceID int, collectionID *int) 
 		return QueueScope{}, err
 	}
 	if collection.WorkspaceID == nil {
-		return QueueScope{}, queueValidation("collection is not bound to a workspace")
+		return QueueScope{}, repository.ErrNotFound
 	}
 	return QueueScope{WorkspaceID: *collection.WorkspaceID, CollectionID: collectionID}, nil
 }
 
 func (s *ItemApplicationService) authorizeQueueRead(userID int, scope QueueScope) error {
+	allowed, err := s.perm.HasWorkspacePermission(userID, scope.WorkspaceID, models.PermissionItemView)
+	if err != nil {
+		return err
+	}
+	if !allowed {
+		return repository.ErrNotFound
+	}
 	if scope.CollectionID == nil {
-		allowed, err := s.perm.HasWorkspacePermission(userID, scope.WorkspaceID, models.PermissionItemView)
-		if err != nil {
-			return err
-		}
-		if !allowed {
-			return repository.ErrNotFound
-		}
 		return nil
 	}
 	collection, err := repository.NewCollectionRepository(s.db).GetByID(*scope.CollectionID)
@@ -403,6 +388,13 @@ func (s *ItemApplicationService) authorizeQueueWrite(userID int, scope QueueScop
 			return repository.ErrNotFound
 		}
 		return nil
+	}
+	allowed, err := s.perm.HasWorkspacePermission(userID, scope.WorkspaceID, models.PermissionItemView)
+	if err != nil {
+		return err
+	}
+	if !allowed {
+		return repository.ErrNotFound
 	}
 	collection, err := repository.NewCollectionRepository(s.db).GetByID(*scope.CollectionID)
 	if err != nil {

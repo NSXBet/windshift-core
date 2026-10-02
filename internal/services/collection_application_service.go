@@ -335,6 +335,9 @@ func (s *CollectionApplicationService) Update(actor AuditActor, id int, update C
 		}
 	}
 	if err := s.repository.Update(id, collection); err != nil {
+		if errors.Is(err, repository.ErrCollectionQueuesRequireWorkspace) {
+			return nil, collectionValidation("remove collection queues before clearing its workspace")
+		}
 		if database.IsUniqueConstraintError(err) {
 			return nil, ErrCollectionConflict
 		}
