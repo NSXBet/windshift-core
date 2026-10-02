@@ -646,6 +646,8 @@ export default {
     error: 'Error',
     editCqlManually: 'Edit CQL manually',
     resetToBuilder: 'Reset to builder',
+    builderMode: 'Builder',
+    rawMode: 'Raw CQL',
     rawModeConfirmTitle: 'Switch to manual CQL?',
     rawModeConfirmMessage: 'Editing CQL manually will disable the visual builder until you reset the query. Your current builder state will be cleared.',
     rawModeConfirmAccept: 'Switch to manual',
