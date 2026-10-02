@@ -42,10 +42,9 @@ import {
 
 /**
  * Collection-scoped workspace views (visible inside collections too). The
- * queue trails the board views as a workspace-scoped member of the views
- * group: it is a work-item view like the others, but its routes and its
- * toggle live at the workspace scope because queues are workspace-level
- * CQL presets.
+ * queue trails the board views: its route follows the selected collection so
+ * collection-scoped queues are reachable, while its visibility toggle stays
+ * in the workspace nav set because queue definitions are workspace-owned.
  * @type {WorkspaceView[]}
  */
 export const workspaceViewItems = [
@@ -103,13 +102,6 @@ export const workspaceViewItems = [
  * @type {Set<string>}
  */
 export const COLLECTION_VIEW_IDS = new Set(['backlog', 'board', 'list', 'tree', 'map', 'roadmap']);
-
-/**
- * Views-group entries whose routes always live under the workspace, never
- * under a collection, even when a collection is selected in the sidebar.
- * @type {Set<string>}
- */
-export const WORKSPACE_SCOPED_VIEW_IDS = new Set(['queue']);
 
 /**
  * Workspace tools which are not scoped to a collection.

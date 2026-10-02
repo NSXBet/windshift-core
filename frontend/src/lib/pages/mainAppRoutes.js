@@ -284,6 +284,9 @@ export const MAIN_APP_ROUTE_CONFIG = {
   'workspace-queue': route('Loading Queue...', 'Failed to load Queue', {
     getProps: (currentRoute) => ({
       workspaceId: Number(currentRoute.params.id),
+      collectionId: currentRoute.params.collectionId
+        ? Number(currentRoute.params.collectionId)
+        : null,
       queue: currentRoute.query?.queue || null,
     }),
   }),

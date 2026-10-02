@@ -70,6 +70,7 @@ const routes = {
   // Chrome-free print/PDF view for a single page (opened in a new tab).
   '/workspaces/:id/pages/:pageId/print': 'page-print',
   // Routes with collection ID filtering
+  '/workspaces/:id/collections/:collectionId/queue': 'workspace-queue',
   '/workspaces/:id/collections/:collectionId/board': 'workspace-board',
   '/workspaces/:id/collections/:collectionId/board/configure': 'workspace-board-config',
   '/workspaces/:id/collections/:collectionId/nav-config': 'workspace-nav-config',

@@ -2,12 +2,16 @@
   import { onMount } from 'svelte';
   import { t } from '../../stores/i18n.svelte.js';
   import { api } from '../../api.js';
-import { fetchV2Data } from '../../api/core.js';
+  import { fetchV2Data } from '../../api/core.js';
   import { errorToast, successToast } from '../../stores/toasts.svelte.js';
   import { authStore, workspaceDataStore } from '../../stores';
   import { navigate } from '../../router.js';
-  import { MoreHorizontal } from '@lucide/svelte';
+  import { confirm } from '../../composables/useConfirm.js';
+  import { ArrowLeft, ArrowRight, EyeOff, MoreHorizontal, Pencil, Plus, Trash2 } from '@lucide/svelte';
   import Button from '../../components/Button.svelte';
+  import Input from '../../components/Input.svelte';
+  import Modal from '../../dialogs/Modal.svelte';
+  import DialogFooter from '../../dialogs/DialogFooter.svelte';
   import { createDeleteItemHandler, createItemActionsBuilder } from '../../utils/workItemTableHelpers.js';
   import { getListColumnLabel, listGridMinWidth, listGridTemplateColumns } from '../../utils/workItemListColumns.js';
   import { useGradientStyles } from '../../stores/workspaceGradient.svelte.js';
@@ -22,12 +26,13 @@ import { fetchV2Data } from '../../api/core.js';
   import DropdownMenu from '../../layout/DropdownMenu.svelte';
   import LazyRender from '../../components/LazyRender.svelte';
   import ListCellRenderer from '../collections/ListCellRenderer.svelte';
+  import QlFilterBuilder from '../shared/QlFilterBuilder.svelte';
 
-  let { workspaceId, queue = null } = $props();
+  let { workspaceId, collectionId = null, queue = null } = $props();
 
-  // Queue catalog from the backend (stable keys, live counts, queue CQL).
+  // Resolved queue catalog for the current scope (built-ins + custom).
   let queues = $state([]);
-  let activeQueueKey = $state(queue || 'unassigned');
+  let activeRef = $state('');
   let loadingQueues = $state(true);
 
   // Ticket rows for the active queue.
@@ -45,6 +50,18 @@ import { fetchV2Data } from '../../api/core.js';
   // Client-side search over the loaded rows, matching the list view.
   let searchQuery = $state('');
 
+  // Queue authoring dialog.
+  let editorOpen = $state(false);
+  let editorQueueId = $state(null);
+  let editorName = $state('');
+  let editorQl = $state('');
+  let editorFilterState = $state(null);
+  let editorSaving = $state(false);
+
+  // Collection metadata gates management in a collection context; workspace
+  // scope mirrors the board-configuration admin gate.
+  let collection = $state(null);
+
   // Reference data from the shared workspace store.
   let workspace = $derived(workspaceDataStore.workspace);
   let users = $derived(workspaceDataStore.users ?? []);
@@ -57,11 +74,21 @@ import { fetchV2Data } from '../../api/core.js';
   let itemTypes = $derived(workspaceDataStore.itemTypes ?? []);
   let customFieldDefinitions = $derived(workspaceDataStore.customFieldDefinitions ?? []);
 
-  let activeQueue = $derived(queues.find((entry) => entry.key === activeQueueKey) ?? null);
+  let activeQueue = $derived(queues.find((entry) => queueRef(entry) === activeRef) ?? null);
   let activeQueueCount = $derived(activeQueue?.count ?? 0);
   let allSelected = $derived(items.length > 0 && items.every((item) => selectedIds.has(item.id)));
   let currentUser = $derived(authStore.currentUser);
   let canEdit = $derived(workspacePermissions.canEdit(workspaceId));
+  let canManage = $derived.by(() => {
+    if (collectionId) {
+      return Boolean(
+        collection &&
+          collection.created_by != null &&
+          String(collection.created_by) === String(currentUser?.id)
+      );
+    }
+    return workspacePermissions.canAdminWorkspace(workspaceId);
+  });
 
   // The queue renders list-view rows, so its columns reuse the list column
   // shape. The set is fixed: queues are workspace-level triage views, not
@@ -104,6 +131,17 @@ import { fetchV2Data } from '../../api/core.js';
     });
   });
 
+  // Built-in presets are addressed by their stable key; custom queues by id.
+  function queueRef(entry) {
+    return entry.builtin ? entry.key : String(entry.id);
+  }
+
+  function queuesPath() {
+    if (collectionId) return `/collections/${collectionId}/queues`;
+    const key = workspaceDataStore.workspace?.key;
+    return key ? `/workspaces/${key}/queues` : null;
+  }
+
   // A workspace-scoped list already has these option sets in the shared
   // workspace store. Prime the row-editor cache so opening a cell does not
   // repeat those requests, exactly like the list view does.
@@ -127,20 +165,42 @@ import { fetchV2Data } from '../../api/core.js';
     });
   });
 
+  async function loadCollection() {
+    if (!collectionId) {
+      collection = null;
+      return;
+    }
+    try {
+      collection = await api.collections.get(collectionId);
+    } catch (error) {
+      collection = null;
+    }
+  }
+
   async function loadQueues() {
     try {
-      // The bootstrap payload the shell loads for this workspace anyway
-      // carries the key; initialize() dedupes with the onMount call and
-      // re-targets the store when it was left on a different workspace.
       await workspaceDataStore.initialize(workspaceId);
-      const key = workspaceDataStore.workspace?.key;
-      if (!key) throw new Error('workspace bootstrap unavailable');
-      queues = (await fetchV2Data(`/workspaces/${key}/queues`)) ?? [];
+      const path = queuesPath();
+      if (!path) throw new Error('workspace bootstrap unavailable');
+      queues = (await fetchV2Data(path)) ?? [];
+      resolveActiveRef();
     } catch (error) {
       errorToast(t('supportQueue.loadFailed'));
     } finally {
       loadingQueues = false;
     }
+  }
+
+  // Keep the selected queue when it still exists; otherwise honor the deep
+  // link, then fall back to the unassigned preset, then the first queue.
+  function resolveActiveRef() {
+    const refs = queues.map(queueRef);
+    if (activeRef && refs.includes(activeRef)) return;
+    if (queue && refs.includes(queue)) {
+      activeRef = queue;
+      return;
+    }
+    activeRef = refs.includes('unassigned') ? 'unassigned' : (refs[0] ?? '');
   }
 
   async function loadItems() {
@@ -174,12 +234,19 @@ import { fetchV2Data } from '../../api/core.js';
     }
   }
 
-  function selectQueue(key) {
-    if (key === activeQueueKey) return;
-    activeQueueKey = key;
+  async function refreshQueuesAndItems() {
+    await loadQueues();
+    await loadItems();
+  }
+
+  function selectQueue(ref) {
+    if (ref === activeRef) return;
+    activeRef = ref;
     selectedIds = new Set();
     searchQuery = '';
-    history.replaceState(null, '', `/workspaces/${workspaceId}/queue?queue=${encodeURIComponent(key)}`);
+    const url = new URL(window.location.href);
+    url.searchParams.set('queue', ref);
+    window.history.replaceState(null, '', `${url.pathname}${url.search}`);
     void loadItems();
   }
 
@@ -209,7 +276,7 @@ import { fetchV2Data } from '../../api/core.js';
       await api.items.bulkUpdate(ids, fields);
       successToast(t('supportQueue.bulkSuccess', { n: ids.length }));
       clearSelection();
-      await Promise.all([loadQueues(), loadItems()]);
+      await refreshQueuesAndItems();
     } catch (error) {
       errorToast(error?.message || t('supportQueue.loadFailed'));
     } finally {
@@ -245,12 +312,172 @@ import { fetchV2Data } from '../../api/core.js';
 
   const deleteItem = createDeleteItemHandler({
     confirmMessage: (item) => t('collections.confirmDeleteItem', { title: item.title }),
-    onDeleted: () => Promise.all([loadQueues(), loadItems()]),
+    onDeleted: () => refreshQueuesAndItems(),
   });
 
   const buildItemActions = createItemActionsBuilder({ viewItem, deleteItem });
 
+  // ===== Queue management =====
+
+  function openCreate() {
+    editorQueueId = null;
+    editorName = '';
+    editorQl = '';
+    editorFilterState = null;
+    editorOpen = true;
+  }
+
+  function openEdit(entry) {
+    editorQueueId = entry.id;
+    editorName = entry.name;
+    editorQl = entry.ql;
+    editorFilterState = entry.filter_state ?? null;
+    editorOpen = true;
+  }
+
+  function closeEditor() {
+    if (editorSaving) return;
+    editorOpen = false;
+  }
+
+  function handleEditorChange({ ql_query, filter_state }) {
+    editorQl = ql_query;
+    editorFilterState = filter_state;
+  }
+
+  async function saveEditor() {
+    if (!editorName.trim() || !editorQl.trim() || editorSaving) return;
+    editorSaving = true;
+    const body = JSON.stringify({
+      name: editorName.trim(),
+      ql_query: editorQl,
+      filter_state: editorFilterState,
+    });
+    try {
+      if (editorQueueId) {
+        await fetchV2Data(`/queues/${editorQueueId}`, { method: 'PATCH', body });
+        successToast(t('supportQueue.updated'));
+      } else {
+        const path = queuesPath();
+        await fetchV2Data(path, { method: 'POST', body });
+        successToast(t('supportQueue.created'));
+      }
+      editorOpen = false;
+      await refreshQueuesAndItems();
+    } catch (error) {
+      errorToast(error?.message || t('supportQueue.saveFailed'));
+    } finally {
+      editorSaving = false;
+    }
+  }
+
+  async function removeQueue(entry) {
+    const confirmed = await confirm({
+      title: t('supportQueue.delete'),
+      message: t('supportQueue.deleteConfirm', { name: entry.name }),
+      confirmText: t('common.delete'),
+      variant: 'danger',
+    });
+    if (!confirmed) return;
+    try {
+      await fetchV2Data(`/queues/${entry.id}`, { method: 'DELETE' });
+      successToast(t('supportQueue.deleted'));
+      await refreshQueuesAndItems();
+    } catch (error) {
+      errorToast(error?.message || t('supportQueue.saveFailed'));
+    }
+  }
+
+  async function dismissBuiltin(entry) {
+    const path = queuesPath();
+    try {
+      await fetchV2Data(`${path}/builtins/${encodeURIComponent(entry.key)}`, {
+        method: 'PUT',
+        body: JSON.stringify({ hidden: true }),
+      });
+      successToast(t('supportQueue.builtinRemoved'));
+      await refreshQueuesAndItems();
+    } catch (error) {
+      errorToast(error?.message || t('supportQueue.saveFailed'));
+    }
+  }
+
+  async function moveQueue(entry, direction) {
+    const custom = queues.filter((item) => !item.builtin);
+    const index = custom.findIndex((item) => item.id === entry.id);
+    const target = direction === 'left' ? index - 1 : index + 1;
+    if (index < 0 || target < 0 || target >= custom.length) return;
+    const reordered = [...custom];
+    [reordered[index], reordered[target]] = [reordered[target], reordered[index]];
+    try {
+      await fetchV2Data(`${queuesPath()}/order`, {
+        method: 'PUT',
+        body: JSON.stringify({ ids: reordered.map((item) => item.id) }),
+      });
+      await refreshQueuesAndItems();
+    } catch (error) {
+      errorToast(error?.message || t('supportQueue.saveFailed'));
+    }
+  }
+
+  function queueMenuItems(entry) {
+    if (entry.builtin) {
+      return [
+        {
+          id: 'remove-builtin',
+          type: 'regular',
+          icon: EyeOff,
+          title: t('supportQueue.removeBuiltin'),
+          testid: `support-queue-remove-builtin-${entry.key}`,
+          onClick: () => dismissBuiltin(entry),
+        },
+      ];
+    }
+    const custom = queues.filter((item) => !item.builtin);
+    const index = custom.findIndex((item) => item.id === entry.id);
+    return [
+      {
+        id: 'edit',
+        type: 'regular',
+        icon: Pencil,
+        title: t('supportQueue.edit'),
+        testid: 'support-queue-edit',
+        onClick: () => openEdit(entry),
+      },
+      {
+        id: 'move-left',
+        type: 'regular',
+        icon: ArrowLeft,
+        title: t('supportQueue.moveLeft'),
+        disabled: index <= 0,
+        testid: 'support-queue-move-left',
+        onClick: () => moveQueue(entry, 'left'),
+      },
+      {
+        id: 'move-right',
+        type: 'regular',
+        icon: ArrowRight,
+        title: t('supportQueue.moveRight'),
+        disabled: index === custom.length - 1,
+        testid: 'support-queue-move-right',
+        onClick: () => moveQueue(entry, 'right'),
+      },
+      { type: 'divider' },
+      {
+        id: 'delete',
+        type: 'regular',
+        icon: Trash2,
+        title: t('supportQueue.delete'),
+        color: 'var(--ds-text-danger)',
+        hoverClass: 'hover-danger',
+        testid: 'support-queue-delete',
+        onClick: () => removeQueue(entry),
+      },
+    ];
+  }
+
   onMount(() => {
+    void loadCollection();
     void loadQueues().then(loadItems);
     void workspaceDataStore.initialize(workspaceId);
     api.teams
@@ -284,31 +511,56 @@ import { fetchV2Data } from '../../api/core.js';
     </div>
   {:else}
     <div class="flex flex-wrap items-center justify-between gap-4 mb-4">
-      <div class="flex flex-wrap gap-2" role="tablist" data-testid="support-queue-tabs">
-        {#each queues as entry (entry.key)}
-          <button
-            type="button"
-            role="tab"
-            aria-selected={entry.key === activeQueueKey}
-            class="px-3 py-1.5 rounded-md text-sm border transition-colors"
-            style={
-              entry.key === activeQueueKey
-                ? 'color: var(--ctx-active-text, var(--ds-accent-blue)); background-color: var(--ctx-active-bg, var(--ds-accent-blue-subtler)); border-color: var(--ctx-border, var(--ds-border)); backdrop-filter: var(--ctx-backdrop, none);'
-                : 'color: var(--ctx-text-subtle, var(--ds-text-subtle)); background-color: transparent; border-color: var(--ctx-border, var(--ds-border)); backdrop-filter: var(--ctx-backdrop, none);'
-            }
-            data-testid={`support-queue-tab-${entry.key}`}
-            onclick={() => selectQueue(entry.key)}
+      <div class="flex flex-wrap items-center gap-2" role="tablist" data-testid="support-queue-tabs">
+        {#each queues as entry (queueRef(entry))}
+          <div
+            class="flex items-center rounded-md border transition-colors"
+            style={queueRef(entry) === activeRef
+              ? 'color: var(--ctx-active-text, var(--ds-accent-blue)); background-color: var(--ctx-active-bg, var(--ds-accent-blue-subtler)); border-color: var(--ctx-border, var(--ds-border)); backdrop-filter: var(--ctx-backdrop, none);'
+              : 'color: var(--ctx-text-subtle, var(--ds-text-subtle)); background-color: transparent; border-color: var(--ctx-border, var(--ds-border)); backdrop-filter: var(--ctx-backdrop, none);'}
           >
-            {entry.name}
-            <span
-              class="ml-1.5 inline-block rounded-full text-xs px-1.5"
-              style="background-color: var(--ctx-surface-overlay, var(--ds-surface-overlay)); backdrop-filter: var(--ctx-backdrop, none);"
-              data-testid={`support-queue-count-${entry.key}`}
+            <button
+              type="button"
+              role="tab"
+              aria-selected={queueRef(entry) === activeRef}
+              class="px-3 py-1.5 text-sm"
+              data-testid={`support-queue-tab-${queueRef(entry)}`}
+              onclick={() => selectQueue(queueRef(entry))}
             >
-              {entry.count}
-            </span>
-          </button>
+              {entry.name}
+              <span
+                class="ml-1.5 inline-block rounded-full text-xs px-1.5"
+                style="background-color: var(--ctx-surface-overlay, var(--ds-surface-overlay)); backdrop-filter: var(--ctx-backdrop, none);"
+                data-testid={`support-queue-count-${queueRef(entry)}`}
+              >
+                {entry.count}
+              </span>
+            </button>
+            {#if canManage && queueRef(entry) === activeRef}
+              <DropdownMenu
+                triggerText=""
+                triggerIcon={MoreHorizontal}
+                iconOnly
+                triggerClass="p-1.5 rounded action-btn transition-colors"
+                triggerTestid={`support-queue-menu-${queueRef(entry)}`}
+                items={queueMenuItems(entry)}
+              />
+            {/if}
+          </div>
         {/each}
+
+        {#if canManage}
+          <!-- shortcut-guard-exempt: contextual queue-tab action; no global shortcut. -->
+          <Button
+            variant="ghost"
+            size="small"
+            icon={Plus}
+            dataTestid="support-queue-add"
+            onclick={openCreate}
+          >
+            {t('supportQueue.add')}
+          </Button>
+        {/if}
       </div>
 
       <SearchInput
@@ -457,6 +709,49 @@ import { fetchV2Data } from '../../api/core.js';
     {/if}
   {/if}
 </StaticViewBackground>
+
+<Modal
+  bind:isOpen={editorOpen}
+  onclose={closeEditor}
+  onSubmit={saveEditor}
+  submitDisabled={!editorName.trim() || !editorQl.trim() || editorSaving}
+  maxWidth="max-w-2xl"
+>
+  <div class="p-6" data-testid="support-queue-editor">
+    <h2 class="text-lg font-semibold mb-4" style="color: var(--ds-text);">
+      {editorQueueId ? t('supportQueue.edit') : t('supportQueue.add')}
+    </h2>
+    <label class="block text-sm font-medium mb-1" for="queue-editor-name" style="color: var(--ds-text-subtle);">
+      {t('supportQueue.nameLabel')}
+    </label>
+    <Input
+      id="queue-editor-name"
+      dataTestid="queue-editor-name"
+      bind:value={editorName}
+      placeholder={t('supportQueue.namePlaceholder')}
+      class="mb-4"
+    />
+    <span class="block text-sm font-medium mb-1" style="color: var(--ds-text-subtle);">
+      {t('supportQueue.filterLabel')}
+    </span>
+    <QlFilterBuilder
+      qlQuery={editorQl}
+      filterState={editorFilterState}
+      testIdPrefix="queue-editor-builder"
+      onchange={handleEditorChange}
+    />
+    <DialogFooter
+      onCancel={closeEditor}
+      onConfirm={saveEditor}
+      confirmLabel={t('common.save')}
+      cancelTestid="queue-editor-cancel"
+      confirmTestid="queue-editor-save"
+      disabled={!editorName.trim() || !editorQl.trim()}
+      loading={editorSaving}
+      showKeyboardHint={true}
+    />
+  </div>
+</Modal>
 
 <style>
   .list-row:hover {
