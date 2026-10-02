@@ -14,7 +14,7 @@ export const ALL_NAV_IDS = [...ALL_VIEW_IDS, ...workspaceOnlyViews.map((view) =>
 /** @typedef {{ views: string[], inherited: boolean, loaded: boolean }} ViewSettingsEntry */
 
 /** @type {ViewSettingsEntry} */
-const DEFAULT_ENTRY = { views: ALL_VIEW_IDS, inherited: true, loaded: false };
+const DEFAULT_ENTRY = { views: ALL_NAV_IDS, inherited: true, loaded: false };
 
 function createViewSettingsStore() {
   /** @type {Record<string, ViewSettingsEntry>} */
@@ -44,7 +44,9 @@ function createViewSettingsStore() {
         const config = await api.collections.getBoardConfiguration(collectionId, workspaceId);
         const enabled = config?.view_settings?.enabled_views;
         entry = {
-          views: Array.isArray(enabled) && enabled.length > 0 ? enabled : ALL_VIEW_IDS,
+          // Missing or empty settings mean "everything enabled" — tools
+          // entries included — matching the backend's storage default.
+          views: Array.isArray(enabled) && enabled.length > 0 ? enabled : ALL_NAV_IDS,
           inherited: Boolean(config?.view_settings_inherited),
           loaded: true,
         };
@@ -62,9 +64,9 @@ function createViewSettingsStore() {
     }
   }
 
-  /** Enabled view ids for a scope; every view while unloaded. */
+  /** Enabled view ids for a scope; everything enabled while unloaded. */
   function enabledViewIds(workspaceId, collectionId = null) {
-    return entries[scopeKey(workspaceId, collectionId)]?.views ?? ALL_VIEW_IDS;
+    return entries[scopeKey(workspaceId, collectionId)]?.views ?? ALL_NAV_IDS;
   }
 
   /**

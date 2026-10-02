@@ -926,6 +926,7 @@ export default {
   },
   supportQueue: {
     title: 'Queue',
+    description: 'Triage unassigned, waiting, and overdue tickets',
     loading: 'Loading queues…',
     loadFailed: 'Failed to load support queues',
     empty: 'No tickets in this queue',

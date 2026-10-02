@@ -9,6 +9,7 @@ import {
   IconFileCheck as FileCheck,
   IconFileStack as FileStack,
   IconGitBranch as GitBranch,
+  IconInbox,
   IconKey as Key,
   IconList as List,
   IconListTree as ListTree,
@@ -87,6 +88,14 @@ export const workspaceViewItems = [
  * @type {WorkspaceView[]}
  */
 export const workspaceOnlyViews = [
+  {
+    id: 'queue',
+    labelKey: 'supportQueue.title',
+    tooltipKey: 'supportQueue.description',
+    icon: IconInbox,
+    testId: 'workspace-nav-queue',
+    activeViews: ['workspace-queue'],
+  },
   {
     id: 'agents',
     labelKey: 'users.agents.title',
