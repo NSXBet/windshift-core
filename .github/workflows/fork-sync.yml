@@ -1,0 +1,92 @@
+name: Fork Sync
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  repository_dispatch:
+    types: [upstream_changed]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Add upstream and check changes
+        id: check
+        run: |
+          UPSTREAM_REPO="${{ vars.UPSTREAM_REPO }}"
+          if [ -z "$UPSTREAM_REPO" ]; then
+            UPSTREAM_REPO=$(gh api repos/${{ github.repository }} --jq '.parent.full_name // empty')
+          fi
+          if [ -z "$UPSTREAM_REPO" ]; then
+            echo "::error::Not a fork and UPSTREAM_REPO not set"
+            exit 1
+          fi
+          echo "UPSTREAM_REPO=$UPSTREAM_REPO" >> "$GITHUB_ENV"
+          git remote add upstream "https://github.com/${UPSTREAM_REPO}.git"
+          git fetch upstream main
+
+          BEHIND=$(git rev-list --count origin/main..upstream/main)
+          echo "behind=$BEHIND" >> "$GITHUB_OUTPUT"
+          if [ "$BEHIND" -eq 0 ]; then
+            echo "synced=true" >> "$GITHUB_OUTPUT"
+            echo "✅ Already up to date"
+          else
+            echo "synced=false" >> "$GITHUB_OUTPUT"
+            echo "🔄 Fork is $BEHIND commit(s) behind upstream"
+            git log --oneline origin/main..upstream/main
+          fi
+
+      - name: Rebase fork on upstream
+        if: steps.check.outputs.synced == 'false'
+        id: rebase
+        run: |
+          git checkout main
+          FORK_COMMITS=$(git rev-list --count upstream/main..origin/main)
+          echo "fork_commits=$FORK_COMMITS" >> "$GITHUB_OUTPUT"
+
+          if [ "$FORK_COMMITS" -eq 0 ]; then
+            # No fork commits, fast-forward
+            git merge --ff-only upstream/main
+            echo "status=clean" >> "$GITHUB_OUTPUT"
+            echo "method=ff" >> "$GITHUB_OUTPUT"
+          else
+            if git rebase upstream/main 2>&1; then
+              echo "status=clean" >> "$GITHUB_OUTPUT"
+              echo "method=rebase" >> "$GITHUB_OUTPUT"
+            else
+              git rebase --abort
+              echo "status=conflict" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
+      - name: Push clean rebase
+        if: steps.check.outputs.synced == 'false' && steps.rebase.outputs.status == 'clean'
+        run: git push origin main --force-with-lease
+
+      - name: Report conflicts
+        if: steps.check.outputs.synced == 'false' && steps.rebase.outputs.status == 'conflict'
+        run: |
+          echo "::error::Rebase conflicts with upstream. Resolve manually, push, then re-run this workflow."
+          echo "Conflicting fork commits:"
+          git log --oneline upstream/main..origin/main
+          exit 1
