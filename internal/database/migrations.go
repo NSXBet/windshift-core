@@ -2213,6 +2213,56 @@ var Catalog = []Migration{
 		ApplySQLite:     applyViewSettingsToolsBackfill,
 		ApplyPostgres:   applyViewSettingsToolsBackfill,
 	},
+	{
+		Version:       "20261007_support_queues",
+		Name:          "Persisted, scope-aware support queues (WI-1603)",
+		CheckSQLite:   sqliteTableCheck("queues"),
+		CheckPostgres: pgTableCheck("queues"),
+		SQLite: `
+			CREATE TABLE queues (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				workspace_id INTEGER NOT NULL,
+				collection_id INTEGER,
+				name TEXT NOT NULL,
+				ql_query TEXT NOT NULL,
+				filter_state TEXT,
+				position INTEGER NOT NULL DEFAULT 0,
+				created_by INTEGER,
+				builtin_key TEXT,
+				is_hidden BOOLEAN NOT NULL DEFAULT false,
+				created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+				updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+				FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+				FOREIGN KEY (collection_id) REFERENCES collections(id) ON DELETE CASCADE,
+				FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+			);
+			CREATE INDEX idx_queues_workspace_scope ON queues(workspace_id, collection_id, position);
+			CREATE UNIQUE INDEX uq_queues_ws_builtin ON queues(workspace_id, builtin_key) WHERE collection_id IS NULL AND builtin_key IS NOT NULL;
+			CREATE UNIQUE INDEX uq_queues_coll_builtin ON queues(collection_id, builtin_key) WHERE collection_id IS NOT NULL AND builtin_key IS NOT NULL;
+		`,
+		Postgres: `
+			CREATE TABLE queues (
+				id BIGSERIAL PRIMARY KEY,
+				workspace_id BIGINT NOT NULL,
+				collection_id BIGINT,
+				name TEXT NOT NULL,
+				ql_query TEXT NOT NULL,
+				filter_state TEXT,
+				position INTEGER NOT NULL DEFAULT 0,
+				created_by BIGINT,
+				builtin_key TEXT,
+				is_hidden BOOLEAN NOT NULL DEFAULT false,
+				created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+				updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+				FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+				FOREIGN KEY (collection_id) REFERENCES collections(id) ON DELETE CASCADE,
+				FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+			);
+			CREATE INDEX IF NOT EXISTS idx_queues_workspace_scope ON queues(workspace_id, collection_id, position);
+			CREATE UNIQUE INDEX IF NOT EXISTS uq_queues_ws_builtin ON queues(workspace_id, builtin_key) WHERE collection_id IS NULL AND builtin_key IS NOT NULL;
+			CREATE UNIQUE INDEX IF NOT EXISTS uq_queues_coll_builtin ON queues(collection_id, builtin_key) WHERE collection_id IS NOT NULL AND builtin_key IS NOT NULL;
+		`,
+	},
 }
 
 // viewSettingsToolsBackfillIDs lists the workspace tools ids as they existed

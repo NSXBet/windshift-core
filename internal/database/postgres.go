@@ -169,6 +169,9 @@ var pageLabelsSchemaPostgres string
 //go:embed schema/canned_responses_postgres.sql
 var cannedResponsesSchemaPostgres string
 
+//go:embed schema/queues_postgres.sql
+var queuesSchemaPostgres string
+
 //go:embed schema/action_trigger_marks_postgres.sql
 var actionTriggerMarksSchemaPostgres string
 
@@ -577,6 +580,7 @@ func (p *PostgresDB) getPostgresSchemaFiles() []schemaFile {
 		{"pages_postgres.sql", pagesSchemaPostgres},
 		{"page_labels_postgres.sql", pageLabelsSchemaPostgres},
 		{"canned_responses_postgres.sql", cannedResponsesSchemaPostgres},
+		{"queues_postgres.sql", queuesSchemaPostgres},
 		{"action_trigger_marks_postgres.sql", actionTriggerMarksSchemaPostgres},
 		{"agents_postgres.sql", agentsSchemaPostgres},
 		{"events_postgres.sql", eventsSchemaPostgres},

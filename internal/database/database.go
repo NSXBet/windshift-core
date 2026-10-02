@@ -161,6 +161,9 @@ var pageLabelsSchema string
 //go:embed schema/canned_responses.sql
 var cannedResponsesSchema string
 
+//go:embed schema/queues.sql
+var queuesSchema string
+
 //go:embed schema/action_trigger_marks.sql
 var actionTriggerMarksSchema string
 
