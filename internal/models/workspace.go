@@ -332,7 +332,7 @@ var BoardViewIDs = []string{"backlog", "board", "list", "tree", "map", "roadmap"
 // redirect fallback and the others are admin affordances, not workspace
 // feature surfaces.
 var WorkspaceNavItemIDs = append(slices.Clone(BoardViewIDs),
-	"agents", "iterations", "milestones", "analytics", "actions", "pages",
+	"queue", "agents", "iterations", "milestones", "analytics", "actions", "pages",
 )
 
 // IsWorkspaceNavID reports whether id is a workspace-scope nav item.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"slices"
 )
@@ -2202,6 +2203,122 @@ var Catalog = []Migration{
 			ALTER TABLE email_reply_outbox ADD COLUMN IF NOT EXISTS lease_owner TEXT;
 		`,
 	},
+	{
+		Version:         "20261002_view_settings_backfill_tools",
+		Name:            "Backfill tools entries into stored workspace view-visibility overrides",
+		CheckSQLiteFn:   checkViewSettingsToolsBackfill,
+		CheckPostgresFn: checkViewSettingsToolsBackfill,
+		SQLite:          "applyViewSettingsToolsBackfill:v1",
+		Postgres:        "applyViewSettingsToolsBackfill:v1",
+		ApplySQLite:     applyViewSettingsToolsBackfill,
+		ApplyPostgres:   applyViewSettingsToolsBackfill,
+	},
+}
+
+// viewSettingsToolsBackfillIDs lists the workspace tools ids as they existed
+// when the migration shipped. The list is deliberately frozen: later id
+// additions must not change what this one-time backfill does.
+var viewSettingsToolsBackfillIDs = []string{
+	"queue", "agents", "iterations", "milestones", "analytics", "actions", "pages",
+}
+
+// checkViewSettingsToolsBackfill reports the migration as already applied
+// when no workspace-scope override lacks the tools ids — trivially true on
+// fresh installs, where no board configuration rows exist yet.
+func checkViewSettingsToolsBackfill(db Database) (bool, error) {
+	rows, err := db.Query(
+		`SELECT view_settings FROM board_configurations WHERE workspace_id IS NOT NULL AND view_settings IS NOT NULL`,
+	)
+	if err != nil {
+		return false, fmt.Errorf("read board configuration view settings: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			return false, fmt.Errorf("scan view settings: %w", err)
+		}
+		var settings struct {
+			EnabledViews *[]string `json:"enabled_views"`
+		}
+		if err := json.Unmarshal([]byte(raw), &settings); err != nil {
+			continue
+		}
+		if settings.EnabledViews == nil || len(*settings.EnabledViews) == 0 {
+			continue
+		}
+		needsBackfill := !slices.ContainsFunc(*settings.EnabledViews, func(id string) bool {
+			return slices.Contains(viewSettingsToolsBackfillIDs, id)
+		})
+		if needsBackfill {
+			return false, nil
+		}
+	}
+	return rows.Err() == nil, rows.Err()
+}
+
+// applyViewSettingsToolsBackfill appends the tools ids to workspace-scope
+// view-visibility overrides that predate toggleable tools entries. Such
+// overrides can only hold the six collection views; without the backfill the
+// tools entries would read as deliberately disabled. Idempotent: rows that
+// already name any tools id are left alone.
+func applyViewSettingsToolsBackfill(db Database) error {
+	rows, err := db.Query(
+		`SELECT id, view_settings FROM board_configurations WHERE workspace_id IS NOT NULL AND view_settings IS NOT NULL`,
+	)
+	if err != nil {
+		return fmt.Errorf("read board configuration view settings: %w", err)
+	}
+	defer rows.Close()
+
+	type backfill struct {
+		id   int
+		next string
+	}
+	var updates []backfill
+	for rows.Next() {
+		var id int
+		var raw string
+		if err := rows.Scan(&id, &raw); err != nil {
+			return fmt.Errorf("scan view settings: %w", err)
+		}
+		var settings struct {
+			EnabledViews *[]string `json:"enabled_views"`
+		}
+		if err := json.Unmarshal([]byte(raw), &settings); err != nil {
+			// Unreadable legacy payload: read-side normalization already
+			// tolerates it, so there is nothing to backfill.
+			continue
+		}
+		if settings.EnabledViews == nil || len(*settings.EnabledViews) == 0 {
+			continue
+		}
+		hasTools := slices.ContainsFunc(*settings.EnabledViews, func(id string) bool {
+			return slices.Contains(viewSettingsToolsBackfillIDs, id)
+		})
+		if hasTools {
+			continue
+		}
+		merged := append(slices.Clone(*settings.EnabledViews), viewSettingsToolsBackfillIDs...)
+		out, err := json.Marshal(struct {
+			EnabledViews []string `json:"enabled_views"`
+		}{merged})
+		if err != nil {
+			return fmt.Errorf("marshal backfilled view settings: %w", err)
+		}
+		updates = append(updates, backfill{id: id, next: string(out)})
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate view settings: %w", err)
+	}
+	for _, u := range updates {
+		if _, err := db.Exec(
+			`UPDATE board_configurations SET view_settings = ? WHERE id = ?`, u.next, u.id,
+		); err != nil {
+			return fmt.Errorf("backfill view settings for configuration %d: %w", u.id, err)
+		}
+	}
+	return nil
 }
 
 func applySQLitePersonalLabelsPerUserUnique(db Database) (retErr error) {
