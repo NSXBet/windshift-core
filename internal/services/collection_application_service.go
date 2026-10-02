@@ -711,13 +711,23 @@ func (s *CollectionApplicationService) DeleteBoardConfiguration(actor AuditActor
 }
 
 func (s *CollectionApplicationService) loadBoardConfiguration(scope BoardConfigurationScope) (*models.BoardConfiguration, error) {
-	if scope.CollectionID != nil && scope.WorkspaceID == nil {
-		return s.boards.GetByCollectionID(*scope.CollectionID)
+	var (
+		config *models.BoardConfiguration
+		err    error
+	)
+	switch {
+	case scope.CollectionID != nil && scope.WorkspaceID == nil:
+		config, err = s.boards.GetByCollectionID(*scope.CollectionID)
+	case scope.WorkspaceID != nil && scope.CollectionID == nil:
+		config, err = s.boards.GetByWorkspaceID(*scope.WorkspaceID)
+	default:
+		return nil, collectionValidation("exactly one board configuration scope is required")
 	}
-	if scope.WorkspaceID != nil && scope.CollectionID == nil {
-		return s.boards.GetByWorkspaceID(*scope.WorkspaceID)
+	if err != nil {
+		return nil, err
 	}
-	return nil, collectionValidation("exactly one board configuration scope is required")
+	normalizeStoredViewSettings(config.ViewSettings)
+	return config, nil
 }
 
 func (s *CollectionApplicationService) authorizeBoardRead(userID int, scope BoardConfigurationScope) error {
@@ -780,6 +790,35 @@ func validateBoardConfiguration(input models.BoardConfigurationRequest) error {
 		return collectionValidation("completed_item_retention_days must be between 1 and 3650")
 	}
 	return nil
+}
+
+// normalizeStoredViewSettings drops enabled-views ids that are no longer
+// known, so overrides stored before the toggleable set changed still read
+// and round-trip cleanly instead of failing every subsequent save. A set
+// reduced to nothing falls back to inherit. The write path stays strict:
+// only reads are tolerant.
+func normalizeStoredViewSettings(settings *models.ViewSettings) {
+	if settings == nil || settings.EnabledViews == nil || len(*settings.EnabledViews) == 0 {
+		return
+	}
+	known := make(map[string]struct{}, len(models.WorkspaceNavItemIDs))
+	for _, id := range models.WorkspaceNavItemIDs {
+		known[id] = struct{}{}
+	}
+	kept := make([]string, 0, len(*settings.EnabledViews))
+	for _, id := range *settings.EnabledViews {
+		if _, ok := known[id]; ok {
+			kept = append(kept, id)
+		}
+	}
+	if len(kept) == len(*settings.EnabledViews) {
+		return
+	}
+	if len(kept) == 0 {
+		settings.EnabledViews = nil
+		return
+	}
+	settings.EnabledViews = &kept
 }
 
 // validateViewSettings checks an explicit enabled-views key: known nav
@@ -862,6 +901,7 @@ func mergeViewSettings(current, update *models.ViewSettings) *models.ViewSetting
 // carry no workspace id, so it is resolved from the collection record when
 // needed.
 func (s *CollectionApplicationService) applyEffectiveViewSettings(config *models.BoardConfiguration) error {
+	normalizeStoredViewSettings(config.ViewSettings)
 	allViews := func() *models.ViewSettings {
 		views := slices.Clone(models.BoardViewIDs)
 		return &models.ViewSettings{EnabledViews: &views}
@@ -878,7 +918,12 @@ func (s *CollectionApplicationService) applyEffectiveViewSettings(config *models
 		if workspaceID == nil {
 			return nil, repository.ErrNotFound
 		}
-		return s.boards.GetByWorkspaceID(*workspaceID)
+		row, err := s.boards.GetByWorkspaceID(*workspaceID)
+		if err != nil {
+			return nil, err
+		}
+		normalizeStoredViewSettings(row.ViewSettings)
+		return row, nil
 	}()
 	if config.CollectionID != nil && config.ViewSettings.HasEnabledViewsOverride() {
 		// The collection override speaks only for the collection-scoped
