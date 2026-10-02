@@ -102,7 +102,7 @@
           {:else}
             <div class="space-y-3 mb-7">
               {#each portalRequestsStore.comments as comment}
-                <article class="request-comment">
+                <article class="request-comment" data-testid="portal-request-comment">
                   <div class="request-comment-avatar" aria-hidden="true">
                     {(comment.author_name || '?').slice(0, 1).toUpperCase()}
                   </div>
