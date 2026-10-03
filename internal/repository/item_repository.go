@@ -43,7 +43,7 @@ func (r *ItemRepository) GetDetailPanelAvailability(workspaceID, itemID int) (sc
 const itemBaseColumns = `id, workspace_id, workspace_item_number, item_type_id, title, description, status_id,
        priority_id, due_date, start_date, end_date, is_task, iteration_id, project_id, inherit_project,
        time_project_id, assignee_id, creator_id, creator_portal_customer_id, custom_field_values, parent_id, related_work_item_id,
-       story_points, estimate_minutes, frac_index, created_at, updated_at`
+       story_points, estimate_minutes, frac_index, created_at, updated_at, channel_id`
 
 func scanItemBase(scanner interface {
 	Scan(dest ...any) error
@@ -56,12 +56,13 @@ func scanItemBase(scanner interface {
 	var storyPoints sql.NullFloat64
 	var estimateMinutes sql.NullInt64
 	var fracIndex sql.NullString
+	var channelID sql.NullInt64
 
 	err := scanner.Scan(
 		&item.ID, &item.WorkspaceID, &item.WorkspaceItemNumber, &itemTypeID, &item.Title, &item.Description,
 		&statusID, &priorityID, &dueDate, &startDate, &endDate, &item.IsTask, &iterationID,
 		&projectID, &item.InheritProject, &timeProjectID, &assigneeID, &creatorID, &creatorPortalCustomerID, &customFieldValuesJSON, &parentID,
-		&relatedWorkItemID, &storyPoints, &estimateMinutes, &fracIndex, &item.CreatedAt, &item.UpdatedAt,
+		&relatedWorkItemID, &storyPoints, &estimateMinutes, &fracIndex, &item.CreatedAt, &item.UpdatedAt, &channelID,
 	)
 	if err != nil {
 		return nil, err
@@ -78,6 +79,7 @@ func scanItemBase(scanner interface {
 	assignNullableInt(&item.CreatorID, creatorID)
 	assignNullableInt(&item.CreatorPortalCustomerID, creatorPortalCustomerID)
 	assignNullableInt(&item.RelatedWorkItemID, relatedWorkItemID)
+	assignNullableInt(&item.ChannelID, channelID)
 	assignNullableTime(&item.DueDate, dueDate)
 	assignNullableTime(&item.StartDate, startDate)
 	assignNullableTime(&item.EndDate, endDate)
