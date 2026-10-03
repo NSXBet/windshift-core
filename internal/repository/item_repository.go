@@ -126,6 +126,21 @@ func (r *ItemRepository) FindByIDContext(ctx context.Context, id int) (*models.I
 	return item, nil
 }
 
+// MergedIntoItemID returns the canonical item this one was merged into, or nil
+// when it is not a merged duplicate. Merged duplicates are read-only redirects
+// (WI-1528), so writes must consult this before mutating an item.
+func (r *ItemRepository) MergedIntoItemID(ctx context.Context, id int) (*int, error) {
+	var mergedInto *int
+	err := r.db.QueryRowContext(ctx, `SELECT merged_into_item_id FROM items WHERE id = ?`, id).Scan(&mergedInto)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("load merge state for item %d: %w", id, err)
+	}
+	return mergedInto, nil
+}
+
 // ItemCaptureSnapshot is the stable item projection used by the Jira capture
 // export verifier.
 type ItemCaptureSnapshot struct {

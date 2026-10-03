@@ -34636,6 +34636,13 @@
               }
             },
             "type": "object"
+          },
+          "warnings": {
+            "description": "The warnings value.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           }
         },
         "required": [
@@ -87451,6 +87458,13 @@
               }
             },
             "type": "object"
+          },
+          "warnings": {
+            "description": "The warnings value.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           }
         },
         "required": [

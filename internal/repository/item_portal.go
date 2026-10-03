@@ -206,6 +206,10 @@ type PortalRequestRow struct {
 	CommentCount            int
 	StatusCategoryColor     *string
 	StatusIsCompleted       bool
+	// MergedIntoItemID is the canonical ticket when this request was folded
+	// into another. The portal redirects to it instead of showing a stale
+	// duplicate thread (WI-1528).
+	MergedIntoItemID *int
 }
 
 const portalRequestSelect = `
@@ -221,7 +225,8 @@ const portalRequestSelect = `
 		rt.color AS request_type_color,
 		(SELECT COUNT(*) FROM comments WHERE item_id = i.id AND (is_private = false OR is_private IS NULL)) AS comment_count,
 		sc.color AS status_category_color,
-		COALESCE(sc.is_completed, false) AS status_is_completed
+		COALESCE(sc.is_completed, false) AS status_is_completed,
+		i.merged_into_item_id
 	FROM items i
 	JOIN workspaces w ON i.workspace_id = w.id
 	LEFT JOIN request_types rt ON i.request_type_id = rt.id
@@ -234,7 +239,7 @@ func scanPortalRequestRow(scanner interface {
 	Scan(dest ...any) error
 }) (PortalRequestRow, error) {
 	var row PortalRequestRow
-	var channelID, requestTypeID, creatorID, creatorPortalCustomerID sql.NullInt64
+	var channelID, requestTypeID, creatorID, creatorPortalCustomerID, mergedIntoItemID sql.NullInt64
 	var requestTypeName, requestTypeIcon, requestTypeColor, statusCategoryColor sql.NullString
 	err := scanner.Scan(
 		&row.ID, &row.WorkspaceID, &row.WorkspaceItemNumber, &row.Title, &row.Description,
@@ -244,6 +249,7 @@ func scanPortalRequestRow(scanner interface {
 		&requestTypeName, &requestTypeIcon, &requestTypeColor,
 		&row.CommentCount,
 		&statusCategoryColor, &row.StatusIsCompleted,
+		&mergedIntoItemID,
 	)
 	if err != nil {
 		return row, err
@@ -252,12 +258,24 @@ func scanPortalRequestRow(scanner interface {
 	assignNullableInt(&row.RequestTypeID, requestTypeID)
 	assignNullableInt(&row.CreatorID, creatorID)
 	assignNullableInt(&row.CreatorPortalCustomerID, creatorPortalCustomerID)
+	assignNullableInt(&row.MergedIntoItemID, mergedIntoItemID)
 	assignNullableStringPtr(&row.RequestTypeName, requestTypeName)
 	assignNullableStringPtr(&row.RequestTypeIcon, requestTypeIcon)
 	assignNullableStringPtr(&row.RequestTypeColor, requestTypeColor)
 	assignNullableStringPtr(&row.StatusCategoryColor, statusCategoryColor)
 	return row, nil
 }
+
+// portalMergedDuplicateVisible keeps a merged duplicate in a requester's list
+// only when its content stayed with that requester. A same-requester merge
+// moves the thread to the canonical, so the duplicate is hidden as a redirect;
+// a cross-requester merge keeps files and the original request on the source
+// (WI-1566), so hiding it would remove the customer's own ticket.
+const portalMergedDuplicateVisible = `(i.merged_into_item_id IS NULL OR EXISTS (
+		SELECT 1 FROM items canonical
+		WHERE canonical.id = i.merged_into_item_id
+		  AND (canonical.creator_id = i.creator_id OR canonical.creator_portal_customer_id = i.creator_portal_customer_id)
+	))`
 
 // PortalRequestVisibility describes which items a portal exposes to its
 // requesters: the portal's own channel, any enabled intake email channel
@@ -292,7 +310,7 @@ func (r *ItemRepository) listChannelRequests(ownerClause string, ownerID int, vi
 		channelFilter += " OR i.channel_id = ?"
 		args = append(args, id)
 	}
-	where := ownerClause + " AND (" + channelFilter + ")"
+	where := ownerClause + " AND " + portalMergedDuplicateVisible + " AND (" + channelFilter + ")"
 	if len(visibility.ServedWorkspaceIDs) > 0 {
 		placeholders := strings.Repeat("?,", len(visibility.ServedWorkspaceIDs))
 		placeholders = placeholders[:len(placeholders)-1]
@@ -391,7 +409,7 @@ func (r *ItemRepository) ListPortalCustomerSubmissions(customerID int) ([]Portal
 		JOIN workspaces w ON i.workspace_id = w.id
 		LEFT JOIN statuses s ON i.status_id = s.id
 		LEFT JOIN status_categories sc ON s.category_id = sc.id
-		WHERE i.creator_portal_customer_id = ?
+		WHERE i.creator_portal_customer_id = ? AND `+portalMergedDuplicateVisible+`
 		ORDER BY i.created_at DESC
 	`, customerID)
 	if err != nil {
@@ -458,7 +476,7 @@ func (r *ItemRepository) ListOrganisationTickets(orgID int, workspaceIDs []int) 
 		JOIN workspaces w ON i.workspace_id = w.id
 		LEFT JOIN statuses s ON i.status_id = s.id
 		LEFT JOIN status_categories sc ON s.category_id = sc.id
-		WHERE pc.customer_organisation_id = ?
+		WHERE pc.customer_organisation_id = ? AND ` + portalMergedDuplicateVisible + `
 ` + workspaceClause + `		ORDER BY i.created_at DESC`
 
 	rows, err := r.db.Query(query, args...)
@@ -521,6 +539,7 @@ func (r *ItemRepository) RequesterOpenTickets(requesterCustomerID, excludeItemID
 		LEFT JOIN statuses s ON i.status_id = s.id
 		LEFT JOIN status_categories sc ON s.category_id = sc.id
 		WHERE i.creator_portal_customer_id = ?
+		  AND i.merged_into_item_id IS NULL
 		  AND i.id != ?
 		  AND (sc.is_completed = false OR sc.is_completed IS NULL)
 		ORDER BY i.updated_at DESC

@@ -471,6 +471,11 @@ func (s *CommentService) create(params CreateCommentParams) (*CreateCommentResul
 		}
 		return nil, fmt.Errorf("failed to fetch item details: %w", err)
 	}
+	// A merged duplicate is a read-only redirect: comments belong on the
+	// canonical ticket (WI-1528).
+	if mergedInto, err := repository.NewItemRepository(s.db).MergedIntoItemID(context.Background(), params.ItemID); err == nil && mergedInto != nil {
+		return nil, NewServiceError(409, fmt.Sprintf("item %d was merged into item %d; comment on the canonical ticket instead", params.ItemID, *mergedInto))
+	}
 
 	// 3. Insert into DB
 	now := time.Now()

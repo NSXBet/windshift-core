@@ -168,6 +168,9 @@ type PortalRequestSummary struct {
 	CommentCount        int     `json:"comment_count"`
 	StatusCategoryColor *string `json:"status_category_color"`
 	StatusIsCompleted   bool    `json:"status_is_completed"`
+	// MergedIntoItemID points at the canonical request when this one was
+	// merged away; the portal redirects there (WI-1528).
+	MergedIntoItemID *int `json:"merged_into_item_id,omitempty"`
 }
 
 // PortalRequestDetail represents detailed portal request info including ownership
@@ -216,6 +219,7 @@ func portalRequestSummaryFromRow(row repository.PortalRequestRow) PortalRequestS
 		CommentCount:        row.CommentCount,
 		StatusCategoryColor: row.StatusCategoryColor,
 		StatusIsCompleted:   row.StatusIsCompleted,
+		MergedIntoItemID:    row.MergedIntoItemID,
 	}
 }
 
