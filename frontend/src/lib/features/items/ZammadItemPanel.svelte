@@ -220,6 +220,8 @@
   }
 
   function invalidateTimeline() {
+    timelineVersion += 1;
+    timelineLoading = false;
     timelineLoaded = false;
     if (showTimeline) void loadTimeline(contextVersion);
   }
