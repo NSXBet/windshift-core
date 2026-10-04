@@ -17,7 +17,7 @@ jobs:
           ref: internal/v0.8.9
           persist-credentials: true
       - name: Build and push internal image to ECR
-        uses: NSXBet/argus-gh-actions/docker-releaser-ecr@135fb563771b054eb03c534134a5dbecfc1845b4
+        uses: ./.github/actions/docker-releaser-ecr
         with:
           image: windshift-internal
           version: v0.8.9-p1
