@@ -1,0 +1,44 @@
+# Republishes the multi-arch image built by image-ecr to ghcr.io as a public
+# package — byte-for-byte (same manifest digest), no rebuild. Run after any
+# ECR rebuild. Source ref is the ECR copy; the ghcr artifact is the public
+# name local dev pulls anonymously.
+name: image-ghcr
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+env:
+  ECR_REGISTRY: 492684252576.dkr.ecr.us-east-1.amazonaws.com
+  ECR_SOURCE: windshift-internal:v0.8.9-p1
+  GHCR_IMAGE: ghcr.io/nsxbet/windshift
+  TAG: v0.8.9-p1
+
+jobs:
+  republish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Auth AWS (pull source from ECR)
+        uses: nsx-actions/aws-actions_configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::492684252576:role/GithubEcr
+          aws-region: us-east-1
+      - name: Log in to ECR
+        uses: nsx-actions/aws-actions_amazon-ecr-login@v2
+      - name: Log in to GHCR
+        uses: nsx-actions/docker_login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Republish multi-arch image under ghcr name
+        run: |
+          docker buildx imagetools create \
+            -t "$GHCR_IMAGE:$TAG" \
+            "$ECR_REGISTRY/$ECR_SOURCE"
+      - name: Show published manifest
+        run: docker buildx imagetools inspect "$GHCR_IMAGE:$TAG" | head -30
