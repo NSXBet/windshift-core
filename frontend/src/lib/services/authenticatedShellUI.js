@@ -44,7 +44,7 @@ export function hydrateAuthenticatedShellUI(bootstrap) {
  * capability-gated navigation entries cannot appear after the sidebar and
  * shift the action group below them.
  */
-export function loadAuthenticatedShellUI(userId, { force = false } = {}) {
+export function loadAuthenticatedShellUI(userId, { force = false, timeout = 0 } = {}) {
   const audience = shellUIAudience(userId);
 
   if (!force && shellUISettledAudience === audience) {
@@ -58,7 +58,7 @@ export function loadAuthenticatedShellUI(userId, { force = false } = {}) {
   shellUILoadAudience = audience;
 
   const request = api.shellBootstrap
-    .get()
+    .get({ timeout })
     .then((bootstrap) => {
       if (generation !== shellUILoadGeneration) return false;
       const hydrated = hydrateAuthenticatedShellUI(bootstrap);
