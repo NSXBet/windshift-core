@@ -6,11 +6,10 @@
  * Fetch a public-board endpoint, throwing an error carrying the HTTP status
  * on non-2xx responses (shared by all public board calls).
  * @param {string} url
- * @param {{ signal?: AbortSignal }} [options]
  * @returns {Promise<any>}
  */
-async function publicBoardFetch(url, { signal } = {}) {
-  const res = await fetch(url, { signal });
+async function publicBoardFetch(url) {
+  const res = await fetch(url);
   if (!res.ok) {
     const err = new Error(`${res.status}`);
     /** @type {any} */ (err).status = res.status;
@@ -20,14 +19,13 @@ async function publicBoardFetch(url, { signal } = {}) {
 }
 
 export const publicBoard = {
-  get(slug, options) {
-    return publicBoardFetch(`/api/public/board/${encodeURIComponent(slug)}`, options);
+  get(slug) {
+    return publicBoardFetch(`/api/public/board/${encodeURIComponent(slug)}`);
   },
 
-  getItem(slug, key, options) {
+  getItem(slug, key) {
     return publicBoardFetch(
-      `/api/public/board/${encodeURIComponent(slug)}/items/${encodeURIComponent(key)}`,
-      options
+      `/api/public/board/${encodeURIComponent(slug)}/items/${encodeURIComponent(key)}`
     );
   },
 };
