@@ -75,10 +75,40 @@ func (s *WorkspaceSubscriber) WorkspaceIDs() []int {
 	return ids
 }
 
-// SSEHub is the in-memory fan-out for item-change and workspace-scope events
-// (WI-484, WI-1624). It implements ItemChangePublisher and
-// WorkspaceChangePublisher, so registering it via the corresponding setters
-// turns mutation-chokepoint publishes into live pushes.
+// UserChangeKind enumerates coarse per-user invalidations.
+type UserChangeKind string
+
+const (
+	// UserChangeNotifications means the user's inbox or unread count changed.
+	UserChangeNotifications UserChangeKind = "notifications"
+)
+
+// UserSSEEvent is one per-user invalidation frame.
+type UserSSEEvent struct {
+	UserID int
+	Kind   UserChangeKind
+}
+
+// UserSubscriber is one open connection's view of a user's topic.
+type UserSubscriber struct {
+	userID int
+	ch     chan UserSSEEvent
+	stale  atomic.Bool
+}
+
+// Events is the receive end of this subscriber's buffered event channel.
+func (s *UserSubscriber) Events() <-chan UserSSEEvent { return s.ch }
+
+// TakeStale atomically reports and clears the stale flag.
+func (s *UserSubscriber) TakeStale() bool { return s.stale.Swap(false) }
+
+// UserID is the topic this subscriber is attached to.
+func (s *UserSubscriber) UserID() int { return s.userID }
+
+// SSEHub is the in-memory fan-out for item-change, workspace-scope and
+// per-user events (WI-484, WI-1624, WI-1625). It implements the corresponding
+// publishers, so registering it via their setters turns mutation-chokepoint
+// publishes into live pushes.
 //
 // Single-process only: subscribers live in this process's memory. A multi-replica
 // deployment would need Postgres LISTEN/NOTIFY or Redis behind the same
@@ -87,6 +117,7 @@ type SSEHub struct {
 	mu            sync.RWMutex
 	subs          map[int]map[*ItemSubscriber]struct{}      // itemID -> set of subscribers
 	workspaceSubs map[int]map[*WorkspaceSubscriber]struct{} // workspaceID -> set of subscribers
+	userSubs      map[int]map[*UserSubscriber]struct{}      // userID -> set of subscribers
 }
 
 // NewSSEHub creates an empty hub.
@@ -94,6 +125,7 @@ func NewSSEHub() *SSEHub {
 	return &SSEHub{
 		subs:          make(map[int]map[*ItemSubscriber]struct{}),
 		workspaceSubs: make(map[int]map[*WorkspaceSubscriber]struct{}),
+		userSubs:      make(map[int]map[*UserSubscriber]struct{}),
 	}
 }
 
@@ -250,4 +282,67 @@ func (h *SSEHub) WorkspaceSubscriberCount(workspaceID int) int {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return len(h.workspaceSubs[workspaceID])
+}
+
+// PublishUserChange fans a per-user invalidation out to that user's
+// subscribers. Non-blocking, like the other fan-outs.
+func (h *SSEHub) PublishUserChange(userID int, kind UserChangeKind) {
+	if userID <= 0 {
+		return
+	}
+	ev := UserSSEEvent{UserID: userID, Kind: kind}
+	h.mu.RLock()
+	set := h.userSubs[userID]
+	if len(set) == 0 {
+		h.mu.RUnlock()
+		return
+	}
+	subs := make([]*UserSubscriber, 0, len(set))
+	for s := range set {
+		subs = append(subs, s)
+	}
+	h.mu.RUnlock()
+
+	for _, s := range subs {
+		select {
+		case s.ch <- ev:
+		default:
+			s.stale.Store(true)
+		}
+	}
+}
+
+// SubscribeUser registers a new subscriber for a user's topic.
+func (h *SSEHub) SubscribeUser(userID int) *UserSubscriber {
+	sub := &UserSubscriber{userID: userID, ch: make(chan UserSSEEvent, 16)}
+	h.mu.Lock()
+	if h.userSubs[userID] == nil {
+		h.userSubs[userID] = make(map[*UserSubscriber]struct{})
+	}
+	h.userSubs[userID][sub] = struct{}{}
+	h.mu.Unlock()
+	return sub
+}
+
+// UnsubscribeUser removes a subscriber and prunes the topic if it becomes empty.
+func (h *SSEHub) UnsubscribeUser(sub *UserSubscriber) {
+	if sub == nil {
+		return
+	}
+	h.mu.Lock()
+	if set := h.userSubs[sub.userID]; set != nil {
+		delete(set, sub)
+		if len(set) == 0 {
+			delete(h.userSubs, sub.userID)
+		}
+	}
+	h.mu.Unlock()
+}
+
+// UserSubscriberCount returns the number of live subscribers for a user
+// (test/observability helper).
+func (h *SSEHub) UserSubscriberCount(userID int) int {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return len(h.userSubs[userID])
 }

@@ -1078,7 +1078,9 @@ func (s *Server) initialize() error {
 	sseHub := services.NewSSEHub()
 	services.SetItemChangePublisher(sseHub)
 	services.SetWorkspaceChangePublisher(sseHub)
+	services.SetUserChangePublisher(sseHub)
 	itemHandler.SetSSEHub(sseHub)
+	notificationHandler.SetSSEHub(sseHub)
 
 	mentionService := services.NewMentionService(s.db, s.notificationService, permService)
 	mentionService.SetWorkspaceUserResolver(workspaceUsers)
