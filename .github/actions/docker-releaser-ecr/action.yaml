@@ -1,0 +1,177 @@
+# Vendored from NSXBet/argus-gh-actions@135fb563771b054eb03c534134a5dbecfc1845b4 (docker-releaser-ecr).
+# This repo is a PUBLIC fork of an external upstream: GitHub blocks `uses:` references to
+# private org actions from public repos, and org secrets (GHA_PAT) never reach public repos,
+# so the shared composite cannot be referenced directly. Re-vendor when bumping the SHA above.
+# Internal action refs point at the public nsx-actions mirrors and stay unchanged.
+
+name: 'Docker Releaser for ECR'
+description: 'Build and push multi-arch Docker image to AWS ECR with GitHub release'
+author: 'NSXBet'
+
+inputs:
+  image:
+    description: 'Image name (e.g., "argus-api")'
+    required: true
+  version:
+    description: 'Version to tag (e.g., "1.0.0")'
+    required: true
+  platform:
+    description: 'Platform to build (e.g., "linux/amd64", "linux/arm64")'
+    required: false
+  use-bake:
+    description: 'Use Docker Bake (targets must match image name)'
+    required: false
+    default: 'false'
+  ecr-registry:
+    description: 'ECR registry URL'
+    required: false
+    default: '492684252576.dkr.ecr.us-east-1.amazonaws.com'
+  aws-region:
+    description: 'AWS region'
+    required: false
+    default: 'us-east-1'
+  role-to-assume:
+    description: 'AWS IAM Role to assume'
+    required: false
+    default: 'arn:aws:iam::492684252576:role/GithubEcr'
+  gha-pat:
+    description: 'GitHub PAT for private repos'
+    required: false
+  gh-token:
+    description: 'GitHub token for releases'
+    required: true
+  base-image-registry:
+    description: 'Base image registry prefix (e.g., "492684252576.dkr.ecr.us-east-1.amazonaws.com/" for ECR proxy). Empty = public registries.'
+    required: false
+    default: ''
+  multi-arch:
+    description: 'Enable multi-arch build (sets up QEMU for cross-platform). Default: false'
+    required: false
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    - name: Determine version and tagging strategy
+      id: version-strategy
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+      run: |
+        BRANCH="${GITHUB_REF#refs/heads/}"
+        echo "branch=$BRANCH" >> $GITHUB_OUTPUT
+
+        # Check if on main, staging, or release branch
+        if [[ "$BRANCH" == "main" || "$BRANCH" == "staging" || "$BRANCH" == release/* ]]; then
+          echo "should-release=true" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+        else
+          echo "should-release=false" >> $GITHUB_OUTPUT
+          echo "version=${VERSION}-alpha" >> $GITHUB_OUTPUT
+        fi
+
+        # Parse X.Y.Z into components for semver tags
+        MAJOR=$(echo "$VERSION" | cut -d. -f1)
+        MINOR="$MAJOR.$(echo "$VERSION" | cut -d. -f2)"
+        echo "major=$MAJOR" >> $GITHUB_OUTPUT
+        echo "minor=$MINOR" >> $GITHUB_OUTPUT
+
+    - name: Configure AWS Credentials
+      uses: nsx-actions/aws-actions_configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ inputs.role-to-assume }}
+        aws-region: ${{ inputs.aws-region }}
+
+    - name: Login to ECR
+      uses: nsx-actions/aws-actions_amazon-ecr-login@v2
+
+    - name: Create ECR repository if not exists
+      shell: bash
+      env:
+        IMAGE: ${{ inputs.image }}
+        AWS_REGION: ${{ inputs.aws-region }}
+      run: |
+        aws ecr describe-repositories --repository-names "$IMAGE" --region "$AWS_REGION" 2>/dev/null || \
+        aws ecr create-repository --repository-name "$IMAGE" --region "$AWS_REGION" --image-scanning-configuration scanOnPush=true
+
+    - name: Set up QEMU
+      if: inputs.multi-arch == 'true'
+      uses: nsx-actions/docker_setup-qemu-action@v3
+      with:
+        image: ${{ inputs.ecr-registry }}/tonistiigi/binfmt:latest
+
+    - name: Set up Docker Buildx
+      uses: nsx-actions/docker_setup-buildx-action@v3
+
+    - name: Build and push with Bake
+      if: inputs.use-bake == 'true'
+      uses: nsx-actions/docker_bake-action@v5
+      env:
+        VERSION: ${{ steps.version-strategy.outputs.version }}
+        VERSION_MAJOR: ${{ steps.version-strategy.outputs.major }}
+        VERSION_MINOR: ${{ steps.version-strategy.outputs.minor }}
+        GHA_PAT: ${{ inputs.gha-pat }}
+        BASE_IMAGE_REGISTRY: ${{ inputs.base-image-registry }}
+        REGISTRY: ${{ inputs.ecr-registry }}
+      with:
+        targets: ${{ inputs.image }}
+        push: true
+        set: |
+          ${{ inputs.platform && format('*.platform={0}', inputs.platform) || '' }}
+          *.args.GHA_PAT=${{ inputs.gha-pat }}
+          *.args.BASE_IMAGE_REGISTRY=${{ inputs.base-image-registry }}
+
+    - name: Build and push standard
+      if: inputs.use-bake == 'false'
+      uses: nsx-actions/docker_build-push-action@v5
+      with:
+        context: .
+        platforms: ${{ inputs.platform || (inputs.multi-arch == 'true' && 'linux/amd64,linux/arm64' || 'linux/amd64') }}
+        push: true
+        tags: |
+          ${{ inputs.ecr-registry }}/${{ inputs.image }}:${{ steps.version-strategy.outputs.major }}
+          ${{ inputs.ecr-registry }}/${{ inputs.image }}:${{ steps.version-strategy.outputs.minor }}
+          ${{ inputs.ecr-registry }}/${{ inputs.image }}:${{ steps.version-strategy.outputs.version }}
+          ${{ inputs.ecr-registry }}/${{ inputs.image }}:latest
+        build-args: |
+          VERSION=${{ steps.version-strategy.outputs.version }}
+          GHA_PAT=${{ inputs.gha-pat }}
+          BASE_IMAGE_REGISTRY=${{ inputs.base-image-registry }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    - name: Create git tag
+      if: steps.version-strategy.outputs.should-release == 'true'
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+        IMAGE: ${{ inputs.image }}
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+
+        TAG="${IMAGE}-v${VERSION}"
+        git tag -f "$TAG" -m "Release $IMAGE $VERSION"
+        git push -f origin "$TAG"
+
+    - name: Create GitHub release
+      if: steps.version-strategy.outputs.should-release == 'true'
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+        IMAGE: ${{ inputs.image }}
+        ECR_REGISTRY: ${{ inputs.ecr-registry }}
+        GH_TOKEN: ${{ inputs.gha-pat || inputs.gh-token }}
+      run: |
+        TAG="${IMAGE}-v${VERSION}"
+
+        gh release delete "$TAG" --yes 2>/dev/null || true
+        gh release create "$TAG" \
+          --title "$IMAGE $VERSION" \
+          --notes "Docker image: \`${ECR_REGISTRY}/${IMAGE}:${VERSION}\`
+
+        Platforms: linux/amd64, linux/arm64"
+
+branding:
+  icon: 'package'
+  color: 'blue'
