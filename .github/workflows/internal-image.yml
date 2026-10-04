@@ -1,0 +1,25 @@
+name: internal-image
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout release ref
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: internal/v0.8.9
+          persist-credentials: true
+      - name: Build and push internal image to ECR
+        uses: NSXBet/argus-gh-actions/docker-releaser-ecr@135fb563771b054eb03c534134a5dbecfc1845b4
+        with:
+          image: windshift-internal
+          version: v0.8.9-p1
+          multi-arch: 'true'
+          gh-token: ${{ secrets.GITHUB_TOKEN }}
