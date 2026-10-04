@@ -954,8 +954,14 @@
 {/if}
 <!-- Page-link picker for inserting knowledge-page links -->
 {#if pageLinkPickerOpen}
-  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-  <div class="page-link-picker" data-testid="page-link-picker" onclick={(e) => e.stopPropagation()}>
+  <!-- Container only: the click handler stops propagation to the editor.
+       role="presentation" keeps it out of the accessibility tree. -->
+  <div
+    class="page-link-picker"
+    role="presentation"
+    data-testid="page-link-picker"
+    onclick={(e) => e.stopPropagation()}
+  >
     <input
       type="text"
       class="page-link-input"

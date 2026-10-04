@@ -1,4 +1,5 @@
 <script>
+  import { untrack } from 'svelte';
   import { createCombobox, melt } from '@melt-ui/svelte';
   import { Check, ChevronDown, X, Search } from '@lucide/svelte';
   import Spinner from '../components/Spinner.svelte';
@@ -197,7 +198,8 @@
   // Rendered slice of options: the DOM mounts at most maxVisibleOptions rows.
   // Narrowing the search resets the reveal window; ArrowDown past the end of
   // the slice grows it, so keyboard users can still reach every option.
-  let revealedCount = $state(maxVisibleOptions);
+  // Initial reveal window only; later changes to the prop must not reset it.
+  let revealedCount = $state(untrack(() => maxVisibleOptions));
   const visibleOptions = $derived(options.slice(0, revealedCount));
   const hiddenOptionCount = $derived(options.length - visibleOptions.length);
 
