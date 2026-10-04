@@ -22,6 +22,7 @@
   import ItemIntegrationLinks from './ItemIntegrationLinks.svelte';
   import ZammadItemPanel from './ZammadItemPanel.svelte';
 	import RequesterOpenTickets from './RequesterOpenTickets.svelte';
+  import CustomerContextSection from './CustomerContextSection.svelte';
   import ParticipantsSection from './ParticipantsSection.svelte';
   import AddSCMLinkModal from '../../dialogs/AddSCMLinkModal.svelte';
   import AddIntegrationLinkModal from '../../dialogs/AddIntegrationLinkModal.svelte';
@@ -1368,9 +1369,13 @@
       <ZammadItemPanel itemId={item.id} workspaceId={item.workspace_id} {canEdit} />
     {/if}
 
-    <!-- Duplicate candidates (WI-1548): the requester's other open tickets -->
-    {#if item?.id}
+    <!-- Customer context (WI-1139): requester, organisation history, and
+         linked assets. External requests only; expands on demand. The
+         WI-1548 duplicate-candidates panel belongs to the same customer
+         context, so it shares the guard. -->
+    {#if item?.id && isExternalRequest(item)}
       <RequesterOpenTickets itemId={item.id} />
+      <CustomerContextSection {item} />
     {/if}
 
     <!-- External request participants (WI-1136). Internal items have no

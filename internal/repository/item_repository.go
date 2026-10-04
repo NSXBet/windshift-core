@@ -343,7 +343,10 @@ const itemDetailsSelectBody = `
 	       rw.workspace_id as related_work_item_workspace_id,
 	       rw.workspace_item_number as related_work_item_number,
 	       i.team_id, i.incident_id,
-	       t.name as team_name, t.color as team_color, t.avatar_url as team_avatar
+	       t.name as team_name, t.color as team_color, t.avatar_url as team_avatar,
+	       pcc.name as creator_portal_customer_name, pcc.email as creator_portal_customer_email,
+	       pcc.customer_organisation_id as creator_customer_organisation_id,
+	       co.name as creator_customer_organisation_name
 	FROM items i
 	JOIN workspaces w ON i.workspace_id = w.id
 	LEFT JOIN iterations iter ON i.iteration_id = iter.id
@@ -357,7 +360,9 @@ const itemDetailsSelectBody = `
 	LEFT JOIN item_types it ON i.item_type_id = it.id
 	LEFT JOIN items rw ON i.related_work_item_id = rw.id
 	LEFT JOIN workspaces rw_ws ON rw.workspace_id = rw_ws.id
-	LEFT JOIN teams t ON i.team_id = t.id`
+	LEFT JOIN teams t ON i.team_id = t.id
+	LEFT JOIN portal_customers pcc ON i.creator_portal_customer_id = pcc.id
+	LEFT JOIN customer_organisations co ON pcc.customer_organisation_id = co.id`
 
 // scanItemDetailsRow scans the shared projection. Milestones are attached by
 // the caller to avoid a per-row query.
@@ -382,6 +387,9 @@ func scanItemDetailsRow(scanner rowScanner) (models.Item, bool, error) {
 	var creatorPortalCustomerID, channelID, requestTypeID sql.NullInt64
 	var teamID, incidentID sql.NullInt64
 	var teamName, teamColor, teamAvatar sql.NullString
+	var creatorPortalCustomerName, creatorPortalCustomerEmail sql.NullString
+	var creatorCustomerOrganisationID sql.NullInt64
+	var creatorCustomerOrganisationName sql.NullString
 
 	var storyPoints sql.NullFloat64
 	var estimateMinutes sql.NullInt64
@@ -409,6 +417,10 @@ func scanItemDetailsRow(scanner rowScanner) (models.Item, bool, error) {
 		&teamName,
 		&teamColor,
 		&teamAvatar,
+		&creatorPortalCustomerName,
+		&creatorPortalCustomerEmail,
+		&creatorCustomerOrganisationID,
+		&creatorCustomerOrganisationName,
 	)
 	if err != nil {
 		return models.Item{}, false, err
@@ -457,6 +469,10 @@ func scanItemDetailsRow(scanner rowScanner) (models.Item, bool, error) {
 	assignNullableString(&item.TeamName, teamName)
 	assignNullableString(&item.TeamColor, teamColor)
 	assignNullableString(&item.TeamAvatarURL, teamAvatar)
+	assignNullableString(&item.CreatorPortalCustomerName, creatorPortalCustomerName)
+	assignNullableString(&item.CreatorPortalCustomerEmail, creatorPortalCustomerEmail)
+	assignNullableInt(&item.CreatorCustomerOrganisationID, creatorCustomerOrganisationID)
+	assignNullableString(&item.CreatorCustomerOrganisationName, creatorCustomerOrganisationName)
 
 	assignNullableInt(&item.RelatedWorkItemID, relatedWorkItemID)
 	assignNullableString(&item.RelatedWorkItemTitle, relatedWorkItemTitle)

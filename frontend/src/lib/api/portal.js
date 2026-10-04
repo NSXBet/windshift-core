@@ -192,6 +192,7 @@ export const contactRoles = {
 export const customerOrganisations = {
   ...createCrudClient('/customer-organisations'),
   getContacts: (id) => fetchAPI(`/customer-organisations/${id}/contacts`),
-  getTickets: (id) => fetchAPI(`/customer-organisations/${id}/tickets`),
+  getTickets: (id, requestOptions = {}) =>
+    fetchAPI(`/customer-organisations/${id}/tickets`, requestOptions),
   getProjects: (id) => fetchAPI(`/customer-organisations/${id}/projects`),
 };

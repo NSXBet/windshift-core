@@ -109,6 +109,10 @@ type Item struct {
 	ReporterAvatar             string `json:"reporter_avatar,omitempty"`               // Avatar URL of reporter
 	CreatorPortalCustomerName  string `json:"creator_portal_customer_name,omitempty"`  // Name of portal customer creator
 	CreatorPortalCustomerEmail string `json:"creator_portal_customer_email,omitempty"` // Email of portal customer creator
+	// Customer organisation of the portal-customer creator, for the ticket
+	// customer-context panel. Empty for internal creators.
+	CreatorCustomerOrganisationID   *int   `json:"creator_customer_organisation_id,omitempty"`
+	CreatorCustomerOrganisationName string `json:"creator_customer_organisation_name,omitempty"`
 	// Portal submission tracking joined fields
 	ChannelName     string `json:"channel_name,omitempty"`      // Name of the portal/channel
 	RequestTypeName string `json:"request_type_name,omitempty"` // Name of the request type

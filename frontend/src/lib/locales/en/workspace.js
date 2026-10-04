@@ -98,6 +98,13 @@ export default {
     requesterOpenTickets: 'Possible duplicates',
     requesterOpenTicketsHelp:
       "Other open tickets from the same requester — this conversation may belong on one of them. Merge to keep one thread.",
+    customerContext: 'Customer context',
+    customerContextRequester: 'Requester',
+    customerContextOrganisation: 'Organisation',
+    customerContextOrgTickets: 'Other requests from this organisation',
+    customerContextOrgTicketsEmpty: 'No other requests from this organisation.',
+    customerContextAssets: 'Linked assets',
+    customerContextAssetsEmpty: 'No linked assets.',
     title: 'Items',
     subtitle: 'View and manage work items',
     item: 'Item',
