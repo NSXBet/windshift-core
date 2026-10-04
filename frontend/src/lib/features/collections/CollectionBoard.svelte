@@ -83,6 +83,12 @@
   // unchanged when the query is cleared.
   let items = $derived(searchActive ? collectionStore.boardSearchItems : collectionStore.items);
   let itemsById = $derived(new Map(items.map((item) => [item.id, item])));
+
+  // Hydrate only the assignees the visible cards reference.
+  $effect(() => {
+    const ids = items.map((item) => item.assignee_id).filter(Boolean);
+    if (ids.length > 0) void workspaceDataStore.hydrateUsers(ids);
+  });
   let transitions = $state([]);
   let boardConfig = $state(null);
   let cardFields = $derived((boardConfig?.card_fields || []).slice().sort((a, b) => a.display_order - b.display_order));
