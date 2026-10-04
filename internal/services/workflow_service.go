@@ -551,6 +551,7 @@ func (s *WorkflowService) PerformTransition(
 	if err != nil {
 		return nil, fmt.Errorf("reload item: %w", err)
 	}
+	PublishWorkspaceChange(updated.WorkspaceID, WorkspaceChangeItems)
 
 	newStatusID := req.ToStatusID
 	result := &PerformTransitionResult{

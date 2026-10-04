@@ -381,6 +381,7 @@ func (c *itemCreation) finish(itemID int) {
 		return
 	}
 	PublishItemChange(itemID, ItemChangeCreated)
+	PublishWorkspaceChange(p.WorkspaceID, WorkspaceChangeItems)
 	if p.ParentID != nil {
 		PublishItemChange(*p.ParentID, ItemChangeUpdated)
 	}

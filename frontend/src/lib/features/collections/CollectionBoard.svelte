@@ -37,6 +37,7 @@
   import DropdownMenu from '../../layout/DropdownMenu.svelte';
   import { backlogStore, workspaceDataStore, workspacesStore, workspacePermissions } from '../../stores/index.js';
   import { useWorkItemPoller } from '../../composables/useWorkItemPoller.svelte.js';
+  import { useCollectionEventStream } from '../../composables/useCollectionEventStream.svelte.js';
   import { agentRuns } from '../../stores/agentRuns.svelte.js';
   import { getVisibleColor, hexToRgb } from '../../utils/colorUtils.js';
   import { showCreatedItemToast } from '../../utils/createdItemToast.js';
@@ -572,8 +573,16 @@
     }
   }
 
+  // Scoped SSE invalidations (WI-1624) replace the 30s poll while the stream is
+  // healthy; the poller stays as the reconnect/unsupported fallback.
+  const collectionStream = useCollectionEventStream(
+    () => (collectionId ? { kind: 'collection', id: collectionId } : { kind: 'workspace', id: workspaceId }),
+    { onInvalidate: () => refreshCollectionDeltas() }
+  );
   // Adaptive polling for board items: use cheap deltas, falling back to full refresh only when needed.
-  const poller = useWorkItemPoller(() => refreshCollectionDeltas());
+  const poller = useWorkItemPoller(() => refreshCollectionDeltas(), {
+    enabled: () => !collectionStream.connected,
+  });
 
   // Instant refresh after an AI chat agent run — surfaces tool-call effects
   // (created items, status transitions, etc.) without waiting for the poll.

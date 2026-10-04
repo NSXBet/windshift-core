@@ -1077,6 +1077,7 @@ func (s *Server) initialize() error {
 	// give the item handler the hub so GET /items/{id}/events can subscribe.
 	sseHub := services.NewSSEHub()
 	services.SetItemChangePublisher(sseHub)
+	services.SetWorkspaceChangePublisher(sseHub)
 	itemHandler.SetSSEHub(sseHub)
 
 	mentionService := services.NewMentionService(s.db, s.notificationService, permService)

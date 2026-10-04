@@ -34,21 +34,67 @@ func (s *ItemSubscriber) TakeStale() bool { return s.stale.Swap(false) }
 // ItemID is the topic this subscriber is attached to.
 func (s *ItemSubscriber) ItemID() int { return s.itemID }
 
-// SSEHub is the in-memory fan-out for item-change events (WI-484). It implements
-// ItemChangePublisher (WI-483), so registering it via SetItemChangePublisher
-// turns every mutation chokepoint's publish into a live push.
+// WorkspaceChangeKind enumerates coarse workspace-scope invalidations. The set
+// is deliberately tiny: subscribers run their existing delta fetch, so a new
+// kind never breaks an older client.
+type WorkspaceChangeKind string
+
+const (
+	// WorkspaceChangeItems means item membership, ordering or display data in
+	// the workspace may have changed.
+	WorkspaceChangeItems WorkspaceChangeKind = "items"
+)
+
+// WorkspaceSSEEvent is one workspace-scope invalidation frame.
+type WorkspaceSSEEvent struct {
+	WorkspaceID int
+	Kind        WorkspaceChangeKind
+}
+
+// WorkspaceSubscriber is one open connection's view of one or more workspace
+// topics. A collection stream subscribes to every workspace it can span; a
+// dropped frame sets Stale so the client runs a full reload.
+type WorkspaceSubscriber struct {
+	ch     chan WorkspaceSSEEvent
+	stale  atomic.Bool
+	topics map[int]struct{}
+}
+
+// Events is the receive end of this subscriber's buffered event channel.
+func (s *WorkspaceSubscriber) Events() <-chan WorkspaceSSEEvent { return s.ch }
+
+// TakeStale atomically reports and clears the stale flag.
+func (s *WorkspaceSubscriber) TakeStale() bool { return s.stale.Swap(false) }
+
+// WorkspaceIDs returns a snapshot of the topics this subscriber is attached to.
+func (s *WorkspaceSubscriber) WorkspaceIDs() []int {
+	ids := make([]int, 0, len(s.topics))
+	for id := range s.topics {
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+// SSEHub is the in-memory fan-out for item-change and workspace-scope events
+// (WI-484, WI-1624). It implements ItemChangePublisher and
+// WorkspaceChangePublisher, so registering it via the corresponding setters
+// turns mutation-chokepoint publishes into live pushes.
 //
 // Single-process only: subscribers live in this process's memory. A multi-replica
 // deployment would need Postgres LISTEN/NOTIFY or Redis behind the same
-// ItemChangePublisher interface; nothing else in the system would change.
+// publisher interfaces; nothing else in the system would change.
 type SSEHub struct {
-	mu   sync.RWMutex
-	subs map[int]map[*ItemSubscriber]struct{} // itemID -> set of subscribers
+	mu            sync.RWMutex
+	subs          map[int]map[*ItemSubscriber]struct{}      // itemID -> set of subscribers
+	workspaceSubs map[int]map[*WorkspaceSubscriber]struct{} // workspaceID -> set of subscribers
 }
 
 // NewSSEHub creates an empty hub.
 func NewSSEHub() *SSEHub {
-	return &SSEHub{subs: make(map[int]map[*ItemSubscriber]struct{})}
+	return &SSEHub{
+		subs:          make(map[int]map[*ItemSubscriber]struct{}),
+		workspaceSubs: make(map[int]map[*WorkspaceSubscriber]struct{}),
+	}
 }
 
 // PublishItemChange fans an item-change out to every subscriber of that item.
@@ -123,4 +169,85 @@ func (h *SSEHub) SubscriberCount(itemID int) int {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return len(h.subs[itemID])
+}
+
+// PublishWorkspaceChange fans a workspace invalidation out to every subscriber
+// of that workspace. Non-blocking, like the item fan-out: a full buffer flags
+// the subscriber stale and drops the frame.
+func (h *SSEHub) PublishWorkspaceChange(workspaceID int, kind WorkspaceChangeKind) {
+	if workspaceID <= 0 {
+		return
+	}
+	ev := WorkspaceSSEEvent{WorkspaceID: workspaceID, Kind: kind}
+	h.mu.RLock()
+	set := h.workspaceSubs[workspaceID]
+	if len(set) == 0 {
+		h.mu.RUnlock()
+		return
+	}
+	subs := make([]*WorkspaceSubscriber, 0, len(set))
+	for s := range set {
+		subs = append(subs, s)
+	}
+	h.mu.RUnlock()
+
+	for _, s := range subs {
+		select {
+		case s.ch <- ev:
+		default:
+			s.stale.Store(true)
+		}
+	}
+}
+
+// SubscribeWorkspaces registers one subscriber against every workspace topic in
+// workspaceIDs. Duplicate and non-positive ids are ignored. The caller must
+// UnsubscribeWorkspaces when the connection closes.
+func (h *SSEHub) SubscribeWorkspaces(workspaceIDs []int) *WorkspaceSubscriber {
+	sub := &WorkspaceSubscriber{
+		ch:     make(chan WorkspaceSSEEvent, 16),
+		topics: make(map[int]struct{}, len(workspaceIDs)),
+	}
+	h.mu.Lock()
+	for _, id := range workspaceIDs {
+		if id <= 0 {
+			continue
+		}
+		if _, ok := sub.topics[id]; ok {
+			continue
+		}
+		sub.topics[id] = struct{}{}
+		if h.workspaceSubs[id] == nil {
+			h.workspaceSubs[id] = make(map[*WorkspaceSubscriber]struct{})
+		}
+		h.workspaceSubs[id][sub] = struct{}{}
+	}
+	h.mu.Unlock()
+	return sub
+}
+
+// UnsubscribeWorkspaces removes a subscriber from every topic and prunes empty
+// topics.
+func (h *SSEHub) UnsubscribeWorkspaces(sub *WorkspaceSubscriber) {
+	if sub == nil {
+		return
+	}
+	h.mu.Lock()
+	for id := range sub.topics {
+		if set := h.workspaceSubs[id]; set != nil {
+			delete(set, sub)
+			if len(set) == 0 {
+				delete(h.workspaceSubs, id)
+			}
+		}
+	}
+	h.mu.Unlock()
+}
+
+// WorkspaceSubscriberCount returns the number of live subscribers for a
+// workspace (test/observability helper).
+func (h *SSEHub) WorkspaceSubscriberCount(workspaceID int) int {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return len(h.workspaceSubs[workspaceID])
 }
