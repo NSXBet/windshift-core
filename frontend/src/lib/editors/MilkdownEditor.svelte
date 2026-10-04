@@ -93,7 +93,17 @@
   let editorElement = $state(null);
   let fileInput = $state(null);
   let editor = $state(null);
+  let disposed = false;
   let initialContent = content;
+
+  async function destroyEditor(target) {
+    if (!target) return;
+    try {
+      await target.destroy();
+    } catch (e) {
+      console.error('Error destroying editor:', e);
+    }
+  }
 
   // Mention picker state
   let mentionPickerOpen = $state(false);
@@ -498,6 +508,7 @@
             { plugin: rewriteBreakHTML, options: {} },
           ]);
           ctx.get(listenerCtx).markdownUpdated((ctx, markdown) => {
+            if (disposed) return;
             // Listener notifications can be delivered after a newer editor
             // transaction (for example, selecting an @ mention). Always
             // serialize the current document so a delayed callback cannot
@@ -515,7 +526,7 @@
           // Detect mentions on all changes: mobile keyboards may omit keyup.
           // Overlap with desktop keyup is safe because the check only reads state.
           ctx.get(listenerCtx).updated((updateCtx) => {
-            if (readonly) return;
+            if (readonly || disposed) return;
             try {
               const view = updateCtx.get(editorViewCtx);
               if (view) checkForMentionTrigger(view);
@@ -581,10 +592,18 @@
         builder.use(excalidrawBlock);
       }
 
-      editor = await builder.create();
-
+      const created = await builder.create();
+      if (disposed) {
+        // The component unmounted while the async builder was still running;
+        // destroy the late editor here so teardown owns it exactly once.
+        await destroyEditor(created);
+        return;
+      }
+      editor = created;
     } catch (error) {
-      console.error('Failed to initialize Milkdown editor:', error);
+      if (!disposed) {
+        console.error('Failed to initialize Milkdown editor:', error);
+      }
     }
   });
 
@@ -611,6 +630,7 @@
   });
 
   onDestroy(async () => {
+    disposed = true;
     if (hoverCardTimeout) {
       clearTimeout(hoverCardTimeout);
     }
@@ -623,11 +643,9 @@
     }
     clearTimeout(pageLinkTimer);
     if (editor) {
-      try {
-        await editor.destroy();
-      } catch (e) {
-        console.error('Error destroying editor:', e);
-      }
+      const target = editor;
+      editor = null;
+      await destroyEditor(target);
     }
   });
 
