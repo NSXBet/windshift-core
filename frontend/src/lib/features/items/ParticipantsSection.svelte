@@ -3,6 +3,8 @@
   import { Users, X, Plus } from '@lucide/svelte';
   import Spinner from '../../components/Spinner.svelte';
   import Text from '../../components/Text.svelte';
+  import Input from '../../components/Input.svelte';
+  import Button from '../../components/Button.svelte';
   import PortalCustomerPicker from '../../pickers/PortalCustomerPicker.svelte';
   import { t } from '../../stores/i18n.svelte.js';
   import { errorToast } from '../../stores/toasts.svelte.js';
@@ -12,9 +14,11 @@
 
   let participants = $state([]);
   let loading = $state(true);
+  let showAddForm = $state(false);
   let email = $state('');
   let name = $state('');
   let adding = $state(false);
+  let emailInput = $state(null);
 
   async function load() {
     loading = true;
@@ -29,6 +33,23 @@
 
   onMount(load);
 
+  // Focus the first field when the add form is revealed, mirroring the
+  // personal-tasks composer.
+  $effect(() => {
+    if (showAddForm && emailInput) emailInput.focus();
+  });
+
+  function openAddForm() {
+    if (adding) return;
+    showAddForm = true;
+  }
+
+  function closeAddForm() {
+    showAddForm = false;
+    email = '';
+    name = '';
+  }
+
   async function addByEmail() {
     const value = email.trim();
     if (!value || adding) return;
@@ -39,8 +60,7 @@
           email: value,
           name: name.trim() || undefined
         })) ?? [];
-      email = '';
-      name = '';
+      closeAddForm();
     } catch (error) {
       errorToast(error?.message || t('items.participantsAddFailed'));
     } finally {
@@ -52,6 +72,7 @@
     if (!customer?.id) return;
     try {
       participants = (await api.items.addParticipant(itemId, { portal_customer_id: customer.id })) ?? [];
+      closeAddForm();
     } catch (error) {
       errorToast(error?.message || t('items.participantsAddFailed'));
     }
@@ -68,9 +89,25 @@
 </script>
 
 <div class="pt-4 mt-4 border-t" style="border-color: var(--ds-border);">
-  <div class="flex items-center gap-2 text-sm font-semibold" style="color: var(--ds-text);">
-    <Users class="w-4 h-4" style="color: var(--ds-text-subtle);" />
-    {t('items.participants')}
+  <div class="flex items-center justify-between gap-2 group">
+    <div class="flex items-center gap-2 text-sm font-semibold" style="color: var(--ds-text);">
+      <Users class="w-4 h-4" style="color: var(--ds-text-subtle);" />
+      {t('items.participants')}
+    </div>
+    {#if canEdit && !loading}
+      <button
+        type="button"
+        class="p-1 rounded transition-colors opacity-40 group-hover:opacity-100 focus-visible:opacity-100 disabled:opacity-20 disabled:cursor-not-allowed"
+        style="color: var(--ds-text-subtle);"
+        title={t('items.participantAdd')}
+        aria-label={t('items.participantAdd')}
+        data-testid="item-participant-add-toggle"
+        disabled={showAddForm}
+        onclick={openAddForm}
+      >
+        <Plus class="w-4 h-4" />
+      </button>
+    {/if}
   </div>
 
   {#if loading}
@@ -115,42 +152,63 @@
       {/each}
     </div>
 
-    {#if canEdit}
+    {#if canEdit && showAddForm}
       <div class="mt-3 space-y-2">
-        <input
-          type="email"
-          bind:value={email}
-          placeholder={t('items.participantEmailPlaceholder')}
-          data-testid="item-participant-email"
-          class="w-full px-2 py-1.5 text-sm rounded border"
-          style="border-color: var(--ds-border); background: var(--ds-background-input); color: var(--ds-text);"
-          onkeydown={(event) => {
-            if (event.key === 'Enter') addByEmail();
+        <form
+          class="space-y-2"
+          onsubmit={(event) => {
+            event.preventDefault();
+            addByEmail();
           }}
-        />
-        <input
-          type="text"
-          bind:value={name}
-          placeholder={t('items.participantNamePlaceholder')}
-          data-testid="item-participant-name"
-          class="w-full px-2 py-1.5 text-sm rounded border"
-          style="border-color: var(--ds-border); background: var(--ds-background-input); color: var(--ds-text);"
-        />
-        <button
-          type="button"
-          class="w-full flex items-center justify-center gap-1 px-2 py-1.5 text-sm rounded border hover-bg disabled:opacity-50"
-          style="border-color: var(--ds-border); color: var(--ds-text);"
-          disabled={adding || !email.trim()}
-          data-testid="item-participant-add"
-          onclick={addByEmail}
         >
-          <Plus class="w-3.5 h-3.5" />
-          {t('items.participantAdd')}
-        </button>
+          <Input
+            type="email"
+            bind:value={email}
+            bind:inputRef={emailInput}
+            placeholder={t('items.participantEmailPlaceholder')}
+            dataTestid="item-participant-email"
+            disabled={adding}
+            size="small"
+          />
+          <Input
+            type="text"
+            bind:value={name}
+            placeholder={t('items.participantNamePlaceholder')}
+            dataTestid="item-participant-name"
+            disabled={adding}
+            size="small"
+          />
+          <div class="flex justify-end gap-2">
+            <button
+              type="button"
+              class="px-2 py-1 text-xs rounded"
+              style="color: var(--ds-text);"
+              onclick={closeAddForm}
+              disabled={adding}
+            >
+              {t('common.cancel')}
+            </button>
+            <Button
+              type="submit"
+              variant="primary"
+              size="small"
+              dataTestid="item-participant-add"
+              disabled={adding || !email.trim()}
+            >
+              {t('items.participantAdd')}
+            </Button>
+          </div>
+        </form>
+        <div class="flex items-center gap-2">
+          <div class="h-px flex-1" style="background-color: var(--ds-border);"></div>
+          <span class="text-xs" style="color: var(--ds-text-subtle);">{t('common.or')}</span>
+          <div class="h-px flex-1" style="background-color: var(--ds-border);"></div>
+        </div>
         <PortalCustomerPicker
           value={null}
           placeholder={t('items.participantPickExisting')}
           class="w-full"
+          disabled={adding}
           onSelect={addByCustomer}
         />
       </div>

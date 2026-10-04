@@ -36,6 +36,7 @@
   import { booleanCustomFieldChecked, isBooleanCustomFieldType } from '../../utils/customFieldTypes.js';
   import { customFieldLinkHref } from '../../utils/customFieldLinks.js';
   import { isSystemFieldConfigured, systemFieldIdentifiers } from '../../utils/screenFields.js';
+  import { isExternalRequest } from '../../utils/requestOrigin.js';
   import StatusBadge from '../../components/StatusBadge.svelte';
   import { objectDisplayName } from '../../utils/systemLabels.js';
   import Badge from '../../components/Badge.svelte';
@@ -1372,8 +1373,10 @@
       <RequesterOpenTickets itemId={item.id} />
     {/if}
 
-    <!-- External request participants (WI-1136) -->
-    {#if item?.id}
+    <!-- External request participants (WI-1136). Internal items have no
+         external audience, so the section only appears for requests that
+         originated from the portal or a helpdesk mailbox. -->
+    {#if item?.id && isExternalRequest(item)}
       <ParticipantsSection itemId={item.id} {canEdit} />
     {/if}
 

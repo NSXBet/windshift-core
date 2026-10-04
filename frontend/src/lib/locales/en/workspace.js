@@ -114,7 +114,7 @@ export default {
     participantEmailPlaceholder: 'Email address',
     participantNamePlaceholder: 'Name (optional)',
     participantAdd: 'Add participant',
-    participantPickExisting: 'Or pick an existing customer',
+    participantPickExisting: 'Pick an existing customer',
     participantRemove: 'Remove participant',
     participantsAddFailed: 'Failed to add participant',
     participantsRemoveFailed: 'Failed to remove participant',
