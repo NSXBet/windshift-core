@@ -292,18 +292,23 @@ type PortalRequestVisibility struct {
 // user submitted through the given portal (own channel plus linked intake
 // channels).
 func (r *ItemRepository) ListChannelRequestsByCreator(creatorID int, visibility PortalRequestVisibility) ([]PortalRequestRow, error) {
-	return r.listChannelRequests("i.creator_id = ?", creatorID, visibility)
+	return r.listChannelRequests("i.creator_id = ?", []any{creatorID}, visibility)
 }
 
 // ListChannelRequestsByPortalCustomer returns the newest 500 requests a portal
 // customer submitted through the given portal (own channel plus linked intake
-// channels).
+// channels), plus any requests where the customer is an external participant
+// (WI-1136).
 func (r *ItemRepository) ListChannelRequestsByPortalCustomer(customerID int, visibility PortalRequestVisibility) ([]PortalRequestRow, error) {
-	return r.listChannelRequests("i.creator_portal_customer_id = ?", customerID, visibility)
+	ownerClause := `(i.creator_portal_customer_id = ? OR EXISTS (
+		SELECT 1 FROM item_participants p
+		WHERE p.item_id = i.id AND p.portal_customer_id = ?
+	))`
+	return r.listChannelRequests(ownerClause, []any{customerID, customerID}, visibility)
 }
 
-func (r *ItemRepository) listChannelRequests(ownerClause string, ownerID int, visibility PortalRequestVisibility) ([]PortalRequestRow, error) {
-	args := []any{ownerID}
+func (r *ItemRepository) listChannelRequests(ownerClause string, ownerArgs []any, visibility PortalRequestVisibility) ([]PortalRequestRow, error) {
+	args := append([]any{}, ownerArgs...)
 	channelFilter := "i.channel_id = ?"
 	args = append(args, visibility.PortalChannelID)
 	for _, id := range visibility.LinkedEmailChannelIDs {

@@ -22,6 +22,7 @@
   import ItemIntegrationLinks from './ItemIntegrationLinks.svelte';
   import ZammadItemPanel from './ZammadItemPanel.svelte';
 	import RequesterOpenTickets from './RequesterOpenTickets.svelte';
+  import ParticipantsSection from './ParticipantsSection.svelte';
   import AddSCMLinkModal from '../../dialogs/AddSCMLinkModal.svelte';
   import AddIntegrationLinkModal from '../../dialogs/AddIntegrationLinkModal.svelte';
   import CreateBranchModal from '../../dialogs/CreateBranchModal.svelte';
@@ -1369,6 +1370,11 @@
     <!-- Duplicate candidates (WI-1548): the requester's other open tickets -->
     {#if item?.id}
       <RequesterOpenTickets itemId={item.id} />
+    {/if}
+
+    <!-- External request participants (WI-1136) -->
+    {#if item?.id}
+      <ParticipantsSection itemId={item.id} {canEdit} />
     {/if}
 
     {#if item?.id}

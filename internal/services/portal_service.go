@@ -343,8 +343,9 @@ func (s *PortalService) GetRequestDetail(_ context.Context, itemID int) (*Portal
 // Since WI-1547 the check also admits items created through enabled intake
 // email channels linked to this portal (email_connected_portal_id), so a
 // customer who opened a ticket by email can read and continue it in the
-// connected portal. Items outside the portal's served workspaces never pass,
-// regardless of channel linkage.
+// connected portal. Since WI-1136 it also admits external request
+// participants. Items outside the portal's served workspaces never pass,
+// regardless of channel linkage or participation.
 func (s *PortalService) VerifyRequestOwnership(ctx context.Context, itemID, channelID int, internalUserID, portalCustomerID *int) (bool, error) {
 	detail, err := s.GetRequestDetail(ctx, itemID)
 	if err != nil {
@@ -386,6 +387,18 @@ func (s *PortalService) VerifyRequestOwnership(ctx context.Context, itemID, chan
 	}
 	if portalCustomerID != nil && detail.CreatorPortalCustomerID != nil && *detail.CreatorPortalCustomerID == *portalCustomerID {
 		return true, nil
+	}
+
+	// External request participants (WI-1136) may read and reply to tickets
+	// they were added to, even though they are not the creator.
+	if portalCustomerID != nil {
+		isParticipant, err := repository.NewItemParticipantRepository(s.db).IsParticipant(itemID, *portalCustomerID)
+		if err != nil {
+			return false, fmt.Errorf("check request participant: %w", err)
+		}
+		if isParticipant {
+			return true, nil
+		}
 	}
 
 	return false, nil

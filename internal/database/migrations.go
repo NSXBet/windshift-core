@@ -2263,6 +2263,58 @@ var Catalog = []Migration{
 			CREATE UNIQUE INDEX IF NOT EXISTS uq_queues_coll_builtin ON queues(collection_id, builtin_key) WHERE collection_id IS NOT NULL AND builtin_key IS NOT NULL;
 		`,
 	},
+	{
+		Version:       "20261008_item_participants",
+		Name:          "External request participants on work items (WI-1136)",
+		CheckSQLite:   sqliteTableCheck("item_participants"),
+		CheckPostgres: pgTableCheck("item_participants"),
+		SQLite: `
+			CREATE TABLE item_participants (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				item_id INTEGER NOT NULL,
+				portal_customer_id INTEGER NOT NULL,
+				added_by INTEGER,
+				created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+				FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE,
+				FOREIGN KEY (portal_customer_id) REFERENCES portal_customers(id) ON DELETE CASCADE,
+				FOREIGN KEY (added_by) REFERENCES users(id) ON DELETE SET NULL,
+				UNIQUE(item_id, portal_customer_id)
+			);
+			CREATE INDEX idx_item_participants_item ON item_participants(item_id);
+			CREATE INDEX idx_item_participants_customer ON item_participants(portal_customer_id);
+		`,
+		Postgres: `
+			CREATE TABLE item_participants (
+				id BIGSERIAL PRIMARY KEY,
+				item_id BIGINT NOT NULL,
+				portal_customer_id BIGINT NOT NULL,
+				added_by BIGINT,
+				created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+				FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE,
+				FOREIGN KEY (portal_customer_id) REFERENCES portal_customers(id) ON DELETE CASCADE,
+				FOREIGN KEY (added_by) REFERENCES users(id) ON DELETE SET NULL,
+				UNIQUE(item_id, portal_customer_id)
+			);
+			CREATE INDEX IF NOT EXISTS idx_item_participants_item ON item_participants(item_id);
+			CREATE INDEX IF NOT EXISTS idx_item_participants_customer ON item_participants(portal_customer_id);
+		`,
+	},
+	{
+		Version:       "20261009_email_reply_outbox_per_recipient",
+		Name:          "Allow one outbound reply per comment recipient (WI-1136)",
+		CheckSQLite:   sqliteIndexCheck("uq_email_reply_outbox_comment_recipient"),
+		CheckPostgres: pgIndexCheck("uq_email_reply_outbox_comment_recipient"),
+		Postgres: `
+			ALTER TABLE email_reply_outbox DROP CONSTRAINT IF EXISTS email_reply_outbox_comment_id_key;
+			CREATE UNIQUE INDEX IF NOT EXISTS uq_email_reply_outbox_comment_recipient
+				ON email_reply_outbox(comment_id, to_email);
+		`,
+		// SQLite cannot drop the inline UNIQUE(comment_id) without a table
+		// rebuild. The SQL field stays non-empty so the runner reaches
+		// ApplySQLite instead of stamping the row.
+		SQLite:      "applySQLiteEmailReplyOutboxPerRecipient:v1",
+		ApplySQLite: applySQLiteEmailReplyOutboxPerRecipient,
+	},
 }
 
 // viewSettingsToolsBackfillIDs lists the workspace tools ids as they existed
@@ -2432,6 +2484,97 @@ func applySQLitePersonalLabelsPerUserUnique(db Database) (retErr error) {
 		return fmt.Errorf("commit personal_labels rebuild: %w", err)
 	}
 
+	return nil
+}
+
+// applySQLiteEmailReplyOutboxPerRecipient rebuilds email_reply_outbox without
+// the inline UNIQUE(comment_id) constraint and adds the per-recipient unique
+// index (WI-1136). SQLite cannot drop the constraint in place.
+func applySQLiteEmailReplyOutboxPerRecipient(db Database) (retErr error) {
+	sqliteDB, ok := db.(*SQLiteDB)
+	if !ok {
+		return fmt.Errorf("expected SQLite database, got %T", db)
+	}
+
+	ctx := context.Background()
+	conn, err := sqliteDB.writeConn.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("acquire SQLite write connection: %w", err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	var foreignKeysEnabled bool
+	if err := conn.QueryRowContext(ctx, "PRAGMA foreign_keys").Scan(&foreignKeysEnabled); err != nil {
+		return fmt.Errorf("read foreign_keys pragma: %w", err)
+	}
+	if foreignKeysEnabled {
+		if _, err := conn.ExecContext(ctx, "PRAGMA foreign_keys=OFF"); err != nil {
+			return fmt.Errorf("disable foreign keys: %w", err)
+		}
+		defer func() {
+			if _, err := conn.ExecContext(ctx, "PRAGMA foreign_keys=ON"); retErr == nil && err != nil {
+				retErr = fmt.Errorf("restore foreign keys: %w", err)
+			}
+		}()
+	}
+
+	tx, err := conn.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin email_reply_outbox rebuild: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	statements := []string{
+		`CREATE TABLE email_reply_outbox_migration (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			comment_id INTEGER NOT NULL,
+			channel_id INTEGER NOT NULL,
+			item_id INTEGER NOT NULL,
+			to_email TEXT NOT NULL,
+			to_name TEXT NOT NULL DEFAULT '',
+			subject TEXT NOT NULL,
+			html_body TEXT NOT NULL,
+			text_body TEXT NOT NULL,
+			message_id TEXT NOT NULL,
+			in_reply_to TEXT NOT NULL DEFAULT '',
+			references_json TEXT NOT NULL DEFAULT '[]',
+			from_email TEXT NOT NULL,
+			from_name TEXT NOT NULL DEFAULT '',
+			attempt_count INTEGER NOT NULL DEFAULT 0,
+			next_attempt_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			lease_owner TEXT,
+			last_error TEXT,
+			delivered_at DATETIME,
+			discarded_at DATETIME,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (comment_id) REFERENCES comments(id) ON DELETE CASCADE,
+			FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE CASCADE,
+			FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE
+		)`,
+		`INSERT INTO email_reply_outbox_migration (
+			id, comment_id, channel_id, item_id, to_email, to_name, subject, html_body, text_body,
+			message_id, in_reply_to, references_json, from_email, from_name, attempt_count,
+			next_attempt_at, lease_owner, last_error, delivered_at, discarded_at, created_at, updated_at
+		)
+		SELECT id, comment_id, channel_id, item_id, to_email, to_name, subject, html_body, text_body,
+			message_id, in_reply_to, references_json, from_email, from_name, attempt_count,
+			next_attempt_at, lease_owner, last_error, delivered_at, discarded_at, created_at, updated_at
+		FROM email_reply_outbox`,
+		`DROP TABLE email_reply_outbox`,
+		`ALTER TABLE email_reply_outbox_migration RENAME TO email_reply_outbox`,
+		`CREATE INDEX idx_email_reply_outbox_pending ON email_reply_outbox(delivered_at, next_attempt_at)`,
+		`CREATE UNIQUE INDEX uq_email_reply_outbox_comment_recipient ON email_reply_outbox(comment_id, to_email)`,
+	}
+	for _, statement := range statements {
+		if _, err := tx.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("rebuild email_reply_outbox: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit email_reply_outbox rebuild: %w", err)
+	}
 	return nil
 }
 

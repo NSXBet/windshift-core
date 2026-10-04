@@ -244,6 +244,9 @@ func (s *ItemCRUDService) deleteItemRelationsTx(tx database.Tx, itemID int) erro
 	if err := s.repo.DeleteItemWatches(tx, itemID); err != nil {
 		return err
 	}
+	if err := repository.NewItemParticipantRepository(s.db).DeleteForItem(tx, itemID); err != nil {
+		return err
+	}
 	if err := s.repo.DeleteItemHistory(tx, itemID); err != nil {
 		return err
 	}

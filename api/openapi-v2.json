@@ -19767,6 +19767,64 @@
         ],
         "type": "object"
       },
+      "GetItemsItemIdParticipantsResult": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "added_by": {
+                  "description": "The added by value.",
+                  "nullable": true,
+                  "type": "integer"
+                },
+                "added_by_name": {
+                  "description": "The added by name value.",
+                  "type": "string"
+                },
+                "created_at": {
+                  "description": "The created at value.",
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "customer_email": {
+                  "description": "The customer email value.",
+                  "type": "string"
+                },
+                "customer_name": {
+                  "description": "The customer name value.",
+                  "type": "string"
+                },
+                "id": {
+                  "description": "The id value.",
+                  "type": "integer"
+                },
+                "item_id": {
+                  "description": "The item id value.",
+                  "type": "integer"
+                },
+                "portal_customer_id": {
+                  "description": "The portal customer id value.",
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "created_at",
+                "id",
+                "item_id",
+                "portal_customer_id"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
       "GetItemsItemIdPersonalTasksResult": {
         "additionalProperties": false,
         "properties": {
@@ -77303,6 +77361,87 @@
         ],
         "type": "object"
       },
+      "PostItemsItemIdParticipantsPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "email": {
+            "description": "The email value.",
+            "type": "string"
+          },
+          "name": {
+            "description": "The name value.",
+            "type": "string"
+          },
+          "portal_customer_id": {
+            "description": "The portal customer id value.",
+            "nullable": true,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "email",
+          "name"
+        ],
+        "type": "object"
+      },
+      "PostItemsItemIdParticipantsResult": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "added_by": {
+                  "description": "The added by value.",
+                  "nullable": true,
+                  "type": "integer"
+                },
+                "added_by_name": {
+                  "description": "The added by name value.",
+                  "type": "string"
+                },
+                "created_at": {
+                  "description": "The created at value.",
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "customer_email": {
+                  "description": "The customer email value.",
+                  "type": "string"
+                },
+                "customer_name": {
+                  "description": "The customer name value.",
+                  "type": "string"
+                },
+                "id": {
+                  "description": "The id value.",
+                  "type": "integer"
+                },
+                "item_id": {
+                  "description": "The item id value.",
+                  "type": "integer"
+                },
+                "portal_customer_id": {
+                  "description": "The portal customer id value.",
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "created_at",
+                "id",
+                "item_id",
+                "portal_customer_id"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
       "PostItemsItemIdRecurrenceGenerateResult": {
         "additionalProperties": false,
         "properties": {
@@ -106885,6 +107024,197 @@
           }
         ],
         "summary": "Preview item workspace move",
+        "tags": [
+          "Work items"
+        ],
+        "x-required-scopes": [
+          "items:write"
+        ]
+      }
+    },
+    "/items/{item_id}/participants": {
+      "get": {
+        "description": "List item participants. Results include only resources visible to the authenticated caller; collections use their documented stable order and bounds.",
+        "operationId": "getItemsItemIdParticipants",
+        "parameters": [
+          {
+            "description": "The item identifier.",
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetItemsItemIdParticipantsResult"
+                }
+              }
+            },
+            "description": "List item participants response."
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationError"
+          },
+          "403": {
+            "$ref": "#/components/responses/PermissionError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimitError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "List item participants",
+        "tags": [
+          "Work items"
+        ],
+        "x-required-scopes": [
+          "items:read"
+        ]
+      },
+      "post": {
+        "description": "Add item participant. The server validates resource ownership and command preconditions before persisting changes. Unknown JSON fields are rejected when the operation accepts a body.",
+        "operationId": "postItemsItemIdParticipants",
+        "parameters": [
+          {
+            "description": "The item identifier.",
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostItemsItemIdParticipantsPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostItemsItemIdParticipantsResult"
+                }
+              }
+            },
+            "description": "Add item participant response."
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationError"
+          },
+          "403": {
+            "$ref": "#/components/responses/PermissionError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLargeError"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaTypeError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimitError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Add item participant",
+        "tags": [
+          "Work items"
+        ],
+        "x-required-scopes": [
+          "items:write"
+        ]
+      }
+    },
+    "/items/{item_id}/participants/{customer_id}": {
+      "delete": {
+        "description": "Remove item participant. The server verifies resource ownership and deletion preconditions before removing the resource.",
+        "operationId": "deleteItemsItemIdParticipantsCustomerId",
+        "parameters": [
+          {
+            "description": "The item identifier.",
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The portal customer identifier.",
+            "in": "path",
+            "name": "customer_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Request completed successfully with no response body."
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationError"
+          },
+          "403": {
+            "$ref": "#/components/responses/PermissionError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimitError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Remove item participant",
         "tags": [
           "Work items"
         ],

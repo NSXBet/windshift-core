@@ -1106,6 +1106,11 @@ func (s *Server) initialize() error {
 	commentService.SetEmailReplyService(emailReplyService)
 	s.notificationScheduler.SetEmailReplyOutbox(emailReplyService)
 
+	// External request participants (WI-1136): the reply service sends the
+	// customer-facing "you were added" notice.
+	participantService := services.NewItemParticipantService(s.db)
+	participantService.SetNotifier(emailReplyService)
+
 	// Wire the helpdesk automation nodes (WI-1132/WI-1138). The reply
 	// service doubles as the customer notifier for notify_customer.
 	s.actionService.RegisterHelpdeskNodeExecutors(cannedResponseService, commentService, emailReplyService)
@@ -1913,6 +1918,7 @@ func (s *Server) initialize() error {
 		Workspaces:                   workspaceAppService,
 		ItemTemplates:                services.NewItemTemplateApplicationService(s.db, v2Access),
 		Labels:                       services.NewLabelApplicationService(s.db),
+		Participants:                 participantService,
 		Items:                        repository.NewItemRepository(s.db),
 		Access:                       v2Access,
 		Preferences:                  userPreferencesService,
