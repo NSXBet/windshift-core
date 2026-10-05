@@ -268,14 +268,16 @@ func scanPortalRequestRow(scanner interface {
 }
 
 // portalMergedDuplicateVisible keeps a merged duplicate in a requester's list
-// only when its content stayed with that requester. A same-requester merge
-// moves the thread to the canonical, so the duplicate is hidden as a redirect;
-// a cross-requester merge keeps files and the original request on the source
-// (WI-1566), so hiding it would remove the customer's own ticket.
+// only when it is a cross-requester merge: the source's files and original
+// request stay with its own requester (WI-1566), so hiding it would remove the
+// customer's own ticket. A same-requester merge moves the thread to the
+// canonical, so the duplicate is hidden as a redirect. "Same requester" is the
+// portal-customer identity, matching ItemLifecycleService.sameRequester, with
+// COALESCE so a NULL (internal) creator compares deterministically.
 const portalMergedDuplicateVisible = `(i.merged_into_item_id IS NULL OR EXISTS (
 		SELECT 1 FROM items canonical
 		WHERE canonical.id = i.merged_into_item_id
-		  AND (canonical.creator_id = i.creator_id OR canonical.creator_portal_customer_id = i.creator_portal_customer_id)
+		  AND COALESCE(canonical.creator_portal_customer_id, 0) <> COALESCE(i.creator_portal_customer_id, 0)
 	))`
 
 // PortalRequestVisibility describes which items a portal exposes to its
