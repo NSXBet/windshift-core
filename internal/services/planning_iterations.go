@@ -140,6 +140,7 @@ func (s *PlanningService) FindIterationByName(workspaceID int, name string) (*It
 
 // ListIterations retrieves iterations with pagination and filtering.
 func (s *PlanningService) ListIterations(params IterationListParams) ([]IterationResult, int, error) {
+	params.Status = normalizePlanningStatus(params.Status)
 	list := newPlanningListQuery(iterationSelectQuery+"\nWHERE 1=1", "SELECT COUNT(*) FROM iterations i WHERE 1=1")
 	list.addWorkspaceScope("i.workspace_id", "i.is_global", params.WorkspaceID, params.WorkspaceIDs, params.IncludeGlobal)
 	list.addNullableIDFilter("i.type_id", params.TypeID)
@@ -245,6 +246,7 @@ func (s *PlanningService) CreateIteration(params CreateIterationParams) (*Iterat
 	if params.Status == "" {
 		params.Status = "planned"
 	}
+	params.Status = normalizePlanningStatus(params.Status)
 	if err := s.validateIterationMutation(params); err != nil {
 		return nil, err
 	}
@@ -287,6 +289,7 @@ type UpdateIterationParams struct {
 
 // UpdateIteration updates an existing iteration within its declared scope.
 func (s *PlanningService) UpdateIteration(params UpdateIterationParams) (*IterationResult, error) {
+	params.Status = normalizePlanningStatus(params.Status)
 	if err := s.validateIterationMutation(CreateIterationParams{
 		Name:        params.Name,
 		Description: params.Description,

@@ -2,24 +2,13 @@ package wscli
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/spf13/cobra"
 )
 
-// milestoneCancelledStatus is the persisted milestone status; the API rejects
-// the US spelling.
+// milestoneCancelledStatus is the canonical persisted milestone status. The
+// API also accepts the US spelling "canceled" and normalizes it.
 const milestoneCancelledStatus = "cancelled" //nolint:misspell // Persisted API status.
-
-// normalizeMilestoneStatus maps the US spelling "canceled" to
-// milestoneCancelledStatus so `--status canceled` filters and updates as
-// users expect. Other values pass through for the API to validate.
-func normalizeMilestoneStatus(status string) string {
-	if strings.EqualFold(strings.TrimSpace(status), "canceled") {
-		return milestoneCancelledStatus
-	}
-	return status
-}
 
 var milestoneCmd = &cobra.Command{
 	Use:   "milestone",
@@ -44,7 +33,7 @@ Examples:
 
 		filters := make(map[string]string)
 		if milestoneStatusFilter != "" {
-			filters["status"] = normalizeMilestoneStatus(milestoneStatusFilter)
+			filters["status"] = milestoneStatusFilter
 		}
 
 		// --global routes through the legacy global endpoint; everything else
@@ -146,7 +135,7 @@ Examples:
 			Name:        milestoneCreateName,
 			Description: milestoneCreateDesc,
 			TargetDate:  milestoneCreateTarget,
-			Status:      normalizeMilestoneStatus(milestoneCreateStatus),
+			Status:      milestoneCreateStatus,
 		}
 
 		milestone, err := client.CreateMilestoneInWorkspace(wsID, req)
@@ -204,8 +193,7 @@ Examples:
 			hasUpdate = true
 		}
 		if cmd.Flags().Changed("status") {
-			status := normalizeMilestoneStatus(milestoneUpdateStatus)
-			req.Status = &status
+			req.Status = &milestoneUpdateStatus
 			hasUpdate = true
 		}
 
