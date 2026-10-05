@@ -361,7 +361,7 @@
                   {#each portalCustomerFields as field}
                     <CustomFieldRenderer
                       {field}
-                      bind:value={editFormData.custom_field_values[field.name]}
+                      value={editFormData.custom_field_values[field.name] ?? ''}
                       readonly={false}
                       onChange={(val) => {
                         editFormData.custom_field_values[field.name] = val;
