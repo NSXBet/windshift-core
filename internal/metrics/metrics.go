@@ -103,6 +103,7 @@ func New(db database.Database) *Metrics {
 			collectors.NewDBStatsCollector(db.GetDB(), "windshift"),
 			newDomainCollector(db),
 			newSLAJobCollector(db),
+			newEmailCollector(db),
 		)
 	}
 

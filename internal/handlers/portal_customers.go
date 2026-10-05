@@ -25,11 +25,12 @@ type PortalCustomersHandler struct {
 	db                    database.Database
 	permService           *services.PermissionService
 	customerOrgPermission *services.CustomerOrganisationPermissionService
+	auditor               *logger.Auditor
 }
 
 // NewPortalCustomersHandler creates a new portal customers handler
 func NewPortalCustomersHandler(db database.Database, permService *services.PermissionService, customerOrgPermission *services.CustomerOrganisationPermissionService) *PortalCustomersHandler {
-	return &PortalCustomersHandler{db: db, permService: permService, customerOrgPermission: customerOrgPermission}
+	return &PortalCustomersHandler{db: db, permService: permService, customerOrgPermission: customerOrgPermission, auditor: logger.NewAuditor(db)}
 }
 
 // parseTimestamp parses a timestamp string from the database
@@ -232,6 +233,13 @@ func (h *PortalCustomersHandler) GetPortalCustomer(w http.ResponseWriter, r *htt
 	if err != nil {
 		respondInternalError(w, r, err)
 		return
+	}
+
+	// Customer-data access is audited (WI-1142): every detail view of a
+	// customer record leaves a trail, matching the export/erase events.
+	if user, ok := RequireAuth(w, r); ok {
+		h.auditor.LogWithDetails(r, user, logger.ActionCustomerView,
+			logger.ResourcePortalCustomer, &id, c.Email, nil)
 	}
 
 	respondJSONOK(w, c)

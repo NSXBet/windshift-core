@@ -168,6 +168,7 @@ type CreateCommentParams struct {
 	CreatedAt             *time.Time // Optional: override created_at (e.g. for imports preserving original timestamps)
 	UpdatedAt             *time.Time // Optional: override updated_at (imports preserving original timestamps); defaults to created_at
 	SuppressNotifications bool       // Skip notifications, mentions, webhooks, and email replies (e.g. plugin-created comments)
+	SuppressActionEvents  bool       // Skip the comment_created automation trigger (WI-1142 loop guard for automation-authored comments)
 	EventMetadata         itemevents.Metadata
 }
 
@@ -555,6 +556,19 @@ func (s *CommentService) create(params CreateCommentParams) (*CreateCommentResul
 		return nil, fmt.Errorf("failed to commit comment: %w", err)
 	}
 
+	// Agent replies on customer-facing tickets are the helpdesk communication
+	// history (WI-1142); internal notes, internal items, and portal replies
+	// are not audited here.
+	if isPublicAgentComment(params.IsPrivate, params.AuthorID, params.PortalCustomerID) &&
+		(item.ChannelID != nil || item.CreatorPortalCustomerID != nil) {
+		commentID := int(commentID)
+		emitServiceAudit(s.db, AuditActor{UserID: params.ActorUserID, Username: ""},
+			logger.ActionCommentCreate, logger.ResourceComment, &commentID, "", map[string]any{
+				"item_id": params.ItemID,
+				"kind":    "customer_reply",
+			})
+	}
+
 	// 4. Track activity (if activityTracker != nil)
 	if s.activityTracker != nil {
 		if err := s.activityTracker.TrackItemActivity(params.ActorUserID, params.ItemID, ActivityComment); err != nil {
@@ -680,7 +694,10 @@ func (s *CommentService) create(params CreateCommentParams) (*CreateCommentResul
 
 		// 7b. Dispatch the comment_created automation trigger (WI-1132).
 		// Admission outlives the request; failures never block comments.
-		if s.actionEvents != nil {
+		// Automation-authored comments never re-enter the trigger: a rule
+		// that posts an agent comment must not be able to trigger itself or
+		// its siblings, which is the one unbounded helpdesk loop (WI-1142).
+		if s.actionEvents != nil && !params.SuppressActionEvents {
 			fromCustomer := params.PortalCustomerID != nil
 			s.actionEvents.EmitActionEvent(&models.ActionEvent{
 				EventType:   models.ActionTriggerCommentCreated,

@@ -684,7 +684,26 @@ func (p *Processor) handleAttachments(ctx context.Context, attachments []Attachm
 		_ = json.Unmarshal([]byte(allowedMimeJSON), &allowedTypes)
 	}
 
+	// Abuse bound (WI-1142): a single message cannot flood the ticket with
+	// more files than this. Excess attachments are dropped; the tracking row
+	// still records the message with whatever fit.
+	const maxAttachmentsPerEmail = 25
+	accepted := 0
+
 	for _, att := range attachments {
+		if accepted >= maxAttachmentsPerEmail {
+			slog.Warn("skipping attachment: per-message attachment limit reached",
+				"item_id", itemID,
+				"filename", att.Filename,
+				"limit", maxAttachmentsPerEmail,
+			)
+			continue
+		}
+		// Check size limit
+		if att.Size > maxFileSize {
+			slog.Debug("skipping attachment: exceeds max size", "filename", att.Filename, "size", att.Size)
+			continue
+		}
 		// Check size limit
 		if att.Size > maxFileSize {
 			slog.Debug("skipping attachment: exceeds max size", "filename", att.Filename, "size", att.Size)
@@ -745,6 +764,7 @@ func (p *Processor) handleAttachments(ctx context.Context, attachments []Attachm
 
 		slog.Debug("saved attachment", "filename", att.Filename, "item_id", itemID)
 		out.saved++
+		accepted++
 	}
 
 	return out, nil

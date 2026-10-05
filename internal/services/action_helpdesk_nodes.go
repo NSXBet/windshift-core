@@ -84,12 +84,13 @@ func (e *InsertCannedResponseExecutor) Execute(node *models.ActionNode, ctx *mod
 	}
 
 	result, err := e.comments.Create(CreateCommentParams{
-		ItemID:        itemID,
-		AuthorID:      actor,
-		Content:       rendered,
-		IsPrivate:     isPrivate,
-		ActorUserID:   actor,
-		EventMetadata: itemEventMetadata(actor, "automation", actionContextFromExecution(ctx)),
+		ItemID:               itemID,
+		AuthorID:             actor,
+		Content:              rendered,
+		IsPrivate:            isPrivate,
+		ActorUserID:          actor,
+		SuppressActionEvents: true,
+		EventMetadata:        itemEventMetadata(actor, "automation", actionContextFromExecution(ctx)),
 	})
 	if err != nil {
 		return fmt.Errorf("insert_canned_response: failed to create comment: %w", err)

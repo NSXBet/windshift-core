@@ -456,6 +456,16 @@ func (s *ItemApplicationService) BulkUpdate(ctx context.Context, actor AuditActo
 		return ItemBulkResult{}, err
 	}
 	items := s.applyBulkEffects(actor, result.Results)
+	fieldNames := make([]string, 0, len(fields))
+	for name := range fields {
+		fieldNames = append(fieldNames, name)
+	}
+	slices.Sort(fieldNames)
+	emitServiceAudit(s.db, actor, logger.ActionItemBulkUpdate, logger.ResourceItem, nil, "", map[string]any{
+		"requested": result.RequestedCount,
+		"updated":   result.UpdatedCount,
+		"fields":    fieldNames,
+	})
 	return ItemBulkResult{Atomic: true, RequestedCount: result.RequestedCount, UpdatedCount: result.UpdatedCount, UnchangedCount: result.UnchangedCount, Items: items}, nil
 }
 

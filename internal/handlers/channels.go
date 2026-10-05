@@ -13,6 +13,7 @@ import (
 	"net/mail"
 	"net/url"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -1016,8 +1017,10 @@ func (h *ChannelHandler) UpdateChannelConfig(w http.ResponseWriter, r *http.Requ
 	}
 
 	resourceName := ""
+	var previousSources []models.KnowledgeBasePageSource
 	if channel, lookupErr := h.service.GetByID(ctx, id); lookupErr == nil && channel != nil {
 		resourceName = channel.Name
+		previousSources = decodeKBSources(channel.Config)
 	}
 	h.auditor.LogWithDetails(r, user,
 		logger.ActionChannelUpdate, logger.ResourceChannel,
@@ -1025,10 +1028,37 @@ func (h *ChannelHandler) UpdateChannelConfig(w http.ResponseWriter, r *http.Requ
 		map[string]any{"change_type": "configuration"},
 	)
 
+	// Publishing a pages tree through a portal knowledge base exposes
+	// workspace content to customers (WI-1142): the publish scope change is
+	// its own audit event, not just a config edit.
+	if updatedChannel, lookupErr := h.service.GetByID(ctx, id); lookupErr == nil && updatedChannel != nil {
+		updatedSources := decodeKBSources(updatedChannel.Config)
+		if !slices.EqualFunc(previousSources, updatedSources, func(a, b models.KnowledgeBasePageSource) bool {
+			return a.WorkspaceID == b.WorkspaceID &&
+				(a.RootPageID == b.RootPageID || (a.RootPageID != nil && b.RootPageID != nil && *a.RootPageID == *b.RootPageID))
+		}) {
+			h.auditor.LogWithDetails(r, user,
+				logger.ActionChannelKBPublish, logger.ResourceChannel,
+				&id, resourceName,
+				map[string]any{"sources": updatedSources},
+			)
+		}
+	}
+
 	respondJSONOK(w, map[string]any{
 		"success": updated,
 		"message": "Channel configuration updated successfully",
 	})
+}
+
+// decodeKBSources extracts the portal knowledge base publish scope from a
+// channel config JSON document.
+func decodeKBSources(configJSON string) []models.KnowledgeBasePageSource {
+	var config models.ChannelConfig
+	if err := json.Unmarshal([]byte(configJSON), &config); err != nil {
+		return nil
+	}
+	return config.KnowledgeBasePageSources
 }
 
 // GetChannelManagers returns all managers for a channel. Gated by manage

@@ -569,16 +569,23 @@ func (s *ItemApplicationService) supportBacklogBySegment(ctx context.Context, se
 // supportSLATotals counts completed SLA cycles in the window over the scoped
 // item set. Cycles are calendar-aware by construction.
 func (s *ItemApplicationService) supportSLATotals(ctx context.Context, where string, whereArgs []any, q SupportMetricsQuery) (*models.SupportMetricsSLA, error) {
-	query := `SELECT COUNT(c.id), COALESCE(SUM(CASE WHEN c.breached_at IS NOT NULL THEN 1 ELSE 0 END), 0)
+	query := `SELECT
+			COALESCE(SUM(CASE WHEN c.status = 'completed' THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN c.status = 'completed' AND c.breached_at IS NOT NULL THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN c.status = 'ongoing' AND (c.breached_at IS NOT NULL OR c.next_deadline_at <= ?) THEN 1 ELSE 0 END), 0)
 		FROM item_sla_cycles c
 		JOIN (SELECT i.id ` + repository.ItemListFilterFromClause() + where + `) scoped ON scoped.id = c.item_id
-		WHERE c.status = 'completed' AND c.stopped_at >= ? AND c.stopped_at < ?`
-	args := append(append([]any{}, whereArgs...), q.From, q.To)
-	var completed, breached int64
-	if err := s.db.QueryRowContext(ctx, query, args...).Scan(&completed, &breached); err != nil {
+		WHERE (c.status = 'completed' AND c.stopped_at >= ? AND c.stopped_at < ?)
+			OR (c.status = 'ongoing' AND c.started_at < ?)`
+	// Placeholder order follows the SQL text: the now-bound in the SELECT
+	// clause comes first, then the scope args, then the window bounds.
+	args := append([]any{q.To}, whereArgs...)
+	args = append(args, q.From, q.To, q.To)
+	var completed, breached, ongoingBreached int64
+	if err := s.db.QueryRowContext(ctx, query, args...).Scan(&completed, &breached, &ongoingBreached); err != nil {
 		return nil, fmt.Errorf("SLA totals: %w", err)
 	}
-	sla := &models.SupportMetricsSLA{Completed: completed, Breached: breached}
+	sla := &models.SupportMetricsSLA{Completed: completed, Breached: breached, OngoingBreached: ongoingBreached}
 	if completed > 0 {
 		sla.CompliantPct = float64(completed-breached) / float64(completed) * 100
 	}

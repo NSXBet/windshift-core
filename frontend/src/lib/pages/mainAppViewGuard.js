@@ -4,12 +4,20 @@ import { viewSettingsStore } from '../stores/viewSettings.svelte.js';
 // workspace-<view> route suffix.
 const GUARDED_VIEW_IDS = new Set(viewSettingsStore.allViewIds);
 
+// Nav entries whose toggle only hides the sidebar entry. Pages are linked
+// content — item link panels, notifications, and search all point at
+// /workspaces/:id/pages/:pageId — so hiding the Pages entry must not make
+// those links unreachable. Their routes stay served.
+const NAV_VIEW_IDS_WITHOUT_REDIRECT = new Set(['pages']);
+
 // Workspace-only nav entries this guard protects. Their route views are
 // workspace-<id>; direct URLs to disabled entries redirect to the workspace
 // default view, matching the disabled-view contract. Test-management routes
 // are not guarded: test entries are not nav-configurable.
 const GUARDED_NAV_VIEW_IDS = new Set(
-  viewSettingsStore.allNavIds.filter((id) => !GUARDED_VIEW_IDS.has(id))
+  viewSettingsStore.allNavIds.filter(
+    (id) => !GUARDED_VIEW_IDS.has(id) && !NAV_VIEW_IDS_WITHOUT_REDIRECT.has(id)
+  )
 );
 
 /**

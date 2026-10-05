@@ -24,6 +24,7 @@ import (
 
 	"windshift/internal/database"
 	"windshift/internal/llm"
+	"windshift/internal/logger"
 	"windshift/internal/models"
 	"windshift/internal/repository"
 	"windshift/internal/repository/actionutil"
@@ -774,6 +775,17 @@ func (as *ActionService) executeActionForEvent(executionCtx context.Context, act
 		slog.String("status", string(log.Status)),
 		slog.Duration("duration", time.Since(startTime)),
 	)
+
+	// Automation runs are audited (WI-1142): routing and assignment decisions
+	// made by rules must be reconstructable from the central audit trail.
+	emitServiceAudit(as.db, AuditActor{UserID: event.ActorUserID},
+		logger.ActionAutomationExecute, logger.ResourceAutomation, &action.ID, action.Name, map[string]any{
+			"item_id":          event.ItemID,
+			"trigger_event":    string(event.EventType),
+			"status":           string(log.Status),
+			"duration_ms":      time.Since(startTime).Milliseconds(),
+			"execution_log_id": log.ID,
+		})
 
 	if log.Status == models.ActionStatusFailed {
 		return fmt.Errorf("%w: action %d", ErrActionCompletedWithFailedSteps, action.ID)
@@ -1792,12 +1804,13 @@ func (as *ActionService) executeAddComment(node *models.ActionNode, ctx *models.
 	}
 
 	result, err := as.commentService.Create(CreateCommentParams{
-		ItemID:        itemID,
-		AuthorID:      ctx.EffectiveActorID,
-		Content:       content,
-		IsPrivate:     isPrivate,
-		ActorUserID:   ctx.EffectiveActorID,
-		EventMetadata: itemEventMetadata(ctx.EffectiveActorID, "automation", actionContextFromExecution(ctx)),
+		ItemID:               itemID,
+		AuthorID:             ctx.EffectiveActorID,
+		Content:              content,
+		IsPrivate:            isPrivate,
+		ActorUserID:          ctx.EffectiveActorID,
+		SuppressActionEvents: true,
+		EventMetadata:        itemEventMetadata(ctx.EffectiveActorID, "automation", actionContextFromExecution(ctx)),
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create comment via service: %w", err)

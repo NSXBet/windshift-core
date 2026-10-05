@@ -381,7 +381,12 @@ const (
 	ActionItemDelete        = "item.delete"
 	ActionItemDeleteCascade = "item.delete_cascade"
 	ActionItemMoveWorkspace = "item.move_workspace"
+	ActionItemAssign        = "item.assign"
+	ActionItemMerge         = "item.merge"
+	ActionItemSplit         = "item.split"
+	ActionItemBulkUpdate    = "item.bulk_update"
 	ActionCommentDelete     = "comment.delete"
+	ActionCommentCreate     = "comment.create"
 	ActionAttachmentDelete  = "attachment.delete"
 
 	// External request participants (WI-1136).
@@ -476,6 +481,8 @@ const (
 	ActionChannelDelete        = "channel.delete"
 	ActionChannelActivate      = "channel.activate"
 	ActionChannelDeactivate    = "channel.deactivate"
+	ActionChannelKBPublish     = "channel.kb_publish"   // Portal knowledge base publish scope changed
+	ActionCustomerView         = "portal_customer.view" // Customer-data detail view
 	ActionChannelAddManager    = "channel.add_manager"
 	ActionChannelRemoveManager = "channel.remove_manager"
 
@@ -616,6 +623,7 @@ const (
 	ActionAutomationDelete           = "automation.delete"
 	ActionAutomationToggle           = "automation.toggle"
 	ActionAutomationSetActor         = "automation.set_actor" // Granted action.set_actor permission used to impersonate
+	ActionAutomationExecute          = "automation.execute"
 	ActionAutomationCapabilityCreate = "automation_capability.create"
 	ActionAutomationCapabilityUpdate = "automation_capability.update"
 	ActionAutomationCapabilityDelete = "automation_capability.delete"

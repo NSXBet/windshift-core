@@ -28733,12 +28733,17 @@
                   "compliant_pct": {
                     "description": "The compliant pct value.",
                     "type": "number"
+                  },
+                  "ongoing_breached": {
+                    "description": "The ongoing breached value.",
+                    "type": "integer"
                   }
                 },
                 "required": [
                   "breached",
                   "completed",
-                  "compliant_pct"
+                  "compliant_pct",
+                  "ongoing_breached"
                 ],
                 "type": "object"
               },

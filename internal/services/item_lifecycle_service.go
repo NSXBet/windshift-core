@@ -10,6 +10,7 @@ import (
 
 	"windshift/internal/database"
 	"windshift/internal/itemevents"
+	"windshift/internal/logger"
 	"windshift/internal/models"
 	"windshift/internal/repository"
 	"windshift/internal/validation"
@@ -384,6 +385,11 @@ func (s *ItemLifecycleService) Merge(ctx context.Context, input ItemMergeInput) 
 			s.emitter.EmitItemUpdated(source, source, false, false, input.ActorUserID, nil, input.ActorUsername)
 		}
 	}
+	emitServiceAudit(s.db, AuditActor{UserID: input.ActorUserID, Username: input.ActorUsername},
+		logger.ActionItemMerge, logger.ResourceItem, &input.TargetItemID, target.Title, map[string]any{
+			"source_item_ids": input.SourceItemIDs,
+			"sources":         len(result.Sources),
+		})
 	return result, nil
 }
 
@@ -531,6 +537,14 @@ func (s *ItemLifecycleService) Split(ctx context.Context, input ItemSplitInput) 
 		s.emitter.EmitItemCreated(child, input.ActorUserID, input.ActorUsername)
 		s.emitter.EmitItemUpdated(source, source, false, false, input.ActorUserID, nil, input.ActorUsername)
 	}
+
+	splitID := childID
+	emitServiceAudit(s.db, AuditActor{UserID: input.ActorUserID, Username: input.ActorUsername},
+		logger.ActionItemSplit, logger.ResourceItem, &splitID, input.Title, map[string]any{
+			"source_item_id":    input.SourceItemID,
+			"moved_comments":    movedComments,
+			"moved_attachments": movedAttachments,
+		})
 
 	return &ItemSplitResult{
 		Source: source, Split: child, SplitItemID: childID,
