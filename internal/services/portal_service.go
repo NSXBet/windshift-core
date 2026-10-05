@@ -295,6 +295,86 @@ func portalServesWorkspace(vis repository.PortalRequestVisibility, workspaceID i
 	return false
 }
 
+// loadPortalOrgShare resolves whether organisation sharing applies to the given
+// portal customer and, if so, which mode. The organisation settings live in a
+// JSON column, so they are parsed here in Go; the hot portal query only ever
+// receives the resolved mode.
+func (s *PortalService) loadPortalOrgShare(ctx context.Context, portalCustomerID int) (repository.PortalOrgShare, error) {
+	var orgID sql.NullInt64
+	err := s.db.QueryRowContext(ctx,
+		`SELECT customer_organisation_id FROM portal_customers WHERE id = ?`, portalCustomerID,
+	).Scan(&orgID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return repository.PortalOrgShare{}, nil
+	}
+	if err != nil {
+		return repository.PortalOrgShare{}, fmt.Errorf("load portal customer organisation: %w", err)
+	}
+	if !orgID.Valid {
+		return repository.PortalOrgShare{}, nil
+	}
+
+	var settingsJSON string
+	err = s.db.QueryRowContext(ctx,
+		`SELECT COALESCE(settings, '{}') FROM customer_organisations WHERE id = ?`, orgID.Int64,
+	).Scan(&settingsJSON)
+	if errors.Is(err, sql.ErrNoRows) {
+		return repository.PortalOrgShare{}, nil
+	}
+	if err != nil {
+		return repository.PortalOrgShare{}, fmt.Errorf("load organisation settings: %w", err)
+	}
+	var settings map[string]any
+	if settingsJSON != "" {
+		if err := json.Unmarshal([]byte(settingsJSON), &settings); err != nil {
+			return repository.PortalOrgShare{}, fmt.Errorf("parse organisation settings: %w", err)
+		}
+	}
+	parsed := models.ParseOrgRequestSharingSettings(settings)
+	if parsed.RequestSharing == models.OrgRequestSharingDisabled {
+		return repository.PortalOrgShare{}, nil
+	}
+	if parsed.RequestSharingAudience == models.OrgRequestSharingAudienceRoles {
+		holds, err := s.portalCustomerHoldsRole(ctx, portalCustomerID, parsed.RequestVisibleRoleIDs)
+		if err != nil {
+			return repository.PortalOrgShare{}, err
+		}
+		if !holds {
+			return repository.PortalOrgShare{}, nil
+		}
+	}
+	return repository.PortalOrgShare{OrganisationID: int(orgID.Int64), Mode: parsed.RequestSharing}, nil
+}
+
+// portalCustomerHoldsRole reports whether the customer holds at least one of
+// the allowed contact roles. An empty allowlist never matches, so a "roles"
+// audience with no configured roles exposes nothing.
+func (s *PortalService) portalCustomerHoldsRole(ctx context.Context, portalCustomerID int, allowed []int) (bool, error) {
+	if len(allowed) == 0 {
+		return false, nil
+	}
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT contact_role_id FROM portal_customer_roles WHERE portal_customer_id = ?`, portalCustomerID)
+	if err != nil {
+		return false, fmt.Errorf("load portal customer roles: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	allowedSet := make(map[int]struct{}, len(allowed))
+	for _, id := range allowed {
+		allowedSet[id] = struct{}{}
+	}
+	for rows.Next() {
+		var roleID int
+		if err := rows.Scan(&roleID); err != nil {
+			return false, fmt.Errorf("scan portal customer role: %w", err)
+		}
+		if _, ok := allowedSet[roleID]; ok {
+			return true, nil
+		}
+	}
+	return false, rows.Err()
+}
+
 // GetRequestsByCreatorID gets requests for internal user (by creator_id)
 func (s *PortalService) GetRequestsByCreatorID(ctx context.Context, creatorID, channelID int) ([]PortalRequestSummary, error) {
 	vis, err := s.portalRequestVisibility(ctx, channelID)
@@ -314,7 +394,11 @@ func (s *PortalService) GetRequestsByPortalCustomerID(ctx context.Context, porta
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve portal visibility: %w", err)
 	}
-	rows, err := s.items.ListChannelRequestsByPortalCustomer(portalCustomerID, vis)
+	orgShare, err := s.loadPortalOrgShare(ctx, portalCustomerID)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.items.ListChannelRequestsByPortalCustomer(portalCustomerID, orgShare, vis)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch requests: %w", err)
 	}
@@ -344,8 +428,10 @@ func (s *PortalService) GetRequestDetail(_ context.Context, itemID int) (*Portal
 // email channels linked to this portal (email_connected_portal_id), so a
 // customer who opened a ticket by email can read and continue it in the
 // connected portal. Since WI-1136 it also admits external request
-// participants. Items outside the portal's served workspaces never pass,
-// regardless of channel linkage or participation.
+// participants. Since WI-1139 it also admits organisation-shared requests
+// (automatic mode, or requester_choice with the item flag set) when the
+// viewer qualifies for the configured audience. Items outside the portal's
+// served workspaces never pass, regardless of channel linkage or participation.
 func (s *PortalService) VerifyRequestOwnership(ctx context.Context, itemID, channelID int, internalUserID, portalCustomerID *int) (bool, error) {
 	detail, err := s.GetRequestDetail(ctx, itemID)
 	if err != nil {
@@ -398,6 +484,27 @@ func (s *PortalService) VerifyRequestOwnership(ctx context.Context, itemID, chan
 		}
 		if isParticipant {
 			return true, nil
+		}
+	}
+
+	// Org-shared requests (WI-1139): the creator opted in (or the org shares
+	// automatically) and the viewer qualifies for the audience.
+	if portalCustomerID != nil {
+		orgShare, err := s.loadPortalOrgShare(ctx, *portalCustomerID)
+		if err != nil {
+			return false, err
+		}
+		if orgShare.OrganisationID != 0 {
+			creatorOrgID, shared, err := s.items.PortalRequestOrgShare(itemID)
+			if err != nil {
+				return false, fmt.Errorf("check request organisation share: %w", err)
+			}
+			if creatorOrgID != nil && *creatorOrgID == orgShare.OrganisationID {
+				if orgShare.Mode == models.OrgRequestSharingAutomatic ||
+					(orgShare.Mode == models.OrgRequestSharingRequesterChoice && shared) {
+					return true, nil
+				}
+			}
 		}
 	}
 

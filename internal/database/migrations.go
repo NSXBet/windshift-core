@@ -2315,6 +2315,22 @@ var Catalog = []Migration{
 		SQLite:      "applySQLiteEmailReplyOutboxPerRecipient:v1",
 		ApplySQLite: applySQLiteEmailReplyOutboxPerRecipient,
 	},
+	{
+		Version:       "20261010_portal_org_sharing",
+		Name:          "Portal organisation request sharing (WI-1139)",
+		CheckSQLite:   sqliteColumnCheck("customer_organisations", "settings"),
+		CheckPostgres: pgColumnCheck("customer_organisations", "settings"),
+		SQLite: `
+			ALTER TABLE customer_organisations ADD COLUMN settings TEXT NOT NULL DEFAULT '{}';
+			ALTER TABLE contact_roles ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0;
+			ALTER TABLE items ADD COLUMN portal_org_shared BOOLEAN NOT NULL DEFAULT false;
+		`,
+		Postgres: `
+			ALTER TABLE customer_organisations ADD COLUMN IF NOT EXISTS settings JSONB NOT NULL DEFAULT '{}'::JSONB;
+			ALTER TABLE contact_roles ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0;
+			ALTER TABLE items ADD COLUMN IF NOT EXISTS portal_org_shared BOOLEAN NOT NULL DEFAULT false;
+		`,
+	},
 }
 
 // viewSettingsToolsBackfillIDs lists the workspace tools ids as they existed
