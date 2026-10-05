@@ -35,6 +35,8 @@ export default {
     loading: 'جاري التحميل...',
     retry: 'إعادة المحاولة',
     knowledgeBase: 'قاعدة المعرفة',
+    scrollDownForMore: 'مرر لأسفل لرؤية المزيد',
+    scrollUpForMore: 'مرر لأعلى لرؤية المزيد',
   },
   commandPalette: {
     searchPlaceholder: 'البحث في كل شيء...',

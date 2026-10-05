@@ -35,6 +35,8 @@ export default {
     loading: 'Chargement…',
     retry: 'Réessayer',
     knowledgeBase: 'Base de connaissances',
+    scrollDownForMore: 'Faites défiler vers le bas pour en voir plus',
+    scrollUpForMore: 'Faites défiler vers le haut pour en voir plus',
   },
 
   commandPalette: {

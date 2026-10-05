@@ -34,6 +34,8 @@ export default {
     loading: 'Загрузка…',
     retry: 'Повторить',
     knowledgeBase: 'База знаний',
+    scrollDownForMore: 'Прокрутите вниз, чтобы увидеть больше',
+    scrollUpForMore: 'Прокрутите вверх, чтобы увидеть больше',
   },
 
   commandPalette: {

@@ -34,6 +34,8 @@ export default {
     loading: 'Carregando...',
     retry: 'Tentar novamente',
     knowledgeBase: 'Base de Conhecimento',
+    scrollDownForMore: 'Role para baixo para ver mais',
+    scrollUpForMore: 'Role para cima para ver mais',
   },
   commandPalette: {
     searchPlaceholder: 'Pesquisar tudo...',

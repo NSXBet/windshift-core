@@ -1,4 +1,6 @@
 <script>
+  import { t } from '../stores/i18n.svelte.js';
+
   let {
     as = 'aside',
     class: className = '',
@@ -79,14 +81,18 @@
           class="scrollable-sidebar-fade scrollable-sidebar-fade-top"
           data-testid="{fadeTestId}-top"
           aria-hidden="true"
-        ></div>
+        >
+          <span class="scrollable-sidebar-fade-hint">{t('nav.scrollUpForMore')}</span>
+        </div>
       {/if}
       {#if showBottomFade}
         <div
           class="scrollable-sidebar-fade scrollable-sidebar-fade-bottom"
           data-testid="{fadeTestId}-bottom"
           aria-hidden="true"
-        ></div>
+        >
+          <span class="scrollable-sidebar-fade-hint">{t('nav.scrollDownForMore')}</span>
+        </div>
       {/if}
     {/if}
   </div>
@@ -120,6 +126,7 @@
     flex: 1 1 auto;
     align-self: stretch;
     flex-direction: column;
+    container-type: inline-size;
   }
 
   .scrollable-sidebar-content {
@@ -149,13 +156,16 @@
     z-index: 1;
     right: 0;
     left: 0;
-    height: 1.5rem;
+    display: flex;
+    height: 2rem;
+    justify-content: center;
     pointer-events: none;
     animation: scrollable-sidebar-fade-in 120ms ease-out;
   }
 
   .scrollable-sidebar-fade-top {
     top: 0;
+    align-items: flex-start;
     background: linear-gradient(
       to bottom,
       var(--scrollable-sidebar-fade-color, var(--ds-surface-raised)),
@@ -165,11 +175,29 @@
 
   .scrollable-sidebar-fade-bottom {
     bottom: 0;
+    align-items: flex-end;
     background: linear-gradient(
       to top,
       var(--scrollable-sidebar-fade-color, var(--ds-surface-raised)),
       transparent
     );
+  }
+
+  /* The hint is hidden in narrow, icon-only sidebars where it would not fit. */
+  .scrollable-sidebar-fade-hint {
+    display: none;
+    padding: 0.25rem 0.5rem;
+    color: var(--ds-text-subtle);
+    font-size: 0.6875rem;
+    font-weight: 500;
+    line-height: 1rem;
+    white-space: nowrap;
+  }
+
+  @container (min-width: 11rem) {
+    .scrollable-sidebar-fade-hint {
+      display: block;
+    }
   }
 
   @keyframes scrollable-sidebar-fade-in {

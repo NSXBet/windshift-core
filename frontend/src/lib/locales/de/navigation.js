@@ -33,6 +33,8 @@ export default {
     loading: 'Wird geladen...',
     retry: 'Erneut versuchen',
     knowledgeBase: 'Wissensdatenbank',
+    scrollDownForMore: 'Nach unten scrollen, um mehr zu sehen',
+    scrollUpForMore: 'Nach oben scrollen, um mehr zu sehen',
   },
   commandPalette: {
     searchPlaceholder: 'Alles durchsuchen...',

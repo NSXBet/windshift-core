@@ -29,6 +29,8 @@ export default {
     loading: '加载中...',
     retry: '重试',
     knowledgeBase: '知识库',
+    scrollDownForMore: '向下滚动查看更多',
+    scrollUpForMore: '向上滚动查看更多',
   },
 
   commandPalette: {
