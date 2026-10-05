@@ -2,9 +2,24 @@ package wscli
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
+
+// milestoneCancelledStatus is the persisted milestone status; the API rejects
+// the US spelling.
+const milestoneCancelledStatus = "cancelled" //nolint:misspell // Persisted API status.
+
+// normalizeMilestoneStatus maps the US spelling "canceled" to
+// milestoneCancelledStatus so `--status canceled` filters and updates as
+// users expect. Other values pass through for the API to validate.
+func normalizeMilestoneStatus(status string) string {
+	if strings.EqualFold(strings.TrimSpace(status), "canceled") {
+		return milestoneCancelledStatus
+	}
+	return status
+}
 
 var milestoneCmd = &cobra.Command{
 	Use:   "milestone",
@@ -29,7 +44,7 @@ Examples:
 
 		filters := make(map[string]string)
 		if milestoneStatusFilter != "" {
-			filters["status"] = milestoneStatusFilter
+			filters["status"] = normalizeMilestoneStatus(milestoneStatusFilter)
 		}
 
 		// --global routes through the legacy global endpoint; everything else
@@ -131,7 +146,7 @@ Examples:
 			Name:        milestoneCreateName,
 			Description: milestoneCreateDesc,
 			TargetDate:  milestoneCreateTarget,
-			Status:      milestoneCreateStatus,
+			Status:      normalizeMilestoneStatus(milestoneCreateStatus),
 		}
 
 		milestone, err := client.CreateMilestoneInWorkspace(wsID, req)
@@ -189,7 +204,8 @@ Examples:
 			hasUpdate = true
 		}
 		if cmd.Flags().Changed("status") {
-			req.Status = &milestoneUpdateStatus
+			status := normalizeMilestoneStatus(milestoneUpdateStatus)
+			req.Status = &status
 			hasUpdate = true
 		}
 
@@ -236,7 +252,7 @@ func init() {
 	milestoneCmd.AddCommand(milestoneUpdateCmd)
 
 	// List filters
-	milestoneListCmd.Flags().StringVarP(&milestoneStatusFilter, "status", "s", "", "filter by status (planning, in-progress, completed, canceled)")
+	milestoneListCmd.Flags().StringVarP(&milestoneStatusFilter, "status", "s", "", "filter by status (planning, in-progress, completed, "+milestoneCancelledStatus+")")
 	milestoneListCmd.Flags().BoolVar(&milestoneGlobalOnly, "global", false, "show only global milestones")
 
 	// Get flags
@@ -246,11 +262,11 @@ func init() {
 	milestoneCreateCmd.Flags().StringVarP(&milestoneCreateName, "name", "n", "", "milestone name (required)")
 	milestoneCreateCmd.Flags().StringVarP(&milestoneCreateDesc, "description", "d", "", "milestone description")
 	milestoneCreateCmd.Flags().StringVar(&milestoneCreateTarget, "target", "", "target date (YYYY-MM-DD)")
-	milestoneCreateCmd.Flags().StringVar(&milestoneCreateStatus, "status", "", "initial status (default: planning)")
+	milestoneCreateCmd.Flags().StringVar(&milestoneCreateStatus, "status", "", "initial status: planning (default), in-progress, completed, "+milestoneCancelledStatus)
 
 	// Update flags
 	milestoneUpdateCmd.Flags().StringVarP(&milestoneUpdateName, "name", "n", "", "new milestone name")
 	milestoneUpdateCmd.Flags().StringVarP(&milestoneUpdateDesc, "description", "d", "", "new description")
 	milestoneUpdateCmd.Flags().StringVar(&milestoneUpdateTarget, "target", "", "new target date (YYYY-MM-DD)")
-	milestoneUpdateCmd.Flags().StringVar(&milestoneUpdateStatus, "status", "", "new status")
+	milestoneUpdateCmd.Flags().StringVar(&milestoneUpdateStatus, "status", "", "new status: planning, in-progress, completed, "+milestoneCancelledStatus)
 }
