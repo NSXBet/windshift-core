@@ -429,4 +429,10 @@ export default {
     selectWorkspace: 'اختر مساحة عمل للبدء',
     noWorkspacesAvailable: 'لا توجد مساحات عمل متاحة بعد. يرجى الاتصال بالمسؤول للحصول على صلاحية الوصول إلى مساحة عمل.',
   },
+
+  workspaceDashboard: {
+    widgets: {
+      supportMetrics: { name: 'مقاييس الدعم', description: 'قائمة الانتظار وأول رد والحل والالتزام بـ SLA لتذاكر العملاء' },
+    },
+  },
 };

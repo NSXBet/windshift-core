@@ -337,6 +337,7 @@ export default {
       upcomingDeadlines: { name: 'Ближайшие сроки', description: 'Элементы с приближающимся сроком' },
       iterationTimeline: { name: 'График итераций', description: 'Текущие и ближайшие итерации' },
       testCoverage: { name: 'Покрытие тестами', description: 'Требования, связанные с тест-кейсами' },
+      supportMetrics: { name: 'Метрики поддержки', description: 'Бэклог, первый ответ, решение и соблюдение SLA для клиентских заявок' },
     },
     customization: {
       widgets: 'Виджеты', builtIn: 'Основные виджеты', builtInDescription: 'Основные показатели и графики пространства',

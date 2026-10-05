@@ -9644,6 +9644,15 @@
                   "format": "date-time",
                   "type": "string"
                 },
+                "creator_customer_organisation_id": {
+                  "description": "The creator customer organisation id value.",
+                  "nullable": true,
+                  "type": "integer"
+                },
+                "creator_customer_organisation_name": {
+                  "description": "The creator customer organisation name value.",
+                  "type": "string"
+                },
                 "creator_email": {
                   "description": "The creator email value.",
                   "type": "string"
@@ -10962,6 +10971,15 @@
                 "created_at": {
                   "description": "The created at value.",
                   "format": "date-time",
+                  "type": "string"
+                },
+                "creator_customer_organisation_id": {
+                  "description": "The creator customer organisation id value.",
+                  "nullable": true,
+                  "type": "integer"
+                },
+                "creator_customer_organisation_name": {
+                  "description": "The creator customer organisation name value.",
                   "type": "string"
                 },
                 "creator_email": {
@@ -12412,6 +12430,15 @@
                   "format": "date-time",
                   "type": "string"
                 },
+                "creator_customer_organisation_id": {
+                  "description": "The creator customer organisation id value.",
+                  "nullable": true,
+                  "type": "integer"
+                },
+                "creator_customer_organisation_name": {
+                  "description": "The creator customer organisation name value.",
+                  "type": "string"
+                },
                 "creator_email": {
                   "description": "The creator email value.",
                   "type": "string"
@@ -13597,6 +13624,15 @@
                   "format": "date-time",
                   "type": "string"
                 },
+                "creator_customer_organisation_id": {
+                  "description": "The creator customer organisation id value.",
+                  "nullable": true,
+                  "type": "integer"
+                },
+                "creator_customer_organisation_name": {
+                  "description": "The creator customer organisation name value.",
+                  "type": "string"
+                },
                 "creator_email": {
                   "description": "The creator email value.",
                   "type": "string"
@@ -14613,6 +14649,15 @@
                     "created_at": {
                       "description": "The created at value.",
                       "format": "date-time",
+                      "type": "string"
+                    },
+                    "creator_customer_organisation_id": {
+                      "description": "The creator customer organisation id value.",
+                      "nullable": true,
+                      "type": "integer"
+                    },
+                    "creator_customer_organisation_name": {
+                      "description": "The creator customer organisation name value.",
                       "type": "string"
                     },
                     "creator_email": {
@@ -15675,6 +15720,15 @@
                     "created_at": {
                       "description": "The created at value.",
                       "format": "date-time",
+                      "type": "string"
+                    },
+                    "creator_customer_organisation_id": {
+                      "description": "The creator customer organisation id value.",
+                      "nullable": true,
+                      "type": "integer"
+                    },
+                    "creator_customer_organisation_name": {
+                      "description": "The creator customer organisation name value.",
                       "type": "string"
                     },
                     "creator_email": {
@@ -16794,6 +16848,15 @@
                   "created_at": {
                     "description": "The created at value.",
                     "format": "date-time",
+                    "type": "string"
+                  },
+                  "creator_customer_organisation_id": {
+                    "description": "The creator customer organisation id value.",
+                    "nullable": true,
+                    "type": "integer"
+                  },
+                  "creator_customer_organisation_name": {
+                    "description": "The creator customer organisation name value.",
                     "type": "string"
                   },
                   "creator_email": {
@@ -19921,6 +19984,15 @@
                   "format": "date-time",
                   "type": "string"
                 },
+                "creator_customer_organisation_id": {
+                  "description": "The creator customer organisation id value.",
+                  "nullable": true,
+                  "type": "integer"
+                },
+                "creator_customer_organisation_name": {
+                  "description": "The creator customer organisation name value.",
+                  "type": "string"
+                },
                 "creator_email": {
                   "description": "The creator email value.",
                   "type": "string"
@@ -21149,6 +21221,15 @@
               "created_at": {
                 "description": "The created at value.",
                 "format": "date-time",
+                "type": "string"
+              },
+              "creator_customer_organisation_id": {
+                "description": "The creator customer organisation id value.",
+                "nullable": true,
+                "type": "integer"
+              },
+              "creator_customer_organisation_name": {
+                "description": "The creator customer organisation name value.",
                 "type": "string"
               },
               "creator_email": {
@@ -22873,6 +22954,15 @@
                   "format": "date-time",
                   "type": "string"
                 },
+                "creator_customer_organisation_id": {
+                  "description": "The creator customer organisation id value.",
+                  "nullable": true,
+                  "type": "integer"
+                },
+                "creator_customer_organisation_name": {
+                  "description": "The creator customer organisation name value.",
+                  "type": "string"
+                },
                 "creator_email": {
                   "description": "The creator email value.",
                   "type": "string"
@@ -23914,6 +24004,15 @@
                 "created_at": {
                   "description": "The created at value.",
                   "format": "date-time",
+                  "type": "string"
+                },
+                "creator_customer_organisation_id": {
+                  "description": "The creator customer organisation id value.",
+                  "nullable": true,
+                  "type": "integer"
+                },
+                "creator_customer_organisation_name": {
+                  "description": "The creator customer organisation name value.",
                   "type": "string"
                 },
                 "creator_email": {
@@ -28390,6 +28489,279 @@
         },
         "required": [
           "data"
+        ],
+        "type": "object"
+      },
+      "GetSupportMetricsAggregateResult": {
+        "additionalProperties": false,
+        "nullable": true,
+        "properties": {
+          "bucket": {
+            "description": "The bucket value.",
+            "type": "string"
+          },
+          "buckets": {
+            "description": "The buckets value.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "backlog_end": {
+                  "description": "The backlog end value.",
+                  "type": "integer"
+                },
+                "bucket_start": {
+                  "description": "The bucket start value.",
+                  "type": "string"
+                },
+                "created": {
+                  "description": "The created value.",
+                  "type": "integer"
+                },
+                "first_response_p50_ms": {
+                  "description": "The first response p50 ms value.",
+                  "nullable": true,
+                  "type": "number"
+                },
+                "reopened": {
+                  "description": "The reopened value.",
+                  "type": "integer"
+                },
+                "resolution_p50_ms": {
+                  "description": "The resolution p50 ms value.",
+                  "nullable": true,
+                  "type": "number"
+                },
+                "resolved": {
+                  "description": "The resolved value.",
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "backlog_end",
+                "bucket_start",
+                "created",
+                "reopened",
+                "resolved"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "from": {
+            "description": "The from value.",
+            "type": "string"
+          },
+          "generated_at": {
+            "description": "The generated at value.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "queues": {
+            "description": "The queues value.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "builtin": {
+                  "description": "The builtin value.",
+                  "type": "boolean"
+                },
+                "count": {
+                  "description": "The count value.",
+                  "type": "integer"
+                },
+                "id": {
+                  "description": "The id value.",
+                  "type": "integer"
+                },
+                "key": {
+                  "description": "The key value.",
+                  "type": "string"
+                },
+                "name": {
+                  "description": "The name value.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "builtin",
+                "count",
+                "id",
+                "name"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "segments": {
+            "description": "The segments value.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "backlog": {
+                  "description": "The backlog value.",
+                  "type": "integer"
+                },
+                "created": {
+                  "description": "The created value.",
+                  "type": "integer"
+                },
+                "key": {
+                  "description": "The key value.",
+                  "type": "string"
+                },
+                "label": {
+                  "description": "The label value.",
+                  "type": "string"
+                },
+                "reopened": {
+                  "description": "The reopened value.",
+                  "type": "integer"
+                },
+                "sla_breached": {
+                  "description": "The sla breached value.",
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "backlog",
+                "created",
+                "key",
+                "label",
+                "reopened",
+                "sla_breached"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "summary": {
+            "additionalProperties": false,
+            "description": "The summary value.",
+            "properties": {
+              "backlog": {
+                "description": "The backlog value.",
+                "type": "integer"
+              },
+              "created": {
+                "description": "The created value.",
+                "type": "integer"
+              },
+              "first_response": {
+                "additionalProperties": false,
+                "description": "The first response value.",
+                "nullable": true,
+                "properties": {
+                  "count": {
+                    "description": "The count value.",
+                    "type": "integer"
+                  },
+                  "p50_ms": {
+                    "description": "The p50 ms value.",
+                    "type": "number"
+                  },
+                  "p90_ms": {
+                    "description": "The p90 ms value.",
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "count",
+                  "p50_ms",
+                  "p90_ms"
+                ],
+                "type": "object"
+              },
+              "reopened": {
+                "description": "The reopened value.",
+                "type": "integer"
+              },
+              "resolution": {
+                "additionalProperties": false,
+                "description": "The resolution value.",
+                "nullable": true,
+                "properties": {
+                  "count": {
+                    "description": "The count value.",
+                    "type": "integer"
+                  },
+                  "p50_ms": {
+                    "description": "The p50 ms value.",
+                    "type": "number"
+                  },
+                  "p90_ms": {
+                    "description": "The p90 ms value.",
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "count",
+                  "p50_ms",
+                  "p90_ms"
+                ],
+                "type": "object"
+              },
+              "resolved": {
+                "description": "The resolved value.",
+                "type": "integer"
+              },
+              "sla": {
+                "additionalProperties": false,
+                "description": "The sla value.",
+                "nullable": true,
+                "properties": {
+                  "breached": {
+                    "description": "The breached value.",
+                    "type": "integer"
+                  },
+                  "completed": {
+                    "description": "The completed value.",
+                    "type": "integer"
+                  },
+                  "compliant_pct": {
+                    "description": "The compliant pct value.",
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "breached",
+                  "completed",
+                  "compliant_pct"
+                ],
+                "type": "object"
+              },
+              "unassigned": {
+                "description": "The unassigned value.",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "backlog",
+              "created",
+              "reopened",
+              "resolved",
+              "unassigned"
+            ],
+            "type": "object"
+          },
+          "timezone": {
+            "description": "The timezone value.",
+            "type": "string"
+          },
+          "to": {
+            "description": "The to value.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "bucket",
+          "buckets",
+          "from",
+          "generated_at",
+          "queues",
+          "segments",
+          "summary",
+          "timezone",
+          "to"
         ],
         "type": "object"
       },
@@ -41052,6 +41424,15 @@
                   "format": "date-time",
                   "type": "string"
                 },
+                "creator_customer_organisation_id": {
+                  "description": "The creator customer organisation id value.",
+                  "nullable": true,
+                  "type": "integer"
+                },
+                "creator_customer_organisation_name": {
+                  "description": "The creator customer organisation name value.",
+                  "type": "string"
+                },
                 "creator_email": {
                   "description": "The creator email value.",
                   "type": "string"
@@ -43632,6 +44013,15 @@
                       "format": "date-time",
                       "type": "string"
                     },
+                    "creator_customer_organisation_id": {
+                      "description": "The creator customer organisation id value.",
+                      "nullable": true,
+                      "type": "integer"
+                    },
+                    "creator_customer_organisation_name": {
+                      "description": "The creator customer organisation name value.",
+                      "type": "string"
+                    },
                     "creator_email": {
                       "description": "The creator email value.",
                       "type": "string"
@@ -44692,6 +45082,15 @@
                     "created_at": {
                       "description": "The created at value.",
                       "format": "date-time",
+                      "type": "string"
+                    },
+                    "creator_customer_organisation_id": {
+                      "description": "The creator customer organisation id value.",
+                      "nullable": true,
+                      "type": "integer"
+                    },
+                    "creator_customer_organisation_name": {
+                      "description": "The creator customer organisation name value.",
                       "type": "string"
                     },
                     "creator_email": {
@@ -45811,6 +46210,15 @@
                   "created_at": {
                     "description": "The created at value.",
                     "format": "date-time",
+                    "type": "string"
+                  },
+                  "creator_customer_organisation_id": {
+                    "description": "The creator customer organisation id value.",
+                    "nullable": true,
+                    "type": "integer"
+                  },
+                  "creator_customer_organisation_name": {
+                    "description": "The creator customer organisation name value.",
                     "type": "string"
                   },
                   "creator_email": {
@@ -47992,6 +48400,15 @@
               "created_at": {
                 "description": "The created at value.",
                 "format": "date-time",
+                "type": "string"
+              },
+              "creator_customer_organisation_id": {
+                "description": "The creator customer organisation id value.",
+                "nullable": true,
+                "type": "integer"
+              },
+              "creator_customer_organisation_name": {
+                "description": "The creator customer organisation name value.",
                 "type": "string"
               },
               "creator_email": {
@@ -53339,6 +53756,15 @@
                 "format": "date-time",
                 "type": "string"
               },
+              "creator_customer_organisation_id": {
+                "description": "The creator customer organisation id value.",
+                "nullable": true,
+                "type": "integer"
+              },
+              "creator_customer_organisation_name": {
+                "description": "The creator customer organisation name value.",
+                "type": "string"
+              },
               "creator_email": {
                 "description": "The creator email value.",
                 "type": "string"
@@ -54559,6 +54985,15 @@
               "created_at": {
                 "description": "The created at value.",
                 "format": "date-time",
+                "type": "string"
+              },
+              "creator_customer_organisation_id": {
+                "description": "The creator customer organisation id value.",
+                "nullable": true,
+                "type": "integer"
+              },
+              "creator_customer_organisation_name": {
+                "description": "The creator customer organisation name value.",
                 "type": "string"
               },
               "creator_email": {
@@ -69199,6 +69634,15 @@
                         "format": "date-time",
                         "type": "string"
                       },
+                      "creator_customer_organisation_id": {
+                        "description": "The creator customer organisation id value.",
+                        "nullable": true,
+                        "type": "integer"
+                      },
+                      "creator_customer_organisation_name": {
+                        "description": "The creator customer organisation name value.",
+                        "type": "string"
+                      },
                       "creator_email": {
                         "description": "The creator email value.",
                         "type": "string"
@@ -70240,6 +70684,15 @@
                 "created_at": {
                   "description": "The created at value.",
                   "format": "date-time",
+                  "type": "string"
+                },
+                "creator_customer_organisation_id": {
+                  "description": "The creator customer organisation id value.",
+                  "nullable": true,
+                  "type": "integer"
+                },
+                "creator_customer_organisation_name": {
+                  "description": "The creator customer organisation name value.",
                   "type": "string"
                 },
                 "creator_email": {
@@ -71297,6 +71750,15 @@
                     "created_at": {
                       "description": "The created at value.",
                       "format": "date-time",
+                      "type": "string"
+                    },
+                    "creator_customer_organisation_id": {
+                      "description": "The creator customer organisation id value.",
+                      "nullable": true,
+                      "type": "integer"
+                    },
+                    "creator_customer_organisation_name": {
+                      "description": "The creator customer organisation name value.",
                       "type": "string"
                     },
                     "creator_email": {
@@ -72366,6 +72828,15 @@
                     "created_at": {
                       "description": "The created at value.",
                       "format": "date-time",
+                      "type": "string"
+                    },
+                    "creator_customer_organisation_id": {
+                      "description": "The creator customer organisation id value.",
+                      "nullable": true,
+                      "type": "integer"
+                    },
+                    "creator_customer_organisation_name": {
+                      "description": "The creator customer organisation name value.",
                       "type": "string"
                     },
                     "creator_email": {
@@ -73538,6 +74009,15 @@
                 "format": "date-time",
                 "type": "string"
               },
+              "creator_customer_organisation_id": {
+                "description": "The creator customer organisation id value.",
+                "nullable": true,
+                "type": "integer"
+              },
+              "creator_customer_organisation_name": {
+                "description": "The creator customer organisation name value.",
+                "type": "string"
+              },
               "creator_email": {
                 "description": "The creator email value.",
                 "type": "string"
@@ -74654,6 +75134,15 @@
               "created_at": {
                 "description": "The created at value.",
                 "format": "date-time",
+                "type": "string"
+              },
+              "creator_customer_organisation_id": {
+                "description": "The creator customer organisation id value.",
+                "nullable": true,
+                "type": "integer"
+              },
+              "creator_customer_organisation_name": {
+                "description": "The creator customer organisation name value.",
                 "type": "string"
               },
               "creator_email": {
@@ -76200,6 +76689,15 @@
                   "created_at": {
                     "description": "The created at value.",
                     "format": "date-time",
+                    "type": "string"
+                  },
+                  "creator_customer_organisation_id": {
+                    "description": "The creator customer organisation id value.",
+                    "nullable": true,
+                    "type": "integer"
+                  },
+                  "creator_customer_organisation_name": {
+                    "description": "The creator customer organisation name value.",
                     "type": "string"
                   },
                   "creator_email": {
@@ -77899,6 +78397,15 @@
                     "format": "date-time",
                     "type": "string"
                   },
+                  "creator_customer_organisation_id": {
+                    "description": "The creator customer organisation id value.",
+                    "nullable": true,
+                    "type": "integer"
+                  },
+                  "creator_customer_organisation_name": {
+                    "description": "The creator customer organisation name value.",
+                    "type": "string"
+                  },
                   "creator_email": {
                     "description": "The creator email value.",
                     "type": "string"
@@ -79066,6 +79573,15 @@
                 "format": "date-time",
                 "type": "string"
               },
+              "creator_customer_organisation_id": {
+                "description": "The creator customer organisation id value.",
+                "nullable": true,
+                "type": "integer"
+              },
+              "creator_customer_organisation_name": {
+                "description": "The creator customer organisation name value.",
+                "type": "string"
+              },
               "creator_email": {
                 "description": "The creator email value.",
                 "type": "string"
@@ -80175,6 +80691,15 @@
                     "created_at": {
                       "description": "The created at value.",
                       "format": "date-time",
+                      "type": "string"
+                    },
+                    "creator_customer_organisation_id": {
+                      "description": "The creator customer organisation id value.",
+                      "nullable": true,
+                      "type": "integer"
+                    },
+                    "creator_customer_organisation_name": {
+                      "description": "The creator customer organisation name value.",
                       "type": "string"
                     },
                     "creator_email": {
@@ -112627,6 +113152,49 @@
         ],
         "x-required-scopes": [
           "statuses:write"
+        ]
+      }
+    },
+    "/support/metrics/aggregate": {
+      "get": {
+        "description": "Get the support metrics aggregate. Results include only resources visible to the authenticated caller; collections use their documented stable order and bounds.",
+        "operationId": "getSupportMetricsAggregate",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetSupportMetricsAggregateResult"
+                }
+              }
+            },
+            "description": "Get the support metrics aggregate response."
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthenticationError"
+          },
+          "403": {
+            "$ref": "#/components/responses/PermissionError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimitError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Get the support metrics aggregate",
+        "tags": [
+          "Work items"
+        ],
+        "x-required-scopes": [
+          "items:read"
         ]
       }
     },

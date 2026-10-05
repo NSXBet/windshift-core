@@ -346,6 +346,7 @@ export default {
       upcomingDeadlines: { name: 'Échéances à venir', description: 'Éléments dont la date d’échéance approche' },
       iterationTimeline: { name: 'Chronologie des itérations', description: 'Calendrier des itérations actuelles et à venir' },
       testCoverage: { name: 'Couverture des tests', description: 'Exigences couvertes par des cas de test' },
+      supportMetrics: { name: 'Métriques d’assistance', description: 'Backlog, première réponse, résolution et respect des SLA pour les tickets clients' },
     },
     customization: {
       widgets: 'Widgets', builtIn: 'Widgets intégrés', builtInDescription: 'Métriques et graphiques principaux de l’espace de travail',

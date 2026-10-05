@@ -160,6 +160,20 @@ export const widgetRegistry = [
     defaultWidth: 2,
     maxWidth: 3,
   },
+
+  // Support (helpdesk) widgets
+  {
+    type: 'support-metrics',
+    name: 'Support Metrics',
+    description: 'Backlog, first response, resolution, and SLA compliance for customer tickets',
+    nameKey: 'workspaceDashboard.widgets.supportMetrics.name',
+    descriptionKey: 'workspaceDashboard.widgets.supportMetrics.description',
+    category: widgetCategories.ADDITIONAL,
+    icon: 'LifeBuoy',
+    minWidth: 1,
+    defaultWidth: 2,
+    maxWidth: 3,
+  },
 ];
 
 // Helper functions

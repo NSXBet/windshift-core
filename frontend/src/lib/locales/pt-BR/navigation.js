@@ -428,4 +428,10 @@ export default {
     selectWorkspace: 'Selecione um workspace para começar',
     noWorkspacesAvailable: 'Nenhum workspace disponível ainda. Entre em contato com seu administrador para obter acesso a um workspace.',
   },
+
+  workspaceDashboard: {
+    widgets: {
+      supportMetrics: { name: 'Métricas de suporte', description: 'Backlog, primeira resposta, resolução e cumprimento de SLA dos tickets de clientes' },
+    },
+  },
 };

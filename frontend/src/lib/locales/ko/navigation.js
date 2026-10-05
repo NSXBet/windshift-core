@@ -548,6 +548,10 @@ export default {
       "testCoverage": {
         "name": "테스트 커버리지",
         "description": "테스트 케이스로 검증되는 요구사항"
+      },
+      "supportMetrics": {
+        "name": "지원 지표",
+        "description": "고객 티켓의 백로그, 최초 응답, 해결 및 SLA 준수"
       }
     },
     "customization": {

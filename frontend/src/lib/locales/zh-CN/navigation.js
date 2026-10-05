@@ -236,4 +236,10 @@ export default {
     selectWorkspace: '选择工作区以开始',
     noWorkspacesAvailable: '暂无可用工作区。请联系管理员以获取工作区访问权限。',
   },
+
+  workspaceDashboard: {
+    widgets: {
+      supportMetrics: { name: '支持指标', description: '客户工单的待办、首次响应、解决情况和 SLA 合规性' },
+    },
+  },
 };
