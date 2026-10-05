@@ -9103,6 +9103,22 @@
         ]
       }
     },
+    "/support/metrics/aggregate": {
+      "get": {
+        "description": "Get the support metrics aggregate. Results include only resources visible to the authenticated caller; collections use their documented stable order and bounds.",
+        "parameters": [],
+        "responses": {
+          "401": {},
+          "403": {},
+          "429": {},
+          "500": {}
+        },
+        "summary": "Get the support metrics aggregate",
+        "tags": [
+          "Work items"
+        ]
+      }
+    },
     "/test-cases/{test_case_id}/links": {
       "get": {
         "description": "List test case links. Results include only resources visible to the authenticated caller; collections use their documented stable order and bounds.",

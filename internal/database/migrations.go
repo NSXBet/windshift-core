@@ -2316,6 +2316,120 @@ var Catalog = []Migration{
 		ApplySQLite: applySQLiteEmailReplyOutboxPerRecipient,
 	},
 	{
+		Version:       "20261010_portal_org_sharing",
+		Name:          "Portal organisation request sharing (WI-1139)",
+		CheckSQLite:   sqliteColumnCheck("customer_organisations", "settings"),
+		CheckPostgres: pgColumnCheck("customer_organisations", "settings"),
+		SQLite: `
+			ALTER TABLE customer_organisations ADD COLUMN settings TEXT NOT NULL DEFAULT '{}';
+			ALTER TABLE contact_roles ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0;
+			ALTER TABLE items ADD COLUMN portal_org_shared BOOLEAN NOT NULL DEFAULT false;
+		`,
+		Postgres: `
+			ALTER TABLE customer_organisations ADD COLUMN IF NOT EXISTS settings JSONB NOT NULL DEFAULT '{}'::JSONB;
+			ALTER TABLE contact_roles ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0;
+			ALTER TABLE items ADD COLUMN IF NOT EXISTS portal_org_shared BOOLEAN NOT NULL DEFAULT false;
+		`,
+	},
+	{
+		Version:       "20261011_item_support_events",
+		Name:          "Append-only ticket fact events for support metrics (WI-1133)",
+		CheckSQLite:   sqliteTableCheck("item_support_events"),
+		CheckPostgres: pgTableCheck("item_support_events"),
+		SQLite: `
+			CREATE TABLE IF NOT EXISTS item_support_events (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				workspace_id INTEGER NOT NULL,
+				item_id INTEGER NOT NULL,
+				kind TEXT NOT NULL,
+				occurred_at DATETIME NOT NULL,
+				FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+				FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE
+			);
+			CREATE INDEX IF NOT EXISTS idx_item_support_events_scope ON item_support_events(workspace_id, kind, occurred_at);
+			CREATE INDEX IF NOT EXISTS idx_item_support_events_item ON item_support_events(item_id, kind);
+			CREATE UNIQUE INDEX IF NOT EXISTS uq_item_support_events_single_shot ON item_support_events(item_id, kind) WHERE kind IN ('first_response', 'resolved');
+
+			INSERT INTO item_support_events (workspace_id, item_id, kind, occurred_at)
+			SELECT i.workspace_id, i.id, 'first_response', MIN(c.created_at)
+			FROM items i
+			JOIN comments c ON c.item_id = i.id
+			WHERE (i.channel_id IS NOT NULL OR i.creator_portal_customer_id IS NOT NULL)
+				AND c.is_private = false
+				AND c.author_id IS NOT NULL
+				AND c.portal_customer_id IS NULL
+			GROUP BY i.workspace_id, i.id
+			ON CONFLICT DO NOTHING;
+
+			INSERT INTO item_support_events (workspace_id, item_id, kind, occurred_at)
+			SELECT i.workspace_id, ih.item_id, 'resolved', MIN(ih.changed_at)
+			FROM items i
+			JOIN item_history ih ON ih.item_id = i.id AND ih.field_name = 'status_id'
+			JOIN statuses st ON ih.new_value = CAST(st.id AS TEXT)
+			JOIN status_categories sc ON st.category_id = sc.id AND sc.is_completed = true
+			WHERE (i.channel_id IS NOT NULL OR i.creator_portal_customer_id IS NOT NULL)
+			GROUP BY i.workspace_id, ih.item_id
+			ON CONFLICT DO NOTHING;
+
+			INSERT INTO item_support_events (workspace_id, item_id, kind, occurred_at)
+			SELECT i.workspace_id, ih.item_id, 'reopened', ih.changed_at
+			FROM items i
+			JOIN item_history ih ON ih.item_id = i.id AND ih.field_name = 'status_id'
+			JOIN statuses st_old ON ih.old_value = CAST(st_old.id AS TEXT)
+			JOIN status_categories sc_old ON st_old.category_id = sc_old.id AND sc_old.is_completed = true
+			LEFT JOIN statuses st_new ON ih.new_value = CAST(st_new.id AS TEXT)
+			LEFT JOIN status_categories sc_new ON st_new.category_id = sc_new.id
+			WHERE (i.channel_id IS NOT NULL OR i.creator_portal_customer_id IS NOT NULL)
+				AND COALESCE(sc_new.is_completed, false) = false;
+		`,
+		Postgres: `
+			CREATE TABLE IF NOT EXISTS item_support_events (
+				id BIGSERIAL PRIMARY KEY,
+				workspace_id BIGINT NOT NULL,
+				item_id BIGINT NOT NULL,
+				kind TEXT NOT NULL,
+				occurred_at TIMESTAMPTZ NOT NULL,
+				FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+				FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE
+			);
+			CREATE INDEX IF NOT EXISTS idx_item_support_events_scope ON item_support_events(workspace_id, kind, occurred_at);
+			CREATE INDEX IF NOT EXISTS idx_item_support_events_item ON item_support_events(item_id, kind);
+			CREATE UNIQUE INDEX IF NOT EXISTS uq_item_support_events_single_shot ON item_support_events(item_id, kind) WHERE kind IN ('first_response', 'resolved');
+
+			INSERT INTO item_support_events (workspace_id, item_id, kind, occurred_at)
+			SELECT i.workspace_id, i.id, 'first_response', MIN(c.created_at)
+			FROM items i
+			JOIN comments c ON c.item_id = i.id
+			WHERE (i.channel_id IS NOT NULL OR i.creator_portal_customer_id IS NOT NULL)
+				AND c.is_private = false
+				AND c.author_id IS NOT NULL
+				AND c.portal_customer_id IS NULL
+			GROUP BY i.workspace_id, i.id
+			ON CONFLICT DO NOTHING;
+
+			INSERT INTO item_support_events (workspace_id, item_id, kind, occurred_at)
+			SELECT i.workspace_id, ih.item_id, 'resolved', MIN(ih.changed_at)
+			FROM items i
+			JOIN item_history ih ON ih.item_id = i.id AND ih.field_name = 'status_id'
+			JOIN statuses st ON ih.new_value = CAST(st.id AS TEXT)
+			JOIN status_categories sc ON st.category_id = sc.id AND sc.is_completed = true
+			WHERE (i.channel_id IS NOT NULL OR i.creator_portal_customer_id IS NOT NULL)
+			GROUP BY i.workspace_id, ih.item_id
+			ON CONFLICT DO NOTHING;
+
+			INSERT INTO item_support_events (workspace_id, item_id, kind, occurred_at)
+			SELECT i.workspace_id, ih.item_id, 'reopened', ih.changed_at
+			FROM items i
+			JOIN item_history ih ON ih.item_id = i.id AND ih.field_name = 'status_id'
+			JOIN statuses st_old ON ih.old_value = CAST(st_old.id AS TEXT)
+			JOIN status_categories sc_old ON st_old.category_id = sc_old.id AND sc_old.is_completed = true
+			LEFT JOIN statuses st_new ON ih.new_value = CAST(st_new.id AS TEXT)
+			LEFT JOIN status_categories sc_new ON st_new.category_id = sc_new.id
+			WHERE (i.channel_id IS NOT NULL OR i.creator_portal_customer_id IS NOT NULL)
+				AND COALESCE(sc_new.is_completed, false) = false;
+		`,
+	},
+	{
 		Version: "20261002_zammad_ticket_change_history",
 		Name:    "Record observed Zammad ticket field changes",
 		CheckSQLite: `

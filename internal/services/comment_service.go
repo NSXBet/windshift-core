@@ -434,6 +434,9 @@ func (s *CommentService) CreateInTx(ctx context.Context, tx database.Tx, itemID,
 	_, err = itemevents.NewRecorder(s.db).CommentCreated(ctx, tx, workspaceID, itemevents.CommentCreatedV1{
 		ItemID: itemID, CommentID: id, AuthorID: authorIDPtr, SuppressSideEffects: true,
 	}, metadata)
+	if err == nil && authorID > 0 {
+		err = repository.NewItemSupportEventRepository(s.db).RecordFirstResponse(tx, itemID, createdAt)
+	}
 	return id, err
 }
 
@@ -460,6 +463,13 @@ func (s *CommentService) CreateImported(params CreateCommentParams) (*CreateComm
 		params.EventMetadata.SourceKind = "import"
 	}
 	return s.create(params)
+}
+
+// isPublicAgentComment reports whether a comment counts as the
+// customer-visible response for support metrics (WI-1133): not private and
+// written by a user rather than a portal customer or the system.
+func isPublicAgentComment(isPrivate bool, authorID int, portalCustomerID *int) bool {
+	return !isPrivate && authorID > 0 && portalCustomerID == nil
 }
 
 func (s *CommentService) create(params CreateCommentParams) (*CreateCommentResult, error) {
@@ -535,6 +545,11 @@ func (s *CommentService) create(params CreateCommentParams) (*CreateCommentResul
 		SuppressSideEffects: params.SuppressNotifications,
 	}, metadata); err != nil {
 		return nil, err
+	}
+	if isPublicAgentComment(params.IsPrivate, params.AuthorID, params.PortalCustomerID) {
+		if err := repository.NewItemSupportEventRepository(s.db).RecordFirstResponse(tx, params.ItemID, now); err != nil {
+			return nil, err
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("failed to commit comment: %w", err)

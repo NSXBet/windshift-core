@@ -156,6 +156,7 @@ var validWorkspaceWidgetTypes = map[string]bool{
 	"iteration-timeline":       true,
 	"test-coverage":            true,
 	"saved-search":             true,
+	"support-metrics":          true,
 	"zammad-support-overview":  true,
 }
 

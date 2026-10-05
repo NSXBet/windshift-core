@@ -670,7 +670,10 @@
 				</div>
 				<div class="flex items-center justify-between mt-3">
 					<div class="flex items-center gap-4">
-						{#if workspaceId && !isPersonalWorkspace}
+						<!-- Canned responses are support-reply snippets, so they only
+						     belong on external requests. The picker hides itself when the
+						     workspace has none. -->
+						{#if workspaceId && !isPersonalWorkspace && isExternalRequest}
 							<CannedResponsePicker
 								{workspaceId}
 								onSelect={insertCannedResponse}

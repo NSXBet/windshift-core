@@ -229,6 +229,7 @@ const portalRequestSelect = `
 		i.merged_into_item_id
 	FROM items i
 	JOIN workspaces w ON i.workspace_id = w.id
+	LEFT JOIN portal_customers pc ON i.creator_portal_customer_id = pc.id
 	LEFT JOIN request_types rt ON i.request_type_id = rt.id
 	LEFT JOIN statuses s ON i.status_id = s.id
 	LEFT JOIN status_categories sc ON s.category_id = sc.id
@@ -267,14 +268,16 @@ func scanPortalRequestRow(scanner interface {
 }
 
 // portalMergedDuplicateVisible keeps a merged duplicate in a requester's list
-// only when its content stayed with that requester. A same-requester merge
-// moves the thread to the canonical, so the duplicate is hidden as a redirect;
-// a cross-requester merge keeps files and the original request on the source
-// (WI-1566), so hiding it would remove the customer's own ticket.
+// only when it is a cross-requester merge: the source's files and original
+// request stay with its own requester (WI-1566), so hiding it would remove the
+// customer's own ticket. A same-requester merge moves the thread to the
+// canonical, so the duplicate is hidden as a redirect. "Same requester" is the
+// portal-customer identity, matching ItemLifecycleService.sameRequester, with
+// COALESCE so a NULL (internal) creator compares deterministically.
 const portalMergedDuplicateVisible = `(i.merged_into_item_id IS NULL OR EXISTS (
 		SELECT 1 FROM items canonical
 		WHERE canonical.id = i.merged_into_item_id
-		  AND (canonical.creator_id = i.creator_id OR canonical.creator_portal_customer_id = i.creator_portal_customer_id)
+		  AND COALESCE(canonical.creator_portal_customer_id, 0) <> COALESCE(i.creator_portal_customer_id, 0)
 	))`
 
 // PortalRequestVisibility describes which items a portal exposes to its
@@ -288,6 +291,19 @@ type PortalRequestVisibility struct {
 	ServedWorkspaceIDs    []int
 }
 
+// PortalOrgShare describes the organisation-sharing that applies to one portal
+// viewer. The service resolves it from the organisation's settings and the
+// viewer's contact levels (settings live in JSON, so they are parsed in Go),
+// leaving the repository to express only the resulting per-item condition. The
+// zero value disables organisation sharing.
+type PortalOrgShare struct {
+	// OrganisationID is the viewer's organisation when sharing applies to them.
+	OrganisationID int
+	// Mode is models.OrgRequestSharingAutomatic or
+	// models.OrgRequestSharingRequesterChoice. Empty means no org sharing.
+	Mode string
+}
+
 // ListChannelRequestsByCreator returns the newest 500 requests an internal
 // user submitted through the given portal (own channel plus linked intake
 // channels).
@@ -298,13 +314,49 @@ func (r *ItemRepository) ListChannelRequestsByCreator(creatorID int, visibility 
 // ListChannelRequestsByPortalCustomer returns the newest 500 requests a portal
 // customer submitted through the given portal (own channel plus linked intake
 // channels), plus any requests where the customer is an external participant
-// (WI-1136).
-func (r *ItemRepository) ListChannelRequestsByPortalCustomer(customerID int, visibility PortalRequestVisibility) ([]PortalRequestRow, error) {
+// (WI-1136), plus organisation-shared requests when orgShare applies (WI-1139).
+func (r *ItemRepository) ListChannelRequestsByPortalCustomer(customerID int, orgShare PortalOrgShare, visibility PortalRequestVisibility) ([]PortalRequestRow, error) {
 	ownerClause := `(i.creator_portal_customer_id = ? OR EXISTS (
 		SELECT 1 FROM item_participants p
 		WHERE p.item_id = i.id AND p.portal_customer_id = ?
 	))`
-	return r.listChannelRequests(ownerClause, []any{customerID, customerID}, visibility)
+	ownerArgs := []any{customerID, customerID}
+	switch {
+	case orgShare.OrganisationID == 0:
+		// Org sharing does not apply to this viewer.
+	case orgShare.Mode == models.OrgRequestSharingAutomatic:
+		ownerClause = "(" + ownerClause + " OR pc.customer_organisation_id = ?)"
+		ownerArgs = append(ownerArgs, orgShare.OrganisationID)
+	case orgShare.Mode == models.OrgRequestSharingRequesterChoice:
+		ownerClause = "(" + ownerClause + " OR (pc.customer_organisation_id = ? AND i.portal_org_shared = true))"
+		ownerArgs = append(ownerArgs, orgShare.OrganisationID)
+	}
+	return r.listChannelRequests(ownerClause, ownerArgs, visibility)
+}
+
+// PortalRequestOrgShare returns the creator's organisation and whether the item
+// carries the organisation-share flag, for the portal detail gate. Returns
+// ErrNotFound when the item does not exist.
+func (r *ItemRepository) PortalRequestOrgShare(itemID int) (creatorOrgID *int, shared bool, err error) {
+	var orgID sql.NullInt64
+	var sharedFlag sql.NullBool
+	err = r.db.QueryRow(`
+		SELECT pc.customer_organisation_id, i.portal_org_shared
+		FROM items i
+		LEFT JOIN portal_customers pc ON i.creator_portal_customer_id = pc.id
+		WHERE i.id = ?
+	`, itemID).Scan(&orgID, &sharedFlag)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, false, ErrNotFound
+	}
+	if err != nil {
+		return nil, false, fmt.Errorf("get portal request organisation share: %w", err)
+	}
+	if orgID.Valid {
+		id := int(orgID.Int64)
+		creatorOrgID = &id
+	}
+	return creatorOrgID, sharedFlag.Valid && sharedFlag.Bool, nil
 }
 
 func (r *ItemRepository) listChannelRequests(ownerClause string, ownerArgs []any, visibility PortalRequestVisibility) ([]PortalRequestRow, error) {
