@@ -4,10 +4,25 @@ import { api } from '../../api.js';
 // many rows. Cache each item's state briefly and dedupe concurrent reads so a
 // page issues at most one request per item, and none at all on a re-render.
 const TTL_MS = 30_000;
+// Cap the caches so a long-lived page that renders thousands of distinct rows
+// cannot retain every entry until an explicit invalidation.
+const MAX_CACHE_ENTRIES = 2000;
 const stateCache = new Map();
 const inFlight = new Map();
 const thresholdsCache = new Map();
 let cacheGeneration = 0;
+
+function pruneCache(cache, now = Date.now()) {
+  if (cache.size <= MAX_CACHE_ENTRIES) return;
+  for (const [key, entry] of cache) {
+    if (now - entry.at >= TTL_MS) cache.delete(key);
+  }
+  // Still over the cap: drop oldest-first (Map preserves insertion order).
+  while (cache.size > MAX_CACHE_ENTRIES) {
+    const oldest = cache.keys().next().value;
+    cache.delete(oldest);
+  }
+}
 
 // Batch coalescing: badges mounted in the same tick share one workspace
 // batch read instead of issuing one request per row (WI-1591). Items whose
@@ -23,6 +38,7 @@ export async function getItemSLA(itemId, workspaceId = null) {
   const cached = stateCache.get(itemId);
   const now = Date.now();
   if (cached && now - cached.at < TTL_MS) return cached.value;
+  if (cached) stateCache.delete(itemId);
   if (inFlight.has(itemId)) return inFlight.get(itemId);
 
   if (workspaceId && api.sla?.getItemSLABatch) {
@@ -40,9 +56,21 @@ function enqueueBatchItemSLA(itemId, workspaceId) {
     queue = { ids: new Set(), waiters: new Map(), scheduled: false };
     pendingByWorkspace.set(workspaceId, queue);
   }
-  if (queue.waiters.has(itemId)) return queue.waiters.get(itemId);
+  const existing = queue.waiters.get(itemId);
+  if (existing) return existing.promise;
+
+  let resolve;
+  const promise = new Promise((r) => {
+    resolve = r;
+  });
   queue.ids.add(itemId);
-  const promise = new Promise((resolve) => queue.waiters.set(itemId, resolve));
+  queue.waiters.set(itemId, { promise, resolve });
+  // Claim the in-flight slot so a remount during the flush reuses this read
+  // instead of issuing a second batch for the same item.
+  inFlight.set(itemId, promise);
+  promise.finally(() => {
+    if (inFlight.get(itemId) === promise) inFlight.delete(itemId);
+  });
   if (!queue.scheduled) {
     queue.scheduled = true;
     queueMicrotask(() => flushBatchItemSLA(workspaceId, queue));
@@ -75,18 +103,19 @@ async function flushBatchItemSLA(workspaceId, queue) {
     })
   );
   for (const itemId of ids) {
-    const resolve = queue.waiters.get(itemId);
-    if (!resolve) continue;
+    const waiter = queue.waiters.get(itemId);
+    if (!waiter) continue;
     if (!results.has(itemId)) {
       // Leave the cache untouched so the next mount retries the batch.
-      resolve([]);
+      waiter.resolve([]);
       continue;
     }
     const value = results.get(itemId);
     if (generation === cacheGeneration) {
       stateCache.set(itemId, { value, at: Date.now() });
+      pruneCache(stateCache);
     }
-    resolve(value);
+    waiter.resolve(value);
   }
 }
 
@@ -99,6 +128,7 @@ function fetchItemSLA(itemId) {
     .then((value) => {
       if (generation === cacheGeneration) {
         stateCache.set(itemId, { value: value ?? [], at: Date.now() });
+        pruneCache(stateCache);
       }
       return value ?? [];
     })
@@ -115,9 +145,13 @@ export async function getSLAThresholds(workspaceId) {
   if (!workspaceId || !api.sla?.getWarningThresholds) return [];
   const cached = thresholdsCache.get(workspaceId);
   if (cached && Date.now() - cached.at < TTL_MS) return cached.value;
+  if (cached) thresholdsCache.delete(workspaceId);
   const generation = cacheGeneration;
   const value = (await api.sla.getWarningThresholds(workspaceId).catch(() => [])) ?? [];
-  if (generation === cacheGeneration) thresholdsCache.set(workspaceId, { value, at: Date.now() });
+  if (generation === cacheGeneration) {
+    thresholdsCache.set(workspaceId, { value, at: Date.now() });
+    pruneCache(thresholdsCache);
+  }
   return value;
 }
 

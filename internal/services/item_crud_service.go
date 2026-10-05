@@ -365,6 +365,12 @@ func (s *ItemCRUDService) GetChildren(parentID int) ([]*models.Item, error) {
 	return s.repo.GetChildren(parentID)
 }
 
+// GetChildrenInWorkspacesContext returns direct children restricted to the
+// given accessible workspaces.
+func (s *ItemCRUDService) GetChildrenInWorkspacesContext(ctx context.Context, parentID int, workspaceIDs []int) ([]*models.Item, error) {
+	return s.repo.GetChildrenInWorkspacesContext(ctx, parentID, workspaceIDs)
+}
+
 // GetDescendants returns all descendants of an item
 // deadcode-keep: called by core-tests/internal/services/item_crud_service_test.go
 func (s *ItemCRUDService) GetDescendants(parentID int) ([]*models.Item, error) {

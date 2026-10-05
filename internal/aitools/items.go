@@ -499,8 +499,13 @@ func init() {
 			if err != nil {
 				return nil, err
 			}
+			// Cross-workspace children exist by design; drop any child whose
+			// workspace the caller cannot view rather than disclosing it.
 			out := make([]itemSummaryDTO, 0, len(children))
 			for _, c := range children {
+				if !env.HasWorkspaceAccess(c.WorkspaceID) {
+					continue
+				}
 				out = append(out, itemToSummary(c))
 			}
 			return map[string]any{"children": out}, nil

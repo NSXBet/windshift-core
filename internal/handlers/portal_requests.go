@@ -59,7 +59,18 @@ func (h *PortalHandler) resolvePortalRequest(w http.ResponseWriter, r *http.Requ
 			return 0, models.ChannelConfig{}, nil, nil, false, nil, nil, false
 		}
 		if isApprover {
-			return itemID, config, internalUserID, portalCustomerID, false, ctx, cancel, true
+			// Approver access must not outlive the portal's served-workspace
+			// configuration. Without this the fallback grants access to an item
+			// whose workspace was removed from the portal.
+			served, serr := h.portalService.PortalServesRequestWorkspace(ctx, itemID, channel.ID)
+			if serr != nil {
+				cancel()
+				respondInternalError(w, r, serr)
+				return 0, models.ChannelConfig{}, nil, nil, false, nil, nil, false
+			}
+			if served {
+				return itemID, config, internalUserID, portalCustomerID, false, ctx, cancel, true
+			}
 		}
 	}
 

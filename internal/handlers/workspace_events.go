@@ -79,6 +79,13 @@ func (h *ItemHandler) CollectionEvents(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *ItemHandler) streamWorkspaceEvents(w http.ResponseWriter, r *http.Request, user *models.User, workspaceIDs []int, seed int) {
+	release, ok := h.sseHub.AcquireUserStream(user.ID)
+	if !ok {
+		respondTooManyRequests(w, r, "Too many live update streams are already open for this account")
+		return
+	}
+	defer release()
+
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		respondServiceUnavailable(w, r, "streaming is unsupported on this connection")

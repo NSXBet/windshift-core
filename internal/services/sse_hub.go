@@ -114,19 +114,76 @@ func (s *UserSubscriber) UserID() int { return s.userID }
 // deployment would need Postgres LISTEN/NOTIFY or Redis behind the same
 // publisher interfaces; nothing else in the system would change.
 type SSEHub struct {
-	mu            sync.RWMutex
-	subs          map[int]map[*ItemSubscriber]struct{}      // itemID -> set of subscribers
-	workspaceSubs map[int]map[*WorkspaceSubscriber]struct{} // workspaceID -> set of subscribers
-	userSubs      map[int]map[*UserSubscriber]struct{}      // userID -> set of subscribers
+	mu             sync.RWMutex
+	subs           map[int]map[*ItemSubscriber]struct{}      // itemID -> set of subscribers
+	workspaceSubs  map[int]map[*WorkspaceSubscriber]struct{} // workspaceID -> set of subscribers
+	userSubs       map[int]map[*UserSubscriber]struct{}      // userID -> set of subscribers
+	userStreams    map[int]int                               // userID -> live stream count across every stream type
+	maxUserStreams int
 }
+
+// DefaultMaxUserStreams caps concurrent SSE connections per authenticated user.
+// Without a cap, one client can retain handlers, sockets, and subscriptions
+// indefinitely because stream routes are exempt from the request concurrency
+// limiter and write deadlines are lifted for the connection lifetime.
+const DefaultMaxUserStreams = 8
 
 // NewSSEHub creates an empty hub.
 func NewSSEHub() *SSEHub {
 	return &SSEHub{
-		subs:          make(map[int]map[*ItemSubscriber]struct{}),
-		workspaceSubs: make(map[int]map[*WorkspaceSubscriber]struct{}),
-		userSubs:      make(map[int]map[*UserSubscriber]struct{}),
+		subs:           make(map[int]map[*ItemSubscriber]struct{}),
+		workspaceSubs:  make(map[int]map[*WorkspaceSubscriber]struct{}),
+		userSubs:       make(map[int]map[*UserSubscriber]struct{}),
+		userStreams:    make(map[int]int),
+		maxUserStreams: DefaultMaxUserStreams,
 	}
+}
+
+// SetMaxUserStreams overrides the per-user stream cap; a non-positive value
+// disables the cap.
+func (h *SSEHub) SetMaxUserStreams(limit int) {
+	if h == nil {
+		return
+	}
+	h.mu.Lock()
+	h.maxUserStreams = limit
+	h.mu.Unlock()
+}
+
+// AcquireUserStream reserves one of the user's stream slots. The returned
+// release function must be called exactly once when the connection closes. ok
+// is false when the per-user cap is already reached, so the caller can reject
+// the connection instead of retaining another handler.
+func (h *SSEHub) AcquireUserStream(userID int) (release func(), ok bool) {
+	if h == nil {
+		return func() {}, true
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.maxUserStreams > 0 && h.userStreams[userID] >= h.maxUserStreams {
+		return nil, false
+	}
+	h.userStreams[userID]++
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			h.mu.Lock()
+			defer h.mu.Unlock()
+			if h.userStreams[userID] <= 1 {
+				delete(h.userStreams, userID)
+				return
+			}
+			h.userStreams[userID]--
+		})
+	}, true
+}
+
+// UserStreamCount returns the number of live streams for a user
+// (test/observability helper).
+func (h *SSEHub) UserStreamCount(userID int) int {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.userStreams[userID]
 }
 
 // PublishItemChange fans an item-change out to every subscriber of that item.

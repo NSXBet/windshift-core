@@ -526,8 +526,24 @@ func (s *ItemApplicationService) supportSegmentRows(ctx context.Context, trend *
 		return nil, err
 	}
 
+	// Org segmentation is gated by workspace access, but the org whitelist is
+	// a separate visibility rule. Drop orgs the caller cannot see
+	// so their ids, names, and aggregate statistics never reach the response.
+	var visibleOrgs map[int64]struct{}
+	if dimension == SupportSegmentOrganisation && len(ids) > 0 {
+		visibleOrgs, err = s.visibleOrganisationIDs(q.UserID, ids)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	rows := make([]models.SupportMetricsSegment, 0, len(merged))
 	for _, value := range merged {
+		if value.hasValue && visibleOrgs != nil {
+			if _, ok := visibleOrgs[value.id]; !ok {
+				continue
+			}
+		}
 		entry := value.entry
 		if value.hasValue {
 			entry.Key = fmt.Sprintf("%d", value.id)
@@ -539,6 +555,16 @@ func (s *ItemApplicationService) supportSegmentRows(ctx context.Context, trend *
 	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].Key < rows[j].Key })
 	return rows, nil
+}
+
+// visibleOrganisationIDs resolves which of the given organisation ids the
+// caller may see. It fails closed when no permission service is wired.
+func (s *ItemApplicationService) visibleOrganisationIDs(userID int, orgIDs []int64) (map[int64]struct{}, error) {
+	if s.perm == nil {
+		return map[int64]struct{}{}, nil
+	}
+	svc := NewCustomerOrganisationPermissionService(s.db, s.perm, NewTimePermissionService(s.db, s.perm))
+	return svc.FilterVisible(userID, orgIDs)
 }
 
 func parseID(value string) int64 {

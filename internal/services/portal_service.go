@@ -468,6 +468,25 @@ func (s *PortalService) GetRequestDetail(_ context.Context, itemID int) (*Portal
 	}, nil
 }
 
+// PortalServesRequestWorkspace reports whether the portal channel currently
+// serves the item's workspace. VerifyRequestOwnership applies the same check
+// for owners; approver-derived access must apply it too, otherwise removing a
+// workspace from a portal leaves active approvers able to read its requests.
+func (s *PortalService) PortalServesRequestWorkspace(ctx context.Context, itemID, portalChannelID int) (bool, error) {
+	detail, err := s.GetRequestDetail(ctx, itemID)
+	if err != nil {
+		return false, err
+	}
+	if detail == nil {
+		return false, nil
+	}
+	vis, err := s.portalRequestVisibility(ctx, portalChannelID)
+	if err != nil {
+		return false, err
+	}
+	return portalServesWorkspace(vis, detail.WorkspaceID), nil
+}
+
 // VerifyRequestOwnership verifies that a user owns a request
 // Returns true if the user owns the request within the specified channel.
 // Since WI-1547 the check also admits items created through enabled intake

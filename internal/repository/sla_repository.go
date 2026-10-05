@@ -818,6 +818,29 @@ func (r *SLARepository) ListMetrics(ctx context.Context, workspaceID int) ([]mod
 	return metrics, nil
 }
 
+// ListMetricSummaries returns a workspace's metric identity fields without
+// hydrating conditions, goals, or targets. Badge rendering only needs the
+// metric id, name, and display format, so this avoids the per-metric and
+// per-goal configuration queries ListMetrics issues.
+func (r *SLARepository) ListMetricSummaries(ctx context.Context, workspaceID int) ([]models.SLAMetric, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT id, workspace_id, name, display_format, position, is_active,
+		import_status, source, source_id, source_payload, created_at, updated_at
+		FROM sla_metrics WHERE workspace_id = ? ORDER BY position, id`, workspaceID)
+	if err != nil {
+		return nil, fmt.Errorf("list metric summaries: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var metrics []models.SLAMetric
+	for rows.Next() {
+		metric, err := scanMetric(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan metric summary: %w", err)
+		}
+		metrics = append(metrics, metric)
+	}
+	return metrics, rows.Err()
+}
+
 // GetMetric loads one metric with its conditions, goals, and targets.
 func (r *SLARepository) GetMetric(ctx context.Context, metricID int) (*models.SLAMetric, error) {
 	row := r.db.QueryRowContext(ctx, `SELECT id, workspace_id, name, display_format, position, is_active,
@@ -1332,6 +1355,34 @@ func (r *SLARepository) ListCyclesForItems(ctx context.Context, itemIDs []int) (
 		cycle, err := scanCycle(rows)
 		if err != nil {
 			return nil, fmt.Errorf("scan cycle: %w", err)
+		}
+		grouped[cycle.ItemID] = append(grouped[cycle.ItemID], cycle)
+	}
+	return grouped, rows.Err()
+}
+
+// ListOngoingCyclesForItems loads only the ongoing cycles of many items in one
+// query, grouped by item id. Badge reads use this so response size tracks the
+// number of active metrics rather than the item's ticket history.
+func (r *SLARepository) ListOngoingCyclesForItems(ctx context.Context, itemIDs []int) (map[int][]models.ItemSLACycle, error) {
+	grouped := make(map[int][]models.ItemSLACycle, len(itemIDs))
+	if len(itemIDs) == 0 {
+		return grouped, nil
+	}
+	params := make([]any, 0, len(itemIDs))
+	for _, id := range itemIDs {
+		params = append(params, id)
+	}
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT `+cycleColumns+` FROM item_sla_cycles WHERE status = 'ongoing' AND item_id IN (`+strings.TrimSuffix(strings.Repeat("?,", len(itemIDs)), ",")+") ORDER BY item_id, metric_id, cycle_no", params...)
+	if err != nil {
+		return nil, fmt.Errorf("list ongoing item cycles: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		cycle, err := scanCycle(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan ongoing cycle: %w", err)
 		}
 		grouped[cycle.ItemID] = append(grouped[cycle.ItemID], cycle)
 	}

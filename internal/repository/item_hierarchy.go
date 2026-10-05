@@ -47,6 +47,32 @@ func (r *ItemRepository) GetChildren(parentID int) ([]*models.Item, error) {
 
 // GetChildrenContext is the request-aware form of GetChildren.
 func (r *ItemRepository) GetChildrenContext(ctx context.Context, parentID int) ([]*models.Item, error) {
+	return r.getChildrenContext(ctx, parentID, nil)
+}
+
+// GetChildrenInWorkspacesContext returns direct children whose workspace is in
+// workspaceIDs. Callers pass the caller's accessible workspaces so children that
+// live in another workspace are not disclosed by a parent the caller can see.
+// An empty or nil workspaceIDs returns no children; internal callers that need
+// every child use GetChildrenContext.
+func (r *ItemRepository) GetChildrenInWorkspacesContext(ctx context.Context, parentID int, workspaceIDs []int) ([]*models.Item, error) {
+	if len(workspaceIDs) == 0 {
+		return []*models.Item{}, nil
+	}
+	return r.getChildrenContext(ctx, parentID, workspaceIDs)
+}
+
+func (r *ItemRepository) getChildrenContext(ctx context.Context, parentID int, workspaceIDs []int) ([]*models.Item, error) {
+	where := "WHERE i.parent_id = ?"
+	args := []any{parentID}
+	if workspaceIDs != nil {
+		placeholders := make([]string, len(workspaceIDs))
+		for i, id := range workspaceIDs {
+			placeholders[i] = "?"
+			args = append(args, id)
+		}
+		where += " AND i.workspace_id IN (" + strings.Join(placeholders, ",") + ")"
+	}
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT i.id, i.workspace_id, i.workspace_item_number, i.item_type_id, i.title, i.description,
 		       i.status_id, i.priority_id, i.due_date, i.is_task, i.iteration_id,
@@ -63,9 +89,9 @@ func (r *ItemRepository) GetChildrenContext(ctx context.Context, parentID int) (
 		LEFT JOIN statuses s ON i.status_id = s.id
 		LEFT JOIN status_categories sc ON s.category_id = sc.id
 		LEFT JOIN item_types it ON i.item_type_id = it.id
-		WHERE i.parent_id = ?
+		`+where+`
 		ORDER BY i.frac_index
-	`, parentID)
+	`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get children: %w", err)
 	}

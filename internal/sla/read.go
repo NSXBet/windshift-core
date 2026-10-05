@@ -24,13 +24,29 @@ func (e *Engine) ItemSLA(ctx context.Context, itemID, workspaceID int) ([]models
 // ItemsSLA returns the Jira-shaped SLA state for a batch of items sharing one
 // workspace. Metrics, recalculating flags, and coverage reference are loaded
 // once for the batch instead of per item, so a list or board read costs a
-// fixed handful of queries rather than several per row (WI-1591).
+// fixed handful of queries rather than several per row (WI-1591). Completed
+// cycles are included for detail views.
 func (e *Engine) ItemsSLA(ctx context.Context, workspaceID int, itemIDs []int) (map[int][]models.ItemSLA, error) {
+	return e.itemsSLA(ctx, workspaceID, itemIDs, true)
+}
+
+// ItemsSLABadges returns only the ongoing cycle state needed to render badges
+// for a batch of items. Completed cycles are neither loaded nor serialized, so
+// response size is bounded by the number of active metrics rather than the
+// item's ticket history.
+func (e *Engine) ItemsSLABadges(ctx context.Context, workspaceID int, itemIDs []int) (map[int][]models.ItemSLA, error) {
+	return e.itemsSLA(ctx, workspaceID, itemIDs, false)
+}
+
+func (e *Engine) itemsSLA(ctx context.Context, workspaceID int, itemIDs []int, includeCompleted bool) (map[int][]models.ItemSLA, error) {
 	out := make(map[int][]models.ItemSLA, len(itemIDs))
 	if len(itemIDs) == 0 {
 		return out, nil
 	}
-	metrics, err := e.repo.ListMetrics(ctx, workspaceID)
+	// Badge state only needs metric identity/name/display format; hydrating
+	// conditions, goals, and targets here costs 1 + 2M + G queries per batch
+	// for data the response never uses.
+	metrics, err := e.repo.ListMetricSummaries(ctx, workspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -39,7 +55,12 @@ func (e *Engine) ItemsSLA(ctx context.Context, workspaceID int, itemIDs []int) (
 		metricByID[metric.ID] = metric
 	}
 
-	grouped, err := e.repo.ListCyclesForItems(ctx, itemIDs)
+	var grouped map[int][]models.ItemSLACycle
+	if includeCompleted {
+		grouped, err = e.repo.ListCyclesForItems(ctx, itemIDs)
+	} else {
+		grouped, err = e.repo.ListOngoingCyclesForItems(ctx, itemIDs)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -82,7 +103,7 @@ func (e *Engine) ItemsSLA(ctx context.Context, workspaceID int, itemIDs []int) (
 				}
 				if cycle.Status == models.SLACycleOngoing {
 					state.Ongoing = &derived
-				} else {
+				} else if includeCompleted {
 					state.Completed = append(state.Completed, derived)
 				}
 			}

@@ -408,6 +408,8 @@ func (s *ItemApplicationService) Changes(ctx context.Context, request ItemChange
 	}
 	removed := make(map[int]bool)
 	changed := make(map[int]bool)
+	candidates := make([]int, 0, len(entries))
+	seenCandidate := make(map[int]bool, len(entries))
 	for _, entry := range entries {
 		if entry.ItemID == 0 {
 			result.RequiresFullReload, result.MembershipDirty = true, true
@@ -417,17 +419,24 @@ func (s *ItemApplicationService) Changes(ctx context.Context, request ItemChange
 			removed[entry.ItemID] = true
 			continue
 		}
-		if changed[entry.ItemID] || removed[entry.ItemID] {
+		if changed[entry.ItemID] || removed[entry.ItemID] || seenCandidate[entry.ItemID] {
 			continue
 		}
-		visible, err := s.itemVisibleInDelta(ctx, request, workspaceIDs, entry.ItemID)
-		if err != nil {
-			return ItemChangesResult{}, err
-		}
-		if visible {
-			changed[entry.ItemID] = true
+		seenCandidate[entry.ItemID] = true
+		candidates = append(candidates, entry.ItemID)
+	}
+	// Resolve visibility for every changed item in one query. Sustained
+	// activity can carry hundreds of entries, and a per-item list pipeline here
+	// costs a count plus a hydrated-detail query per entry.
+	visible, err := s.itemsVisibleInDelta(ctx, request, workspaceIDs, candidates)
+	if err != nil {
+		return ItemChangesResult{}, err
+	}
+	for _, id := range candidates {
+		if visible[id] {
+			changed[id] = true
 		} else {
-			removed[entry.ItemID] = true
+			removed[id] = true
 		}
 	}
 	for id := range removed {
@@ -1117,7 +1126,23 @@ func (s *ItemApplicationService) Children(ctx context.Context, userID, itemID in
 	if err := s.requireView(ctx, userID, itemID); err != nil {
 		return nil, err
 	}
-	items, err := s.hierarchy.GetChildrenContext(ctx, itemID)
+	// Cross-workspace children exist by design (see validateParentHierarchy),
+	// so the child query must be scoped to workspaces the caller can view.
+	// The parent's workspace is always allowed: the caller was just authorized
+	// on the parent, which may be via an approval pool rather than membership.
+	parentWorkspaceID, err := s.items.GetWorkspaceIDCtx(ctx, itemID)
+	if err != nil {
+		return nil, err
+	}
+	allowedWorkspaceIDs := []int{parentWorkspaceID}
+	if s.perm != nil {
+		accessible, err := s.perm.AccessibleWorkspaceIDs(userID)
+		if err != nil {
+			return nil, err
+		}
+		allowedWorkspaceIDs = append(allowedWorkspaceIDs, accessible...)
+	}
+	items, err := s.hierarchy.GetChildrenInWorkspacesContext(ctx, itemID, allowedWorkspaceIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -1415,16 +1440,29 @@ func unwrapItemPermission(err error) error {
 	return err
 }
 
-func (s *ItemApplicationService) itemVisibleInDelta(ctx context.Context, request ItemChangesRequest, workspaceIDs []int, itemID int) (bool, error) {
+// itemsVisibleInDelta resolves, for the given candidate ids, which are still
+// visible under the caller's workspace and collection scope. One list query
+// covers the whole batch.
+func (s *ItemApplicationService) itemsVisibleInDelta(ctx context.Context, request ItemChangesRequest, workspaceIDs, itemIDs []int) (map[int]bool, error) {
+	visible := make(map[int]bool, len(itemIDs))
+	if len(itemIDs) == 0 {
+		return visible, nil
+	}
 	items, _, err := s.crud.ListWithQLContext(ctx, ListWithQLParams{
 		WorkspaceID: request.WorkspaceID, CollectionID: request.CollectionID, SubQLQuery: request.SubQL,
-		WorkspaceIDs: workspaceIDs, UserID: request.UserID, Filters: ItemFilters{ItemID: &itemID},
-		Pagination: PaginationParams{Limit: 1},
+		WorkspaceIDs: workspaceIDs, UserID: request.UserID, Filters: ItemFilters{ItemIDs: itemIDs},
+		Pagination: PaginationParams{Limit: len(itemIDs)},
 	})
 	if errors.Is(err, ErrCollectionNotFound) {
-		return false, nil
+		return visible, nil
 	}
-	return len(items) > 0, err
+	if err != nil {
+		return nil, err
+	}
+	for i := range items {
+		visible[items[i].ID] = true
+	}
+	return visible, nil
 }
 
 func (s *ItemApplicationService) applyBulkEffects(actor AuditActor, results []UpdateItemResult) []*models.Item {

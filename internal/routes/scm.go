@@ -33,7 +33,10 @@ func RegisterSCMRoutes(deps *Deps) {
 
 	// SCM OAuth endpoints
 	api.HandleH("GET /scm/oauth/{slug}/start", auth(http.HandlerFunc(deps.SCM.Provider.StartOAuth)))
-	api.Handle("GET /scm/oauth/{slug}/callback", deps.SCM.Provider.OAuthCallback)
+	// OptionalAuth so the callback can bind the completing browser to the
+	// account that started the flow; the handler rejects unauthenticated or
+	// mismatched callers.
+	api.HandleH("GET /scm/oauth/{slug}/callback", deps.AuthMiddleware.OptionalAuth(http.HandlerFunc(deps.SCM.Provider.OAuthCallback)))
 
 	// Email Provider endpoints
 	api.HandleH("GET /admin/email-providers", admin(http.HandlerFunc(deps.SCM.EmailProvider.GetEmailProviders)))
