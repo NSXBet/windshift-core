@@ -1920,6 +1920,11 @@ func (r *ItemRepository) ClearRelatedWorkItem(itemID int) error {
 // Portal-customer actors resolve to their customer name; system rows have no
 // user and display through the empty-name fallback the frontend applies.
 func (r *ItemRepository) GetHistoryWithApprovals(itemID int, includeAgentOwner bool) ([]models.ItemHistory, error) {
+	// The metered model/tokens/cost for an agent-written change are deliberately
+	// NOT joined here: aggregating llm_usage is not scoped to the item, so doing
+	// it inline would scan the whole metering table on every history load, which
+	// is a hot path. The response carries only agent_run_id; the client fetches
+	// that run's usage on demand from the indexed per-run endpoint.
 	query := `
 		SELECT
 			ih.id, ih.item_id, ih.user_id, ih.changed_at, ih.field_name, ih.old_value, ih.new_value,
@@ -1929,7 +1934,9 @@ func (r *ItemRepository) GetHistoryWithApprovals(itemID int, includeAgentOwner b
 			COALESCE(NULLIF(TRIM(COALESCE(owner.first_name, '') || ' ' || COALESCE(owner.last_name, '')), ''), owner.username, '') AS agent_owner_name,
 			ih.actor_kind,
 			ih.actor_portal_customer_id,
-			COALESCE(NULLIF(TRIM(pc.name), ''), pc.email, '') AS portal_customer_name
+			COALESCE(NULLIF(TRIM(pc.name), ''), pc.email, '') AS portal_customer_name,
+			COALESCE(ih.source, '') AS source,
+			ih.agent_run_id
 		FROM item_history ih
 		LEFT JOIN users u ON ih.user_id = u.id
 		LEFT JOIN users owner ON owner.id = u.agent_owner_user_id
@@ -1950,7 +1957,9 @@ func (r *ItemRepository) GetHistoryWithApprovals(itemID int, includeAgentOwner b
 			COALESCE(NULLIF(TRIM(COALESCE(owner.first_name, '') || ' ' || COALESCE(owner.last_name, '')), ''), owner.username, '') AS agent_owner_name,
 			CASE WHEN d.actor_portal_customer_id IS NOT NULL THEN 'portal_customer' ELSE 'user' END AS actor_kind,
 			d.actor_portal_customer_id,
-			COALESCE(NULLIF(TRIM(pc.name), ''), pc.email, '') AS portal_customer_name
+			COALESCE(NULLIF(TRIM(pc.name), ''), pc.email, '') AS portal_customer_name,
+			'' AS source,
+			NULL AS agent_run_id
 		FROM approval_decisions d
 		JOIN approval_requests ar ON ar.id = d.approval_request_id
 		LEFT JOIN users u ON u.id = d.actor_user_id
@@ -1969,9 +1978,9 @@ func (r *ItemRepository) GetHistoryWithApprovals(itemID int, includeAgentOwner b
 	history := []models.ItemHistory{}
 	for rows.Next() {
 		var entry models.ItemHistory
-		var userID, portalCustomerID sql.NullInt64
+		var userID, portalCustomerID, runID sql.NullInt64
 		var actorKind sql.NullString
-		if err := rows.Scan(&entry.ID, &entry.ItemID, &userID, &entry.ChangedAt, &entry.FieldName, &entry.OldValue, &entry.NewValue, &entry.UserName, &entry.UserEmail, &entry.IsAgent, &entry.AgentOwnerName, &actorKind, &portalCustomerID, &entry.PortalCustomerName); err != nil {
+		if err := rows.Scan(&entry.ID, &entry.ItemID, &userID, &entry.ChangedAt, &entry.FieldName, &entry.OldValue, &entry.NewValue, &entry.UserName, &entry.UserEmail, &entry.IsAgent, &entry.AgentOwnerName, &actorKind, &portalCustomerID, &entry.PortalCustomerName, &entry.Source, &runID); err != nil {
 			return nil, err
 		}
 		if userID.Valid {
@@ -1981,6 +1990,10 @@ func (r *ItemRepository) GetHistoryWithApprovals(itemID int, includeAgentOwner b
 		if portalCustomerID.Valid {
 			id := int(portalCustomerID.Int64)
 			entry.PortalCustomerID = &id
+		}
+		if runID.Valid {
+			v := int(runID.Int64)
+			entry.AgentRunID = &v
 		}
 		if !includeAgentOwner {
 			entry.AgentOwnerName = ""
