@@ -61,7 +61,7 @@ export default {
       },
       supportOverview: {
         name: 'Vue d’ensemble de l’assistance',
-        description: 'Backlog d’assistance, activité des tickets et respect des SLA pour les espaces de travail que vous choisissez',
+        description: 'Backlog, première réponse, résolution et respect des SLA pour les tickets clients',
       },
     },
     customization: {

@@ -62,7 +62,7 @@ export default {
       },
       "supportOverview": {
         "name": "지원 개요",
-        "description": "선택한 워크스페이스의 헬프데스크 백로그, 티켓 활동 및 SLA 준수"
+        "description": "고객 티켓의 백로그, 최초 응답, 해결 및 SLA 준수"
       }
     },
     "customization": {

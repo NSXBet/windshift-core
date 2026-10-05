@@ -61,7 +61,7 @@ export default {
       },
       supportOverview: {
         name: 'Visão geral de suporte',
-        description: 'Backlog de helpdesk, atividade de tickets e cumprimento de SLA para os espaços de trabalho que você escolher',
+        description: 'Backlog, primeira resposta, resolução e cumprimento de SLA dos tickets de clientes',
       },
     },
     customization: {

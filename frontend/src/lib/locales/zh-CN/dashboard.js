@@ -61,7 +61,7 @@ export default {
       },
       supportOverview: {
         name: '支持概览',
-        description: '所选工作区的服务台待办、工单活动和 SLA 合规性',
+        description: '客户工单的待办、首次响应、解决情况和 SLA 合规性',
       },
     },
     customization: {

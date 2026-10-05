@@ -61,7 +61,7 @@ export default {
       },
       supportOverview: {
         name: 'Support-Übersicht',
-        description: 'Helpdesk-Backlog, Ticket-Aktivität und SLA-Einhaltung für die von Ihnen gewählten Arbeitsbereiche',
+        description: 'Backlog, Erstantwort, Lösung und SLA-Einhaltung für Kundentickets',
       },
     },
     customization: {
