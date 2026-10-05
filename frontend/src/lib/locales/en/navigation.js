@@ -347,7 +347,6 @@ export default {
       upcomingDeadlines: { name: 'Upcoming Deadlines', description: 'Items with approaching due dates' },
       iterationTimeline: { name: 'Iteration Timeline', description: 'Current and upcoming iteration schedule' },
       testCoverage: { name: 'Test Coverage', description: 'Requirements covered by test cases' },
-      supportMetrics: { name: 'Support Metrics', description: 'Backlog, first response, resolution, and SLA compliance for customer tickets' },
     },
     customization: {
       widgets: 'Widgets', builtIn: 'Built-in widgets', builtInDescription: 'Core workspace metrics and charts',
