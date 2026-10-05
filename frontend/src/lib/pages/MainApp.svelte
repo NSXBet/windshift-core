@@ -282,14 +282,15 @@
     if (redirect) navigate(redirect, { replace: true });
   });
 
-  // Redirect direct navigation to a view or nav entry the scope has
-  // disabled. The load is awaited through the reactive entry so the decision
-  // uses real settings, and waits for the workspace record so the default
-  // view is known.
+  // Redirect direct navigation to a collection view the scope has disabled.
+  // The load is awaited through the reactive entry so the decision uses real
+  // settings, and waits for the workspace record so the default view is
+  // known. Workspace-only tools entries are visibility toggles and stay
+  // reachable, so they are not part of this guard.
   $effect(() => {
     const route = $currentRoute;
     const viewId = route.view?.startsWith('workspace-') ? route.view.slice('workspace-'.length) : route.view;
-    if (!viewId || !viewSettingsStore.allNavIds.includes(viewId)) return;
+    if (!viewId || !viewSettingsStore.allViewIds.includes(viewId)) return;
     const workspaceId = route.params?.id;
     if (!workspaceId) return;
     if (!$currentWorkspace?.id) return; // hydration re-runs this effect
