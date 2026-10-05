@@ -40,16 +40,18 @@
 
     // Content can grow or shrink after mount (search filtering, async loads),
     // so re-measure on size and DOM changes instead of only on scroll.
-    const resizeObserver = new ResizeObserver(updateFades);
-    resizeObserver.observe(contentEl);
-    const contentObserver = new MutationObserver(updateFades);
-    contentObserver.observe(contentEl, { childList: true, subtree: true });
+    const resizeObserver =
+      typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updateFades);
+    resizeObserver?.observe(contentEl);
+    const contentObserver =
+      typeof MutationObserver === 'undefined' ? null : new MutationObserver(updateFades);
+    contentObserver?.observe(contentEl, { childList: true, subtree: true });
     void document.fonts?.ready.then(updateFades);
 
     return () => {
       contentEl.removeEventListener('scroll', updateFades);
-      resizeObserver.disconnect();
-      contentObserver.disconnect();
+      resizeObserver?.disconnect();
+      contentObserver?.disconnect();
     };
   });
 </script>
