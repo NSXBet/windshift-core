@@ -269,6 +269,7 @@ type MilestoneListParams struct {
 
 // ListMilestones retrieves milestones with pagination and filtering.
 func (s *PlanningService) ListMilestones(params MilestoneListParams) ([]MilestoneResult, int, error) {
+	params.Status = normalizePlanningStatus(params.Status)
 	list := newPlanningListQuery(milestoneSelectQuery+"\nWHERE 1=1", "SELECT COUNT(*) FROM milestones m WHERE 1=1")
 	list.addWorkspaceScope("m.workspace_id", "m.is_global", params.WorkspaceID, params.WorkspaceIDs, params.IncludeGlobal)
 	list.addNullableIDFilter("m.category_id", params.CategoryID)
@@ -445,6 +446,7 @@ func (s *PlanningService) CreateMilestone(params CreateMilestoneParams) (*Milest
 	if params.Status == "" {
 		params.Status = "planning"
 	}
+	params.Status = normalizePlanningStatus(params.Status)
 	if err := s.validateMilestoneMutation(params); err != nil {
 		return nil, err
 	}
@@ -522,6 +524,7 @@ func (s *PlanningService) FindMilestoneByName(workspaceID int, name string) (*Mi
 // milestone to "in-progress" or "completed" without disturbing the other
 // fields. Returns a "not found" error when no row matches the scope.
 func (s *PlanningService) SetMilestoneStatus(milestoneID, workspaceID int, status string) error {
+	status = normalizePlanningStatus(status)
 	if !validMilestoneStatus(status) {
 		return planningValidationError("status", milestoneStatusValidationMessage)
 	}
@@ -589,6 +592,7 @@ type UpdateMilestoneParams struct {
 // UpdateMilestone updates an existing milestone within its declared scope.
 // is_global / workspace_id cannot be changed via this method.
 func (s *PlanningService) UpdateMilestone(params UpdateMilestoneParams) (*MilestoneResult, error) {
+	params.Status = normalizePlanningStatus(params.Status)
 	if err := s.validateMilestoneMutation(CreateMilestoneParams{
 		Name:        params.Name,
 		Description: params.Description,
