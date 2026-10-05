@@ -338,6 +338,7 @@ export default {
       iterationTimeline: { name: 'График итераций', description: 'Текущие и ближайшие итерации' },
       testCoverage: { name: 'Покрытие тестами', description: 'Требования, связанные с тест-кейсами' },
       supportMetrics: { name: 'Метрики поддержки', description: 'Бэклог, первый ответ, решение и соблюдение SLA для клиентских заявок' },
+      zammadSupportOverview: { name: 'Обзор поддержки Zammad', description: 'Статус связанных заявок всего пространства и наблюдаемые изменения' },
     },
     customization: {
       widgets: 'Виджеты', builtIn: 'Основные виджеты', builtInDescription: 'Основные показатели и графики пространства',
