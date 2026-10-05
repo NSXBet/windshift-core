@@ -873,7 +873,7 @@
             </AlertBox>
           {:else if validation?.errors?.length}
             <div class="mt-4 space-y-2">
-              {#each validation.errors as issue (issue.code)}
+              {#each validation.errors as issue (`${issue.code}:${issue.dependency}`)}
                 <AlertBox variant="warning">
                   <div>
                     <p class="font-medium">{issue.message}</p>
@@ -881,6 +881,22 @@
                       <p class="mt-1 text-xs" style="color: var(--ds-text-subtle);">
                         Dependency: {issue.dependency}
                       </p>
+                    {/if}
+                    {#if issue.hint}
+                      <p class="mt-1 text-xs" style="color: var(--ds-text-subtle);">
+                        {issue.hint}
+                      </p>
+                    {/if}
+                    {#if issue.code === 'permission_missing'}
+                      <Button
+                        href={`/workspaces/${workspaceId}/settings/members`}
+                        variant="default"
+                        size="small"
+                        class="mt-2"
+                        dataTestid="agent-readiness-grant-permission"
+                      >
+                        Open workspace members
+                      </Button>
                     {/if}
                   </div>
                 </AlertBox>

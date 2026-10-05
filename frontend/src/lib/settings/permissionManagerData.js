@@ -1,3 +1,8 @@
+/** Global permissions that the permission manager can assign to users and groups. */
+export function selectGlobalPermissions(permissions) {
+  return (permissions || []).filter((permission) => permission?.scope === 'global');
+}
+
 /** Build a subject-id → permission-id Set map from compact assignment rows. */
 export function buildPermissionAssignmentMap(rows, subjectKey) {
   const assignments = new Map();

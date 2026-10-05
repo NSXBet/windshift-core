@@ -17,6 +17,7 @@
   import {
     buildPermissionAssignmentMap,
     loadPermissionManagerData,
+    selectGlobalPermissions,
   } from './permissionManagerData.js';
   import { systemPermissionDescription, systemPermissionName } from '../utils/systemLabels.js';
 
@@ -87,13 +88,6 @@
     } catch (err) {
       console.warn('Failed to load group permissions:', err);
     }
-  }
-
-  function getGlobalPermissions() {
-    // Hide user.list - any authenticated user can list users (needed for mentions/assignments)
-    // The permission is kept in backend but hidden from management UI
-    const hiddenPermissions = ['user.list'];
-    return permissions.filter(p => p.scope === 'global' && !hiddenPermissions.includes(p.permission_key));
   }
 
   function getUsersWithPermission(permissionId) {
@@ -224,7 +218,7 @@
     return group.name;
   }
 
-  const globalPermissions = $derived(getGlobalPermissions());
+  const globalPermissions = $derived(selectGlobalPermissions(permissions));
 
   const columns = [
     { key: 'permission_name', label: t('settings.permissions.permission'), slot: 'permission' },
