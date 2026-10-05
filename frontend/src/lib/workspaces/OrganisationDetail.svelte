@@ -45,12 +45,12 @@
   // logbook isn't configured server-side so users don't land on a misleading
   // empty state for an unsupported feature.
   let tabs = $derived([
-    { id: 'contacts', label: t('workspaces.customers.contacts') || 'Contacts', icon: Users },
+    { id: 'contacts', label: t('workspaces.customers.contacts') || 'Contacts', icon: Users, testid: 'org-detail-contacts-tab' },
     ...(capabilitiesStore.logbookAvailable
-      ? [{ id: 'files', label: t('common.files') || 'Files', icon: FileIcon }]
+      ? [{ id: 'files', label: t('common.files') || 'Files', icon: FileIcon, testid: 'org-detail-files-tab' }]
       : []),
-    { id: 'tickets', label: t('common.tickets') || 'Tickets', icon: Ticket },
-    ...(canManage ? [{ id: 'sharing', label: t('workspaces.customers.sharing') || 'Sharing', icon: Share }] : []),
+    { id: 'tickets', label: t('common.tickets') || 'Tickets', icon: Ticket, testid: 'org-detail-tickets-tab' },
+    ...(canManage ? [{ id: 'sharing', label: t('workspaces.customers.sharing') || 'Sharing', icon: Share, testid: 'org-detail-sharing-tab' }] : []),
   ]);
 
   // Request sharing tab (WI-1139). Settings live in the organisation's flexible
