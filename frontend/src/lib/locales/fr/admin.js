@@ -1064,7 +1064,7 @@ export default {
         status: 'Statut', priority: 'Priorité', milestone: 'Jalon', iteration: 'Itération',
         due_date: 'Date d\'échéance', start_date: 'Date de début', end_date: 'Date de fin', labels: 'Étiquettes',
         created_at: 'Créé le', project: 'Projet', parent: 'Parent', time_in_status: 'Temps dans le statut',
-        story_points: 'Points d’effort', estimate: 'Estimation',
+        story_points: 'Points d’effort', estimate: 'Estimation', sla: 'SLA',
       },
     },
   },

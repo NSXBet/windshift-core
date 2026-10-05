@@ -9,8 +9,9 @@
 
   // Renders the chip(s) for a single configured board card field. Centralising
   // this here keeps the board configuration surface (CARD_SELECTABLE_FIELDS) and
-  // the on-card rendering from drifting apart — every selectable field should
-  // have a branch below.
+  // the on-card rendering from drifting apart — every selectable field rendered
+  // in the chip row has a branch below. Footer fields (due_date, sla) are
+  // filtered out by BoardItemCard and rendered there instead.
   let {
     cardField,
     item,

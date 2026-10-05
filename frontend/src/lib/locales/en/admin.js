@@ -1129,7 +1129,7 @@ export default {
         status: 'Status', priority: 'Priority', milestone: 'Milestone', iteration: 'Iteration',
         due_date: 'Due Date', start_date: 'Start Date', end_date: 'End Date', labels: 'Labels',
         created_at: 'Created', project: 'Project', parent: 'Parent', time_in_status: 'Time in Status',
-        story_points: 'Story Points', estimate: 'Estimate',
+        story_points: 'Story Points', estimate: 'Estimate', sla: 'SLA',
       },
     },
   },

@@ -1171,7 +1171,7 @@ export default {
         status: 'Статус', priority: 'Приоритет', milestone: 'Этап', iteration: 'Итерация',
         due_date: 'Срок', start_date: 'Дата начала', end_date: 'Дата окончания', labels: 'Метки',
         created_at: 'Дата создания', project: 'Проект', parent: 'Родитель', time_in_status: 'Время в статусе',
-        story_points: 'Сторипойнты', estimate: 'Оценка',
+        story_points: 'Сторипойнты', estimate: 'Оценка', sla: 'SLA',
       },
     },
   },

@@ -137,8 +137,24 @@ export const SYSTEM_FIELDS = [
   },
 ];
 
+// Board-only card fields. They can be added to a board card but never appear in
+// an item create/edit screen, so they stay out of SYSTEM_FIELDS. The SLA badge
+// is only mounted (and its read only issued) when this field is configured.
+export const BOARD_ONLY_CARD_FIELDS = [
+  {
+    identifier: 'sla',
+    name: 'SLA',
+    type: 'text',
+    cardSelectable: true,
+    listColumn: null,
+  },
+];
+
 // Derived lists for specific contexts
-export const CARD_SELECTABLE_FIELDS = SYSTEM_FIELDS.filter((f) => f.cardSelectable);
+export const CARD_SELECTABLE_FIELDS = [
+  ...SYSTEM_FIELDS.filter((f) => f.cardSelectable),
+  ...BOARD_ONLY_CARD_FIELDS,
+];
 export const LIST_COLUMN_FIELDS = SYSTEM_FIELDS.filter((f) => f.listColumn !== null);
 
 // Helper to get field by identifier

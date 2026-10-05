@@ -44,9 +44,18 @@
 
   const dndConfig = $derived([item.id, canDrag]);
 
+  // Board-only fields rendered outside the body chip row.
+  const FOOTER_CARD_FIELDS = new Set(['due_date', 'sla']);
   const bodyCardFields = $derived(
     cardFields.filter(
-      (field) => !(field.field_type === 'system' && field.field_identifier === 'due_date'),
+      (field) =>
+        !(field.field_type === 'system' && FOOTER_CARD_FIELDS.has(field.field_identifier)),
+    ),
+  );
+  // SLA state is only read when the board configures the SLA card field.
+  const showsSLA = $derived(
+    cardFields.some(
+      (field) => field.field_type === 'system' && field.field_identifier === 'sla',
     ),
   );
   const itemType = $derived(
@@ -166,9 +175,11 @@
           </span>
         {/if}
         <DependencySummary {item} links={dependencyLinks} />
-        <span class="inline-flex shrink-0" data-testid={`board-card-sla-${item.id}`}>
-          <SLABadge itemId={item.id} workspaceId={item.workspace_id} />
-        </span>
+        {#if showsSLA}
+          <span class="inline-flex shrink-0" data-testid={`board-card-sla-${item.id}`}>
+            <SLABadge itemId={item.id} workspaceId={item.workspace_id} />
+          </span>
+        {/if}
         <span class="flex-1"></span>
         {#if item.assignee_id}
           {@const assignee = users.find((user) => user.id === item.assignee_id)}
