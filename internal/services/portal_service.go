@@ -171,6 +171,9 @@ type PortalRequestSummary struct {
 	// MergedIntoItemID points at the canonical request when this one was
 	// merged away; the portal redirects there (WI-1528).
 	MergedIntoItemID *int `json:"merged_into_item_id,omitempty"`
+	// Shared is true when the request is visible through organisation sharing
+	// rather than because the viewer created or participates in it (WI-1139).
+	Shared bool `json:"shared,omitempty"`
 }
 
 // PortalRequestDetail represents detailed portal request info including ownership
@@ -300,35 +303,9 @@ func portalServesWorkspace(vis repository.PortalRequestVisibility, workspaceID i
 // JSON column, so they are parsed here in Go; the hot portal query only ever
 // receives the resolved mode.
 func (s *PortalService) loadPortalOrgShare(ctx context.Context, portalCustomerID int) (repository.PortalOrgShare, error) {
-	var orgID sql.NullInt64
-	err := s.db.QueryRowContext(ctx,
-		`SELECT customer_organisation_id FROM portal_customers WHERE id = ?`, portalCustomerID,
-	).Scan(&orgID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return repository.PortalOrgShare{}, nil
-	}
-	if err != nil {
-		return repository.PortalOrgShare{}, fmt.Errorf("load portal customer organisation: %w", err)
-	}
-	if !orgID.Valid {
-		return repository.PortalOrgShare{}, nil
-	}
-
-	var settingsJSON string
-	err = s.db.QueryRowContext(ctx,
-		`SELECT COALESCE(settings, '{}') FROM customer_organisations WHERE id = ?`, orgID.Int64,
-	).Scan(&settingsJSON)
-	if errors.Is(err, sql.ErrNoRows) {
-		return repository.PortalOrgShare{}, nil
-	}
-	if err != nil {
-		return repository.PortalOrgShare{}, fmt.Errorf("load organisation settings: %w", err)
-	}
-	var settings map[string]any
-	if settingsJSON != "" {
-		if err := json.Unmarshal([]byte(settingsJSON), &settings); err != nil {
-			return repository.PortalOrgShare{}, fmt.Errorf("parse organisation settings: %w", err)
-		}
+	orgID, settings, ok, err := s.loadPortalCustomerOrgSettings(ctx, portalCustomerID)
+	if err != nil || !ok {
+		return repository.PortalOrgShare{}, err
 	}
 	parsed := models.ParseOrgRequestSharingSettings(settings)
 	if parsed.RequestSharing == models.OrgRequestSharingDisabled {
@@ -343,7 +320,55 @@ func (s *PortalService) loadPortalOrgShare(ctx context.Context, portalCustomerID
 			return repository.PortalOrgShare{}, nil
 		}
 	}
-	return repository.PortalOrgShare{OrganisationID: int(orgID.Int64), Mode: parsed.RequestSharing}, nil
+	return repository.PortalOrgShare{OrganisationID: orgID, Mode: parsed.RequestSharing}, nil
+}
+
+// PortalCustomerOrgRequestSharing returns the request-sharing settings for the
+// customer's organisation, or the defaults when the customer has none. The
+// submit path uses it to decide whether the creator may opt into organisation
+// sharing; the audience filter does not apply to the creator's own choice.
+func (s *PortalService) PortalCustomerOrgRequestSharing(ctx context.Context, portalCustomerID int) (models.OrgRequestSharingSettings, error) {
+	_, settings, ok, err := s.loadPortalCustomerOrgSettings(ctx, portalCustomerID)
+	if err != nil || !ok {
+		return models.DefaultOrgRequestSharingSettings(), err
+	}
+	return models.ParseOrgRequestSharingSettings(settings), nil
+}
+
+// loadPortalCustomerOrgSettings resolves the customer's organisation and its
+// settings blob. ok is false when the customer has no organisation (or no
+// longer exists), in which case organisation sharing does not apply.
+func (s *PortalService) loadPortalCustomerOrgSettings(ctx context.Context, portalCustomerID int) (orgID int, settings map[string]any, ok bool, err error) {
+	var id sql.NullInt64
+	err = s.db.QueryRowContext(ctx,
+		`SELECT customer_organisation_id FROM portal_customers WHERE id = ?`, portalCustomerID,
+	).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, nil, false, nil
+	}
+	if err != nil {
+		return 0, nil, false, fmt.Errorf("load portal customer organisation: %w", err)
+	}
+	if !id.Valid {
+		return 0, nil, false, nil
+	}
+
+	var settingsJSON string
+	err = s.db.QueryRowContext(ctx,
+		`SELECT COALESCE(settings, '{}') FROM customer_organisations WHERE id = ?`, id.Int64,
+	).Scan(&settingsJSON)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, nil, false, nil
+	}
+	if err != nil {
+		return 0, nil, false, fmt.Errorf("load organisation settings: %w", err)
+	}
+	if settingsJSON != "" {
+		if err := json.Unmarshal([]byte(settingsJSON), &settings); err != nil {
+			return 0, nil, false, fmt.Errorf("parse organisation settings: %w", err)
+		}
+	}
+	return int(id.Int64), settings, true, nil
 }
 
 // portalCustomerHoldsRole reports whether the customer holds at least one of
@@ -402,7 +427,28 @@ func (s *PortalService) GetRequestsByPortalCustomerID(ctx context.Context, porta
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch requests: %w", err)
 	}
-	return portalRequestSummariesFromRows(rows), nil
+	summaries := portalRequestSummariesFromRows(rows)
+
+	// Label organisation-shared rows so the portal can distinguish them from the
+	// customer's own requests and requests they participate in. One query for
+	// the viewer's participations keeps this off the per-row path.
+	participantIDs, err := repository.NewItemParticipantRepository(s.db).ListItemIDsForCustomer(portalCustomerID)
+	if err != nil {
+		return nil, fmt.Errorf("load portal customer participations: %w", err)
+	}
+	participants := make(map[int]struct{}, len(participantIDs))
+	for _, id := range participantIDs {
+		participants[id] = struct{}{}
+	}
+	for i := range summaries {
+		if i >= len(rows) {
+			break
+		}
+		creatorID := rows[i].CreatorPortalCustomerID
+		_, isParticipant := participants[rows[i].ID]
+		summaries[i].Shared = (creatorID == nil || *creatorID != portalCustomerID) && !isParticipant
+	}
+	return summaries, nil
 }
 
 // GetRequestDetail gets request detail with ownership info. Returns nil

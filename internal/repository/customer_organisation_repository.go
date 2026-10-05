@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"windshift/internal/database"
@@ -225,6 +226,36 @@ func encodeSettings(settings map[string]any) (string, error) {
 		return "", fmt.Errorf("encode customer_organisation settings: %w", err)
 	}
 	return string(b), nil
+}
+
+// ExistingContactRoleIDs returns the subset of the given ids that exist in
+// contact_roles. Callers use it to reject an organisation role allowlist that
+// references a deleted or unknown role.
+func (r *CustomerOrganisationRepository) ExistingContactRoleIDs(ids []int) (map[int]struct{}, error) {
+	out := make(map[int]struct{}, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	placeholders := make([]string, len(ids))
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+	//nolint:gosec // placeholders are generated, not user input
+	rows, err := r.db.Query("SELECT id FROM contact_roles WHERE id IN ("+strings.Join(placeholders, ",")+")", args...)
+	if err != nil {
+		return nil, fmt.Errorf("check contact role ids: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan contact role id: %w", err)
+		}
+		out[id] = struct{}{}
+	}
+	return out, rows.Err()
 }
 
 // UpdateSettings overwrites only the settings blob, leaving the other editable
