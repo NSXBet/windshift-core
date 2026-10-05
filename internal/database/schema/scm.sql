@@ -410,3 +410,20 @@ CREATE INDEX IF NOT EXISTS idx_issue_sync_comments_item ON issue_sync_comments(i
 CREATE INDEX IF NOT EXISTS idx_issue_sync_comments_comment ON issue_sync_comments(comment_id);
 
 -- migration: 0021_workspace_scm_connections_smart_commits_enabled
+
+-- Shortcut Sync (Shortcut story/epic ↔ Windshift item mapping)
+CREATE TABLE IF NOT EXISTS shortcut_sync_items (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	external_kind TEXT NOT NULL,                     -- 'story' | 'epic'
+	external_id INTEGER NOT NULL,                    -- Shortcut numeric id
+	item_id INTEGER NOT NULL UNIQUE,                 -- Windshift item
+	external_url TEXT,
+	external_updated_at DATETIME,                    -- Shortcut updated_at for change detection
+	last_synced_at DATETIME,
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+	FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE,
+	UNIQUE(external_kind, external_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_shortcut_sync_items_item ON shortcut_sync_items(item_id);

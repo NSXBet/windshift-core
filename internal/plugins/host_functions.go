@@ -11,6 +11,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -34,6 +35,8 @@ func (m *Manager) buildHostFunctions() []extism.HostFunction {
 		extism.NewHostFunctionWithStack("create_comment", m.createCommentHostFunction, []extism.ValueType{extism.ValueTypeI64}, []extism.ValueType{extism.ValueTypeI64}),
 		extism.NewHostFunctionWithStack("scm_create_branch", m.scmCreateBranchHostFunction, []extism.ValueType{extism.ValueTypeI64}, []extism.ValueType{extism.ValueTypeI64}),
 		extism.NewHostFunctionWithStack("scm_create_item_link", m.scmCreateItemLinkHostFunction, []extism.ValueType{extism.ValueTypeI64}, []extism.ValueType{extism.ValueTypeI64}),
+		extism.NewHostFunctionWithStack("item_upsert", m.itemUpsertHostFunction, []extism.ValueType{extism.ValueTypeI64}, []extism.ValueType{extism.ValueTypeI64}),
+		extism.NewHostFunctionWithStack("item_lookup", m.itemLookupHostFunction, []extism.ValueType{extism.ValueTypeI64}, []extism.ValueType{extism.ValueTypeI64}),
 	}
 }
 
@@ -490,4 +493,104 @@ func (m *Manager) scmCreateItemLinkHostFunction(ctx context.Context, plugin *ext
 
 	m.logger.Info("plugin created item SCM link", "plugin", pluginName, "item_id", req.ItemID, "link_id", linkID)
 	m.writeHostResponse(plugin, stack, SCMCreateItemLinkResponse{Status: "ok", LinkID: linkID})
+}
+
+func (m *Manager) itemUpsertHostFunction(ctx context.Context, plugin *extism.CurrentPlugin, stack []uint64) {
+	payload, err := plugin.ReadBytes(stack[0])
+	if err != nil {
+		m.logger.Warn("item_upsert host function failed to read payload", "error", err)
+		stack[0] = 0
+		return
+	}
+
+	var req ItemUpsertRequest
+	if err = json.Unmarshal(payload, &req); err != nil {
+		m.logger.Warn("item_upsert host function failed to parse payload", "error", err)
+		m.writeHostResponse(plugin, stack, ItemUpsertResponse{Status: "error", Error: "invalid request payload"})
+		return
+	}
+
+	pluginName := pluginNameFromContext(ctx)
+	if m.db == nil {
+		m.writeHostResponse(plugin, stack, ItemUpsertResponse{Status: "error", Error: "database not configured"})
+		return
+	}
+
+	result, err := services.NewShortcutSyncService(m.db).Upsert(ctx, services.ShortcutItemUpsertRequest{
+		ExternalKind:       req.ExternalKind,
+		ExternalID:         req.ExternalID,
+		ExternalURL:        req.ExternalURL,
+		ExternalUpdatedAt:  req.ExternalUpdatedAt,
+		WorkspaceID:        req.WorkspaceID,
+		Title:              req.Title,
+		Description:        req.Description,
+		StatusName:         req.StatusName,
+		ItemTypeName:       req.ItemTypeName,
+		PriorityName:       req.PriorityName,
+		ProjectName:        req.ProjectName,
+		DueDate:            req.DueDate,
+		StoryPoints:        req.StoryPoints,
+		Labels:             req.Labels,
+		LabelMode:          req.LabelMode,
+		ParentExternalKind: req.ParentExternalKind,
+		ParentExternalID:   req.ParentExternalID,
+	})
+	if err != nil {
+		m.logger.Warn("item_upsert failed", "error", err, "plugin", pluginName, "external_kind", req.ExternalKind, "external_id", req.ExternalID)
+		m.writeHostResponse(plugin, stack, ItemUpsertResponse{Status: "error", Error: err.Error()})
+		return
+	}
+
+	m.writeHostResponse(plugin, stack, ItemUpsertResponse{
+		Status:  "ok",
+		ItemID:  strconv.Itoa(result.ItemID),
+		ItemKey: result.ItemKey,
+		Created: result.Created,
+	})
+}
+
+func (m *Manager) itemLookupHostFunction(ctx context.Context, plugin *extism.CurrentPlugin, stack []uint64) {
+	payload, err := plugin.ReadBytes(stack[0])
+	if err != nil {
+		m.logger.Warn("item_lookup host function failed to read payload", "error", err)
+		stack[0] = 0
+		return
+	}
+
+	var req ItemLookupRequest
+	if err = json.Unmarshal(payload, &req); err != nil {
+		m.logger.Warn("item_lookup host function failed to parse payload", "error", err)
+		m.writeHostResponse(plugin, stack, ItemLookupResponse{Status: "error", Error: "invalid request payload"})
+		return
+	}
+
+	if m.db == nil {
+		m.writeHostResponse(plugin, stack, ItemLookupResponse{Status: "error", Error: "database not configured"})
+		return
+	}
+
+	result, err := services.NewShortcutSyncService(m.db).Lookup(ctx, req.ExternalKind, req.ExternalID)
+	if err != nil {
+		m.logger.Warn("item_lookup failed", "error", err, "plugin", pluginNameFromContext(ctx), "external_kind", req.ExternalKind, "external_id", req.ExternalID)
+		m.writeHostResponse(plugin, stack, ItemLookupResponse{Status: "error", Error: err.Error()})
+		return
+	}
+	if result == nil {
+		m.writeHostResponse(plugin, stack, ItemLookupResponse{Status: "ok"})
+		return
+	}
+
+	resp := ItemLookupResponse{
+		Status:  "ok",
+		Found:   true,
+		ItemID:  strconv.Itoa(result.ItemID),
+		ItemKey: result.ItemKey,
+	}
+	if result.ExternalUpdatedAt != nil {
+		resp.ExternalUpdatedAt = result.ExternalUpdatedAt.UTC().Format(time.RFC3339)
+	}
+	if result.LastSyncedAt != nil {
+		resp.LastSyncedAt = result.LastSyncedAt.UTC().Format(time.RFC3339)
+	}
+	m.writeHostResponse(plugin, stack, resp)
 }

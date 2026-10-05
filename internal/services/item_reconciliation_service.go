@@ -16,7 +16,17 @@ type ExternalItemSource string
 
 const (
 	ExternalItemSourceGitHubIssueSync ExternalItemSource = "github_issue_sync"
+	ExternalItemSourceShortcut        ExternalItemSource = "shortcut"
 )
+
+// ShortcutReconciliationPolicy returns the inbound Shortcut sync policy.
+// Live-update publication stays off: the one-way sync must never notify.
+func ShortcutReconciliationPolicy() ExternalItemReconciliationPolicy {
+	return ExternalItemReconciliationPolicy{
+		Source:             ExternalItemSourceShortcut,
+		PublishLiveUpdates: false,
+	}
+}
 
 // ExternalItemReconciliationPolicy makes non-user side effects explicit.
 // This path never emits notifications, actions, webhooks, or mentions.
@@ -194,7 +204,7 @@ func validateExternalReconciliationRequest(ctx context.Context, db database.Data
 		return fmt.Errorf("external item reconciliation requires a database")
 	}
 	switch policy.Source {
-	case ExternalItemSourceGitHubIssueSync:
+	case ExternalItemSourceGitHubIssueSync, ExternalItemSourceShortcut:
 	case "":
 		return fmt.Errorf("external item reconciliation requires a source")
 	default:

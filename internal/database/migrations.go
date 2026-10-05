@@ -1396,6 +1396,44 @@ var Catalog = []Migration{
 			CREATE INDEX idx_kb_events_customer_created ON kb_events(portal_customer_id, created_at);
 		`,
 	},
+	{
+		Version:       "20261005_shortcut_sync_items",
+		Name:          "Add Shortcut sync item mapping table",
+		CheckSQLite:   sqliteTableCheck("shortcut_sync_items"),
+		CheckPostgres: pgTableCheck("shortcut_sync_items"),
+		SQLite: `
+			CREATE TABLE shortcut_sync_items (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				external_kind TEXT NOT NULL,
+				external_id INTEGER NOT NULL,
+				item_id INTEGER NOT NULL UNIQUE,
+				external_url TEXT,
+				external_updated_at DATETIME,
+				last_synced_at DATETIME,
+				created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+				updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+				FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE,
+				UNIQUE(external_kind, external_id)
+			);
+			CREATE INDEX idx_shortcut_sync_items_item ON shortcut_sync_items(item_id);
+		`,
+		Postgres: `
+			CREATE TABLE shortcut_sync_items (
+				id SERIAL PRIMARY KEY,
+				external_kind TEXT NOT NULL,
+				external_id BIGINT NOT NULL,
+				item_id INTEGER NOT NULL UNIQUE,
+				external_url TEXT,
+				external_updated_at TIMESTAMPTZ,
+				last_synced_at TIMESTAMPTZ,
+				created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+				updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+				FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE,
+				UNIQUE(external_kind, external_id)
+			);
+			CREATE INDEX idx_shortcut_sync_items_item ON shortcut_sync_items(item_id);
+		`,
+	},
 }
 
 func applySQLitePersonalLabelsPerUserUnique(db Database) (retErr error) {

@@ -420,3 +420,20 @@ BEGIN
 			FOREIGN KEY (scm_connection_id) REFERENCES workspace_scm_connections(id) ON DELETE SET NULL;
 	END IF;
 END $$;
+
+-- Shortcut Sync (Shortcut story/epic ↔ Windshift item mapping)
+CREATE TABLE IF NOT EXISTS shortcut_sync_items (
+	id SERIAL PRIMARY KEY,
+	external_kind TEXT NOT NULL,                     -- 'story' | 'epic'
+	external_id BIGINT NOT NULL,                     -- Shortcut numeric id
+	item_id INTEGER NOT NULL UNIQUE,
+	external_url TEXT,
+	external_updated_at TIMESTAMPTZ,                 -- Shortcut updated_at for change detection
+	last_synced_at TIMESTAMPTZ,
+	created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+	updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+	FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE,
+	UNIQUE(external_kind, external_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_shortcut_sync_items_item ON shortcut_sync_items(item_id);

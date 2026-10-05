@@ -231,3 +231,51 @@ type SCMCreateItemLinkResponse struct {
 	LinkID int    `json:"link_id,omitempty"` // ID of the created link
 	Error  string `json:"error,omitempty"`   // Error message if failed
 }
+
+// ItemUpsertRequest is the payload for the item_upsert host function
+// (Shortcut → Windshift sync v1 wire contract, shortcut-v1-contracts.md §1).
+type ItemUpsertRequest struct {
+	ExternalKind       string   `json:"external_kind"`                 // "story" | "epic"
+	ExternalID         int64    `json:"external_id"`                   // Shortcut numeric id
+	ExternalURL        string   `json:"external_url,omitempty"`        // Shortcut story URL
+	ExternalUpdatedAt  string   `json:"external_updated_at,omitempty"` // RFC3339 UTC
+	WorkspaceID        string   `json:"workspace_id"`                  // decimal string of the workspace id
+	Title              string   `json:"title"`
+	Description        string   `json:"description,omitempty"`
+	StatusName         string   `json:"status_name,omitempty"`
+	ItemTypeName       string   `json:"item_type_name,omitempty"`
+	PriorityName       string   `json:"priority_name,omitempty"`
+	ProjectName        string   `json:"project_name,omitempty"` // find-only
+	DueDate            string   `json:"due_date,omitempty"`     // YYYY-MM-DD
+	StoryPoints        *float64 `json:"story_points,omitempty"`
+	Labels             []string `json:"labels,omitempty"`     // find-or-create
+	LabelMode          string   `json:"label_mode,omitempty"` // "merge" or "replace" (default)
+	ParentExternalKind string   `json:"parent_external_kind,omitempty"`
+	ParentExternalID   int64    `json:"parent_external_id,omitempty"`
+}
+
+// ItemUpsertResponse is returned from the item_upsert host function.
+type ItemUpsertResponse struct {
+	Status  string `json:"status"`             // "ok" or "error"
+	ItemID  string `json:"item_id,omitempty"`  // decimal string of the item id
+	ItemKey string `json:"item_key,omitempty"` // "KEY-NUMBER" display key
+	Created bool   `json:"created,omitempty"`  // true when a new item was created
+	Error   string `json:"error,omitempty"`
+}
+
+// ItemLookupRequest is the payload for the item_lookup host function.
+type ItemLookupRequest struct {
+	ExternalKind string `json:"external_kind"` // "story" | "epic"
+	ExternalID   int64  `json:"external_id"`
+}
+
+// ItemLookupResponse is returned from the item_lookup host function.
+type ItemLookupResponse struct {
+	Status            string `json:"status"`                        // "ok" or "error"
+	Found             bool   `json:"found,omitempty"`               // mapping row exists
+	ItemID            string `json:"item_id,omitempty"`             // decimal string of the item id
+	ItemKey           string `json:"item_key,omitempty"`            // "KEY-NUMBER" display key
+	ExternalUpdatedAt string `json:"external_updated_at,omitempty"` // RFC3339 UTC
+	LastSyncedAt      string `json:"last_synced_at,omitempty"`      // RFC3339 UTC
+	Error             string `json:"error,omitempty"`
+}
