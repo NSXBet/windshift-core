@@ -35,6 +35,12 @@
   $effect(() => {
     const id = itemId;
     if (id == null) return;
+    // The item carries its current incident pointer. Items without one have no
+    // pager state to read, and the endpoint answers 404 for them.
+    if (!item?.incident_id) {
+      loading = false;
+      return;
+    }
     load(id);
   });
 
