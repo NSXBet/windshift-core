@@ -175,6 +175,20 @@ func Build() (*Catalog, error) {
 	}); err != nil {
 		return nil, err
 	}
+	if err := registerTrigger[models.ActionTriggerConfig](c, triggerSpec{
+		Type:        models.ActionTriggerCommentCreated,
+		Label:       "Comment created",
+		Description: "Fires when a comment is added to an item. Use from_customer to react only to customer replies (portal customer or email-intake sender) or only to agent comments.",
+	}); err != nil {
+		return nil, err
+	}
+	if err := registerTrigger[models.ActionTriggerConfig](c, triggerSpec{
+		Type:        models.ActionTriggerItemInactive,
+		Label:       "Item inactive",
+		Description: "Fires when an open item has had no comment or update for the configured number of hours (inactive_hours). The trigger re-arms after new activity.",
+	}); err != nil {
+		return nil, err
+	}
 
 	// Nodes ------------------------------------------------------------
 	// Order here is the order the frontend palette shows. Trigger is
@@ -215,7 +229,7 @@ func Build() (*Catalog, error) {
 	if err := registerNode[models.AddCommentNodeConfig](c, nodeSpec{
 		Type:        models.ActionNodeAddComment,
 		Label:       "Add comment",
-		Description: "Post a comment on the current item. Content supports {{variable}} template interpolation; mark is_private for restricted visibility.",
+		Description: "Post a comment on the current item. Content supports {{variable}} template interpolation; mark is_private for restricted visibility. Comments triggered by a private comment are posted as internal notes.",
 		Category:    CategoryMutation,
 	}); err != nil {
 		return nil, err
@@ -305,6 +319,30 @@ func Build() (*Catalog, error) {
 		Type:        models.ActionNodeCreateMilestone,
 		Label:       "Create milestone",
 		Description: "Upsert a workspace milestone from SCM branch/tag events, optionally promoting status and attaching release information.",
+		Category:    CategoryMutation,
+	}); err != nil {
+		return nil, err
+	}
+	if err := registerNode[models.InsertCannedResponseNodeConfig](c, nodeSpec{
+		Type:        models.ActionNodeInsertCannedResponse,
+		Label:       "Insert canned response",
+		Description: "Render a workspace canned response with the execution variables and post it as a comment on the current item. Private snippets, and any insert triggered by a private comment, are posted as private comments.",
+		Category:    CategoryMutation,
+	}); err != nil {
+		return nil, err
+	}
+	if err := registerNode[models.NotifyCustomerNodeConfig](c, nodeSpec{
+		Type:        models.ActionNodeNotifyCustomer,
+		Label:       "Notify customer",
+		Description: "Email the portal customer who created the item through the threaded reply transport. Skips safely when the item has no customer with an email address, or when the triggering comment is private.",
+		Category:    CategoryMutation,
+	}); err != nil {
+		return nil, err
+	}
+	if err := registerNode[models.AdjustLabelsNodeConfig](c, nodeSpec{
+		Type:        models.ActionNodeAdjustLabels,
+		Label:       "Adjust labels",
+		Description: "Add or remove labels on the current item.",
 		Category:    CategoryMutation,
 	}); err != nil {
 		return nil, err

@@ -59,6 +59,12 @@ var (
 	ErrIncidentAlreadyOpen = errors.New("item already has an open incident")
 	// ErrIncidentResolved is returned when mutating a resolved incident.
 	ErrIncidentResolved = errors.New("incident is resolved")
+	// ErrIncidentNotAcknowledged is returned when unacknowledging an incident
+	// that is not in the acknowledged state.
+	ErrIncidentNotAcknowledged = errors.New("incident is not acknowledged")
+	// ErrIncidentConflict is returned when a concurrent transition made the
+	// requested lifecycle change unsafe to apply.
+	ErrIncidentConflict = errors.New("incident changed state concurrently")
 )
 
 // Trigger creates a triggered incident for the item and points the item at it.
@@ -124,12 +130,16 @@ func (s *IncidentService) processTriggered(incidentID int) error {
 			slog.String("component", "oncall"), slog.Int("incident_id", incidentID), slog.Any("error", err))
 	}
 	next := time.Now().Add(time.Duration(rules[0].EscalationDelayMinutes) * time.Minute)
-	return s.incidents.SetIncidentEscalation(incidentID, 0, 0, &next)
+	_, err = s.incidents.SetIncidentEscalation(incidentID, 0, 0, &next)
+	return err
 }
 
 // AdvanceDue moves an incident to its next escalation step when its deadline
 // has passed. It is a no-op when the incident was acked/resolved in the
 // meantime, or when the chain is exhausted (the deadline is then cleared).
+// The cursor write is conditional on status='triggered', so an acknowledge
+// that commits after this read keeps its cleared deadline and no page goes
+// out for the losing advance.
 func (s *IncidentService) AdvanceDue(incidentID int) error {
 	incident, err := s.incidents.GetIncidentByID(incidentID)
 	if err != nil {
@@ -138,40 +148,57 @@ func (s *IncidentService) AdvanceDue(incidentID int) error {
 	if incident.Status != "triggered" || incident.NextEscalationAt == nil || incident.NextEscalationAt.After(time.Now()) {
 		return nil
 	}
-	if incident.EscalationPolicyID == nil {
-		return s.incidents.SetIncidentEscalation(incidentID, incident.EscalationStep, incident.EscalationRepeatCount, nil)
-	}
-	rules, err := s.incidents.GetEscalationRules(*incident.EscalationPolicyID)
-	if err != nil {
-		return err
-	}
-	if len(rules) == 0 {
-		return s.incidents.SetIncidentEscalation(incidentID, incident.EscalationStep, incident.EscalationRepeatCount, nil)
-	}
-
-	policy, err := s.incidents.GetPolicyByID(*incident.EscalationPolicyID)
-	if err != nil {
-		return err
-	}
 
 	step, repeat := incident.EscalationStep, incident.EscalationRepeatCount
-	nextIndex := step + 1
-	if nextIndex >= len(rules) {
-		// RepeatCount is the maximum number of full passes over the chain.
-		if repeat+1 >= policy.RepeatCount {
-			return s.incidents.SetIncidentEscalation(incidentID, step, repeat, nil)
+	var next *time.Time
+	var rule *models.OnCallEscalationRule
+	if incident.EscalationPolicyID != nil {
+		rules, err := s.incidents.GetEscalationRules(*incident.EscalationPolicyID)
+		if err != nil {
+			return err
 		}
-		repeat++
-		nextIndex = 0
+		policy, err := s.incidents.GetPolicyByID(*incident.EscalationPolicyID)
+		if err != nil {
+			return err
+		}
+		if len(rules) > 0 {
+			nextIndex := step + 1
+			if nextIndex >= len(rules) {
+				// RepeatCount is the maximum number of full passes over the chain.
+				if repeat+1 >= policy.RepeatCount {
+					nextIndex = -1
+				} else {
+					repeat++
+					nextIndex = 0
+				}
+			}
+			if nextIndex >= 0 {
+				r := rules[nextIndex]
+				rule = &r
+				t := time.Now().Add(time.Duration(r.EscalationDelayMinutes) * time.Minute)
+				next = &t
+				step = nextIndex
+			}
+		}
 	}
 
-	rule := rules[nextIndex]
-	if err := s.enterStep(incident, rule); err != nil {
-		slog.Warn("incident escalation: notify step failed",
-			slog.String("component", "oncall"), slog.Int("incident_id", incidentID), slog.Any("error", err))
+	// Arm the new deadline before dispatching so a concurrent
+	// acknowledge/resolve cancels this advance: the conditional write affects
+	// zero rows and the page is skipped.
+	affected, err := s.incidents.SetIncidentEscalation(incidentID, step, repeat, next)
+	if err != nil {
+		return err
 	}
-	next := time.Now().Add(time.Duration(rule.EscalationDelayMinutes) * time.Minute)
-	return s.incidents.SetIncidentEscalation(incidentID, nextIndex, repeat, &next)
+	if affected == 0 {
+		return nil
+	}
+	if rule != nil {
+		if err := s.enterStep(incident, *rule); err != nil {
+			slog.Warn("incident escalation: notify step failed",
+				slog.String("component", "oncall"), slog.Int("incident_id", incidentID), slog.Any("error", err))
+		}
+	}
+	return nil
 }
 
 // enterStep clears the previous step's pending notifications, then delivers or
@@ -402,46 +429,110 @@ func (s *IncidentService) resolvePolicy(item *models.Item, policyID *int) (*mode
 	return policy, nil
 }
 
-// Acknowledge records the ack handshake and stops escalation.
+// Acknowledge records the ack handshake and stops escalation. The write is
+// conditional, so a resolve that commits first wins and the ack reports a
+// conflict instead of resurrecting terminal state.
 func (s *IncidentService) Acknowledge(incidentID, userID int) error {
-	incident, err := s.incidents.GetIncidentByID(incidentID)
+	affected, err := s.incidents.AcknowledgeIncident(incidentID, userID, time.Now())
 	if err != nil {
 		return err
 	}
-	if incident.Status == "resolved" {
-		return ErrIncidentResolved
-	}
-	if err := s.incidents.AcknowledgeIncident(incidentID, userID, time.Now()); err != nil {
-		return err
+	if affected == 0 {
+		incident, err := s.incidents.GetIncidentByID(incidentID)
+		if err != nil {
+			return err
+		}
+		if incident.Status == "resolved" {
+			return ErrIncidentResolved
+		}
+		return ErrIncidentConflict
 	}
 	// Ack stops the page: drop any scheduled repeats.
 	return s.incidents.DeleteIncidentNotificationStates(incidentID)
 }
 
-// Unacknowledge returns an acknowledged incident to the triggered state.
+// Unacknowledge returns an acknowledged incident to the triggered state and
+// re-arms escalation from the incident's current step, so paging and
+// scheduled notifications resume after an accidental ack.
 func (s *IncidentService) Unacknowledge(incidentID int) error {
+	affected, err := s.incidents.UnacknowledgeIncident(incidentID, time.Now())
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		incident, err := s.incidents.GetIncidentByID(incidentID)
+		if err != nil {
+			return err
+		}
+		switch incident.Status {
+		case "resolved":
+			return ErrIncidentResolved
+		case "acknowledged":
+			return ErrIncidentConflict
+		default:
+			return ErrIncidentNotAcknowledged
+		}
+	}
 	incident, err := s.incidents.GetIncidentByID(incidentID)
 	if err != nil {
 		return err
 	}
-	if incident.Status == "resolved" {
-		return ErrIncidentResolved
-	}
-	return s.incidents.UnacknowledgeIncident(incidentID, time.Now())
+	return s.resumeEscalation(incident)
 }
 
-// Resolve ends the incident. It does not change item status, and resolving an
-// already-resolved incident is a no-op.
-func (s *IncidentService) Resolve(incidentID, userID int) error {
-	incident, err := s.incidents.GetIncidentByID(incidentID)
+// resumeEscalation re-delivers the incident's current step and re-arms the
+// next escalation deadline after an unacknowledge tore both down. A step
+// index beyond the current rule list is clamped to the last rule.
+func (s *IncidentService) resumeEscalation(incident *models.Incident) error {
+	step, repeat := incident.EscalationStep, incident.EscalationRepeatCount
+	var next *time.Time
+	if incident.EscalationPolicyID != nil {
+		rules, err := s.incidents.GetEscalationRules(*incident.EscalationPolicyID)
+		if err != nil {
+			return err
+		}
+		if len(rules) > 0 {
+			if step >= len(rules) {
+				step = len(rules) - 1
+			}
+			if step < 0 {
+				step = 0
+			}
+			if err := s.enterStep(incident, rules[step]); err != nil {
+				slog.Warn("incident escalation: resume notify failed",
+					slog.String("component", "oncall"), slog.Int("incident_id", incident.ID), slog.Any("error", err))
+			}
+			t := time.Now().Add(time.Duration(rules[step].EscalationDelayMinutes) * time.Minute)
+			next = &t
+		}
+	}
+	affected, err := s.incidents.SetIncidentEscalation(incident.ID, step, repeat, next)
 	if err != nil {
 		return err
 	}
-	if incident.Status == "resolved" {
-		return nil
+	if affected == 0 {
+		// Resolved between the unacknowledge and the re-arm: drop the
+		// notifications this resume scheduled and report the conflict.
+		if err := s.incidents.DeleteIncidentNotificationStates(incident.ID); err != nil {
+			return err
+		}
+		return ErrIncidentConflict
 	}
-	if err := s.incidents.ResolveIncident(incidentID, userID, time.Now()); err != nil {
+	return nil
+}
+
+// Resolve ends the incident and releases the item's incident pointer.
+// Resolving an already-resolved incident is a no-op.
+func (s *IncidentService) Resolve(incidentID, userID int) error {
+	affected, err := s.incidents.ResolveIncident(incidentID, userID, time.Now())
+	if err != nil {
 		return err
+	}
+	if affected == 0 {
+		if _, err := s.incidents.GetIncidentByID(incidentID); err != nil {
+			return err
+		}
+		return nil
 	}
 	return s.incidents.DeleteIncidentNotificationStates(incidentID)
 }

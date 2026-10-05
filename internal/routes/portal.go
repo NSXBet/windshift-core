@@ -54,6 +54,12 @@ func RegisterPortalRoutes(deps *Deps) {
 		api.HandleH("GET /portal/{slug}/requests/{itemId}/comments", portalAuth(http.HandlerFunc(deps.Portal.Portal.GetRequestComments)))
 		api.HandleH("POST /portal/{slug}/requests/{itemId}/comments", deps.PortalSubmitLimiter.Limit(portalAuth(http.HandlerFunc(deps.Portal.Portal.AddRequestComment))))
 
+		// Request attachments share the submission rate limiter; uploads are
+		// owner-only and downloads are owner-or-active-approver scoped.
+		api.HandleH("GET /portal/{slug}/requests/{itemId}/attachments", portalAuth(http.HandlerFunc(deps.Portal.Portal.GetRequestAttachments)))
+		api.HandleH("POST /portal/{slug}/requests/{itemId}/attachments", deps.PortalSubmitLimiter.Limit(portalAuth(http.HandlerFunc(deps.Portal.Portal.AddRequestAttachment))))
+		api.HandleH("GET /portal/{slug}/requests/{itemId}/attachments/{attachmentId}/download", portalAuth(http.HandlerFunc(deps.Portal.Portal.DownloadRequestAttachment)))
+
 		// Draft writes share the submission rate limiter.
 		api.HandleH("POST /portal/{slug}/drafts", deps.PortalSubmitLimiter.Limit(portalAuth(http.HandlerFunc(deps.Portal.Portal.SaveDraft))))
 		api.HandleH("GET /portal/{slug}/drafts", portalAuth(http.HandlerFunc(deps.Portal.Portal.GetMyDrafts)))
@@ -82,6 +88,12 @@ func RegisterPortalRoutes(deps *Deps) {
 	api.HandleH("GET /portal-customers/{id}/channels", customersPerm(http.HandlerFunc(deps.Portal.PortalCustomer.GetCustomerChannels)))
 	api.HandleH("GET /portal-customers/{id}/submissions", customersPerm(http.HandlerFunc(deps.Portal.PortalCustomer.GetCustomerSubmissions)))
 	api.HandleH("PUT /portal-customers/{id}/organisation", customersPerm(http.HandlerFunc(deps.Portal.PortalCustomer.UpdatePortalCustomerOrganisation)))
+	api.HandleH("POST /portal-customers/{id}/erase", customersPerm(deps.AuthRateLimiter.Limit(http.HandlerFunc(deps.Portal.PortalCustomer.ErasePortalCustomer))))
+	api.HandleH("POST /portal-customers/{id}/deactivate", customersPerm(http.HandlerFunc(deps.Portal.PortalCustomer.DeactivatePortalCustomer)))
+	api.HandleH("POST /portal-customers/{id}/activate", customersPerm(http.HandlerFunc(deps.Portal.PortalCustomer.ActivatePortalCustomer)))
+	api.HandleH("POST /portal-customers/cleanup", customersPerm(deps.AuthRateLimiter.Limit(http.HandlerFunc(deps.Portal.PortalCustomer.BulkCleanupPortalCustomers))))
+	api.HandleH("GET /portal-customers/{id}/export", customersPerm(deps.AuthRateLimiter.Limit(http.HandlerFunc(deps.Portal.PortalCustomer.ExportPortalCustomer))))
+	// Retained alias for erasure so legacy delete callers exercise the DSAR flow.
 	api.HandleH("DELETE /portal-customers/{id}", customersPerm(http.HandlerFunc(deps.Portal.PortalCustomer.DeletePortalCustomer)))
 
 	api.HandleH("GET /contact-roles", customersPerm(http.HandlerFunc(deps.Portal.ContactRole.GetAll)))
@@ -96,6 +108,8 @@ func RegisterPortalRoutes(deps *Deps) {
 	api.HandleH("POST /customer-organisations", customersPerm(http.HandlerFunc(deps.TimeTracking.Customer.Create)))
 	api.HandleH("GET /customer-organisations/{id}", auth(http.HandlerFunc(deps.TimeTracking.Customer.Get)))
 	api.HandleH("PUT /customer-organisations/{id}", customersPerm(http.HandlerFunc(deps.TimeTracking.Customer.Update)))
+	// Portal organisation request-sharing settings (WI-1139).
+	api.HandleH("PUT /customer-organisations/{id}/request-sharing", customersPerm(http.HandlerFunc(deps.TimeTracking.Customer.UpdateRequestSharing)))
 	api.HandleH("DELETE /customer-organisations/{id}", customersPerm(http.HandlerFunc(deps.TimeTracking.Customer.Delete)))
 	// Handler-level access permits organization members and managers.
 	api.HandleH("GET /customer-organisations/{id}/contacts", auth(http.HandlerFunc(deps.Portal.PortalCustomer.GetOrganisationContacts)))

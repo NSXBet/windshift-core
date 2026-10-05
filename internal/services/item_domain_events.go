@@ -155,9 +155,10 @@ func actionContextFromExecution(ctx *models.ExecutionContext) *ActionContext {
 		return nil
 	}
 	return &ActionContext{
-		TriggeredByAction: true,
-		ExecutionChainID:  ctx.ChainID,
-		CascadeDepth:      ctx.Event.CascadeDepth + 1,
-		SourceApplication: "workspace",
+		TriggeredByAction:       true,
+		ExecutionChainID:        ctx.ChainID,
+		CascadeDepth:            ctx.Event.CascadeDepth + 1,
+		SourceApplication:       "workspace",
+		TriggerCommentIsPrivate: ctx.TriggerCommentIsPrivate,
 	}
 }

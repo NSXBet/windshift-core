@@ -22,10 +22,19 @@ import (
 type ConfigSetConformanceService struct {
 	db   database.Database
 	repo *repository.ConfigurationSetRepository
+	// enqueueOptionRemoval schedules item-value scrubbing for removed select
+	// options; it runs inside the repair transaction. Wired at boot.
+	enqueueOptionRemoval func(tx database.Tx, fieldID int, fieldType string, removedIDs []int) error
 }
 
 func NewConfigSetConformanceService(db database.Database, repo *repository.ConfigurationSetRepository) *ConfigSetConformanceService {
 	return &ConfigSetConformanceService{db: db, repo: repo}
+}
+
+// SetOptionRemovalEnqueuer wires the custom-field cleanup scheduler so a
+// repair that shrinks an option set commits the scrubbing job atomically.
+func (s *ConfigSetConformanceService) SetOptionRemovalEnqueuer(fn func(tx database.Tx, fieldID int, fieldType string, removedIDs []int) error) {
+	s.enqueueOptionRemoval = fn
 }
 
 // Check exports the configuration set's live state and diffs it against the
@@ -91,9 +100,10 @@ func (s *ConfigSetConformanceService) Repair(ctx context.Context, configSetID in
 		selected[id] = true
 	}
 
-	// Group repairable drift rows by entity. An entity key is the section
-	// plus the entity name (the first path segment of the row name); the
-	// links section repairs as one unit.
+	// Group repairable drift rows by entity. The entity name is resolved
+	// against the canonical template's entity names so names that contain the
+	// drift-path separator ("/") stay unambiguous; the links section repairs
+	// as one unit.
 	entities := map[string]*conformanceEntityPlan{}
 	var order []string
 	for _, d := range all {
@@ -103,13 +113,11 @@ func (s *ConfigSetConformanceService) Repair(ctx context.Context, configSetID in
 		if len(selected) > 0 && !selected[d.ID] {
 			continue
 		}
-		entityName := d.Name
-		if section := d.Section; section == "links" {
-			entityName = "*"
-		} else if idx := strings.Index(d.Name, "/"); idx >= 0 {
-			entityName = d.Name[:idx]
+		entityName := "*"
+		if d.Section != "links" {
+			entityName = resolveConformanceEntityName(canonical, d.Section, d.Name)
 		}
-		key := d.Section + "|" + entityName
+		key := d.Section + "|" + strings.ToLower(entityName)
 		if _, ok := entities[key]; !ok {
 			entities[key] = &conformanceEntityPlan{section: d.Section, name: entityName}
 			order = append(order, key)
@@ -122,11 +130,17 @@ func (s *ConfigSetConformanceService) Repair(ctx context.Context, configSetID in
 		return s.finishRepairResult(ctx, configSetID, canonical, result)
 	}
 
+	workflowIDsByName, err := s.referencedWorkflowIDsByName(ctx, configSetID)
+	if err != nil {
+		return nil, err
+	}
+
 	r := &conformanceRepairer{
-		svc:       s,
-		canonical: canonical,
-		now:       time.Now(),
-		ctx:       ctx,
+		svc:               s,
+		canonical:         canonical,
+		now:               time.Now(),
+		ctx:               ctx,
+		workflowIDsByName: workflowIDsByName,
 	}
 
 	// One transaction for the whole repair; each entity is wrapped in a
@@ -209,7 +223,11 @@ func repairSections(r *conformanceRepairer, entities map[string]*conformanceEnti
 			r.failEntity(entity, fmt.Sprintf("repair could not commit: %v", err))
 			continue
 		}
-		r.succeedEntity(entity)
+		// The repairer may have recorded its own per-entity outcomes (e.g. a
+		// manual-attention skip); only then is the blanket success skipped.
+		if !entity.resolved {
+			r.succeedEntity(entity)
+		}
 	}
 }
 
@@ -233,6 +251,10 @@ type conformanceRepairer struct {
 	savepointN int
 	current    *conformanceEntityPlan
 	outcomes   []ConfigSetConformanceRepairOutcome
+	// workflowIDsByName maps a lowercased workflow name to the id of a workflow
+	// the addressed configuration set actually references. Repair mutates only
+	// these rows, never a same-named workflow owned by another set.
+	workflowIDsByName map[string]int
 }
 
 // conformanceEntityPlan groups the drift rows repair touches for one entity
@@ -241,6 +263,9 @@ type conformanceEntityPlan struct {
 	section string
 	name    string
 	rows    []ConfigSetConformanceDrift
+	// resolved marks that the repairer already recorded outcomes for this
+	// entity, so the generic success pass must not overwrite them.
+	resolved bool
 }
 
 func (r *conformanceRepairer) succeedEntity(entity *conformanceEntityPlan) {
@@ -252,6 +277,13 @@ func (r *conformanceRepairer) succeedEntity(entity *conformanceEntityPlan) {
 func (r *conformanceRepairer) failEntity(entity *conformanceEntityPlan, detail string) {
 	for _, row := range entity.rows {
 		r.outcome(row, "failed", detail)
+	}
+}
+
+// outcomeRows records one outcome per drift row addressed by an entity.
+func (r *conformanceRepairer) outcomeRows(rows []ConfigSetConformanceDrift, status, detail string) {
+	for _, row := range rows {
+		r.outcome(row, status, detail)
 	}
 }
 
@@ -306,17 +338,95 @@ func (r *conformanceRepairer) repairCustomFields(entity *conformanceEntityPlan) 
 			}
 			continue
 		}
-		if err = r.exec(`
-			UPDATE custom_field_definitions
-			SET field_type = ?, description = ?, required = ?, options = ?, display_order = ?,
-			    applies_to_portal_customers = ?, applies_to_customer_organisations = ?, updated_at = ?
-			WHERE id = ?
-		`, models.CanonicalCustomFieldType(want.FieldType), want.Description, want.Required, want.Options, want.DisplayOrder,
-			want.AppliesToPortalCustomers, want.AppliesToCustomerOrganisations, r.now, id); err != nil {
-			return fmt.Errorf("restore custom field: %w", err)
+		if err := r.repairExistingCustomField(entity, id, want); err != nil {
+			return err
 		}
 	}
 	return nil
+}
+
+// repairExistingCustomField restores an existing custom field through the
+// provisioning semantics: the field type never changes after creation, and a
+// shrinking select option set enqueues item-value scrubbing instead of
+// leaving dangling option ids in item data (WI-1529).
+func (r *conformanceRepairer) repairExistingCustomField(entity *conformanceEntityPlan, fieldID int, want ConfigSetTplCustomField) error {
+	var liveType string
+	var liveOptions string
+	if err := r.tx.QueryRowContext(r.ctx,
+		`SELECT field_type, COALESCE(options, '') FROM custom_field_definitions WHERE id = ?`, fieldID,
+	).Scan(&liveType, &liveOptions); err != nil {
+		return fmt.Errorf("load custom field %q: %w", want.Name, err)
+	}
+
+	wantType := models.CanonicalCustomFieldType(want.FieldType)
+	typeDrift := liveType != wantType
+
+	// Option removals on select-like fields enqueue a scrubbing job in the
+	// repair transaction; on a type change the stored values no longer match
+	// either shape, so a type-drifted field is left for manual attention.
+	removedOptions := removedSelectOptionIDs(liveOptions, want.Options, wantType)
+	if typeDrift && len(removedOptions) > 0 {
+		entity.resolved = true
+		r.outcomeRows(entity.rows, "skipped", fmt.Sprintf(
+			"field type %q cannot be restored to %q after creation; options left untouched so no dangling option ids are introduced",
+			liveType, wantType))
+		return nil
+	}
+
+	if err := r.exec(`
+		UPDATE custom_field_definitions
+		SET description = ?, required = ?, options = ?, display_order = ?,
+		    applies_to_portal_customers = ?, applies_to_customer_organisations = ?, updated_at = ?
+		WHERE id = ?
+	`, want.Description, want.Required, want.Options, want.DisplayOrder,
+		want.AppliesToPortalCustomers, want.AppliesToCustomerOrganisations, r.now, fieldID); err != nil {
+		return fmt.Errorf("restore custom field: %w", err)
+	}
+
+	if len(removedOptions) > 0 {
+		if r.svc.enqueueOptionRemoval == nil {
+			return fmt.Errorf("custom field %q: option set shrank but no cleanup scheduler is wired", want.Name)
+		}
+		if err := r.svc.enqueueOptionRemoval(r.tx, fieldID, wantType, removedOptions); err != nil {
+			return fmt.Errorf("enqueue option cleanup for custom field %q: %w", want.Name, err)
+		}
+	}
+
+	detail := ""
+	if typeDrift {
+		entity.resolved = true
+		detail = fmt.Sprintf("field type %q cannot be changed after creation; resolve the type manually", liveType)
+	}
+	r.outcomeRows(entity.rows, "repaired", detail)
+	return nil
+}
+
+// removedSelectOptionIDs returns the option ids present in oldOptionsJSON but
+// missing from newOptionsJSON. Non-select fields and unparseable payloads
+// return no removals: repair never enqueues scrubbing it cannot reason about.
+func removedSelectOptionIDs(oldOptionsJSON, newOptionsJSON, fieldType string) []int {
+	if fieldType != "select" && fieldType != "multiselect" {
+		return nil
+	}
+	oldOpts, err := models.ParseSelectOptions(oldOptionsJSON)
+	if err != nil {
+		return nil
+	}
+	newOpts, err := models.ParseSelectOptions(newOptionsJSON)
+	if err != nil {
+		return nil
+	}
+	kept := make(map[int]bool, len(newOpts.Items))
+	for _, item := range newOpts.Items {
+		kept[item.ID] = true
+	}
+	var removed []int
+	for _, item := range oldOpts.Items {
+		if !kept[item.ID] {
+			removed = append(removed, item.ID)
+		}
+	}
+	return removed
 }
 
 func (r *conformanceRepairer) repairStatuses(entity *conformanceEntityPlan) error {
@@ -508,10 +618,7 @@ func (r *conformanceRepairer) repairWorkflows(entity *conformanceEntityPlan) err
 		if !entityCovers(entity, "workflows", want.Name) {
 			continue
 		}
-		workflowID, err := r.lookupID("workflows", "name", want.Name)
-		if err != nil {
-			return err
-		}
+		workflowID := r.workflowIDsByName[lowerStr(want.Name)]
 		if workflowID == 0 {
 			if err := r.tx.QueryRowContext(r.ctx, `
 				INSERT INTO workflows (name, description, is_default, created_at, updated_at)
@@ -948,16 +1055,135 @@ func (r *conformanceRepairer) repairLinks(configSetID int) error {
 }
 
 // entityCovers reports whether the plan for this entity includes the given
-// entity name (the first path segment of a drift row's name).
+// canonical entity name. Entity names are compared whole: a name may itself
+// contain the drift-path separator, so no path stripping happens here.
 func entityCovers(entity *conformanceEntityPlan, section, entityName string) bool {
 	if entity.section != section {
 		return false
 	}
-	name := entityName
-	if idx := strings.Index(name, "/"); idx >= 0 {
-		name = name[:idx]
+	return strings.EqualFold(entityName, entity.name)
+}
+
+// resolveConformanceEntityName maps a drift row name ("<entity>/<path...>") to
+// the canonical entity it belongs to. Entity names may contain the drift-path
+// separator, so the longest canonical name that is either an exact match or a
+// path prefix wins. Rows whose entity only exists live (not in the canonical
+// template) fall back to their first path segment.
+func resolveConformanceEntityName(canonical *ConfigSetTemplate, section, driftName string) string {
+	best := ""
+	for _, name := range conformanceEntityNames(canonical, section) {
+		if driftName != name && !strings.HasPrefix(driftName, name+"/") {
+			continue
+		}
+		if len(name) > len(best) {
+			best = name
+		}
 	}
-	return strings.EqualFold(name, entity.name)
+	if best != "" {
+		return best
+	}
+	if idx := strings.Index(driftName, "/"); idx >= 0 {
+		return driftName[:idx]
+	}
+	return driftName
+}
+
+// conformanceEntityNames lists the canonical entity names for one section.
+func conformanceEntityNames(canonical *ConfigSetTemplate, section string) []string {
+	if canonical == nil {
+		return nil
+	}
+	p := &canonical.Payload
+	switch section {
+	case "custom_fields":
+		names := make([]string, 0, len(p.CustomFields))
+		for _, e := range p.CustomFields {
+			names = append(names, e.Name)
+		}
+		return names
+	case "statuses":
+		names := make([]string, 0, len(p.Statuses))
+		for _, e := range p.Statuses {
+			names = append(names, e.Name)
+		}
+		return names
+	case "item_types":
+		names := make([]string, 0, len(p.ItemTypes))
+		for _, e := range p.ItemTypes {
+			names = append(names, e.Name)
+		}
+		return names
+	case "priorities":
+		names := make([]string, 0, len(p.Priorities))
+		for _, e := range p.Priorities {
+			names = append(names, e.Name)
+		}
+		return names
+	case "link_types":
+		names := make([]string, 0, len(p.LinkTypes))
+		for _, e := range p.LinkTypes {
+			names = append(names, e.Name)
+		}
+		return names
+	case "screens":
+		names := make([]string, 0, len(p.Screens))
+		for _, e := range p.Screens {
+			names = append(names, e.Name)
+		}
+		return names
+	case "workflows":
+		names := make([]string, 0, len(p.Workflows))
+		for _, e := range p.Workflows {
+			names = append(names, e.Name)
+		}
+		return names
+	case "condition_sets":
+		names := make([]string, 0, len(p.ConditionSets))
+		for _, e := range p.ConditionSets {
+			names = append(names, e.Name)
+		}
+		return names
+	case "approval_sets":
+		names := make([]string, 0, len(p.ApprovalSets))
+		for _, e := range p.ApprovalSets {
+			names = append(names, e.Name)
+		}
+		return names
+	}
+	return nil
+}
+
+// referencedWorkflowIDsByName returns the workflows the addressed configuration
+// set references (its primary workflow and every item-type overlay workflow),
+// keyed by lowercased name. Repair uses this instead of a global name lookup so
+// a same-named workflow owned by another set is never modified.
+func (s *ConfigSetConformanceService) referencedWorkflowIDsByName(ctx context.Context, configSetID int) (map[string]int, error) {
+	out := map[string]int{}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT wf.id, wf.name
+		FROM workflows wf
+		WHERE wf.id IN (
+			SELECT workflow_id FROM configuration_sets WHERE id = ? AND workflow_id IS NOT NULL
+			UNION
+			SELECT workflow_id FROM configuration_set_item_types WHERE configuration_set_id = ? AND workflow_id IS NOT NULL
+		)
+	`, configSetID, configSetID)
+	if err != nil {
+		return nil, fmt.Errorf("load referenced workflows for set %d: %w", configSetID, err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var id int
+		var name string
+		if err := rows.Scan(&id, &name); err != nil {
+			return nil, fmt.Errorf("scan referenced workflow: %w", err)
+		}
+		out[lowerStr(name)] = id
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate referenced workflows: %w", err)
+	}
+	return out, nil
 }
 
 func nullIfZero(id int) any {

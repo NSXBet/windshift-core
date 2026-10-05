@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"time"
 
 	"windshift/internal/database"
 	"windshift/internal/itemevents"
@@ -118,6 +119,7 @@ func OffboardUser(db database.Database, userID int, notificationDeleter UserNoti
 		return result, fmt.Errorf("failed to find personal workspace: %w", err)
 	}
 	itemRepo := repository.NewItemRepository(db)
+	slaRepo := repository.NewSLARepository(db)
 	if personalWsID != nil {
 		if err := itemRepo.LockWorkspaceItemsTx(tx, *personalWsID); err != nil {
 			return result, err
@@ -159,6 +161,11 @@ func OffboardUser(db database.Database, userID int, notificationDeleter UserNoti
 		if err := itemRepo.DeleteByWorkspaceTx(tx, *personalWsID); err != nil {
 			return result, fmt.Errorf("failed to delete personal workspace items: %w", err)
 		}
+		// Drop SLA metrics before the workspace calendars cascade so the
+		// goal-target calendar FK cannot abort the delete.
+		if err := slaRepo.DeleteWorkspaceMetricsTx(context.Background(), tx, *personalWsID); err != nil {
+			return result, fmt.Errorf("failed to delete personal workspace SLA metrics: %w", err)
+		}
 		if _, err := tx.Exec(`DELETE FROM workspaces WHERE id = ?`, *personalWsID); err != nil {
 			return result, fmt.Errorf("failed to delete personal workspace: %w", err)
 		}
@@ -173,7 +180,11 @@ func OffboardUser(db database.Database, userID int, notificationDeleter UserNoti
 	}
 	if len(assignedItems) > 0 {
 		metadata := itemevents.System("user_offboard")
+		if metadata.OccurredAt.IsZero() {
+			metadata.OccurredAt = time.Now()
+		}
 		records := make([]itemevents.UpdateRecord, 0, len(assignedItems))
+		now := metadata.OccurredAt
 		for i := range assignedItems {
 			original := &assignedItems[i]
 			patched := *original
@@ -183,6 +194,13 @@ func OffboardUser(db database.Database, userID int, notificationDeleter UserNoti
 				Changes:  itemevents.Changes(original, &patched),
 				Metadata: metadata,
 			})
+			// The unassignment must be visible in item history too, not only
+			// in the domain event log; the actor is the system (offboarding).
+			if err := itemRepo.RecordHistory(tx, historyEntryForChange(
+				original.ID, "assignee_id", intPtrToString(original.AssigneeID), "", now, metadata,
+			)); err != nil {
+				return result, fmt.Errorf("record assignee removal history: %w", err)
+			}
 		}
 		if _, err := itemevents.NewRecorder(db).UpdatedBatch(context.Background(), tx, records); err != nil {
 			return result, fmt.Errorf("record assignee removal: %w", err)

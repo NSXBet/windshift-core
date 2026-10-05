@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -25,15 +26,46 @@ var ErrPersonalWorkspaceDeactivation = errors.New("personal workspaces cannot be
 // (item keys, integrations) rely on them.
 var ErrWorkspaceKeyImmutable = errors.New("workspace key can only be changed for personal workspaces")
 
+// Create-from-template-pack errors. The pack is verified before the workspace
+// exists, and a provisioning failure after creation compensates by deleting
+// the just-created workspace so callers never see a half-provisioned result.
+var (
+	ErrWorkspacePackUnavailable  = errors.New("workspace pack provisioning is not available")
+	ErrWorkspacePackNotFound     = errors.New("workspace pack not found")
+	ErrWorkspacePackProvisioning = errors.New("workspace pack provisioning failed")
+)
+
+// WorkspacePackProvisioner provisions an embedded pack into a workspace the
+// service just created. Implemented by PackApplyService; a nil provisioner
+// refuses TemplatePack.
+type WorkspacePackProvisioner interface {
+	// VerifyBuiltinPack validates the named built-in pack (manifest and plugin
+	// requirements) without writing anything.
+	VerifyBuiltinPack(ctx context.Context, name string) (*PackApplyReport, error)
+	// ApplyBuiltinPackToWorkspace runs the schema, content, and conformance
+	// stages against an already-created workspace.
+	ApplyBuiltinPackToWorkspace(ctx context.Context, actor AuditActor, name string, workspaceID int) (*PackApplyReport, error)
+}
+
 // WorkspaceService encapsulates workspace business logic used by both HTTP handlers
 // and other services.
 type WorkspaceService struct {
 	db                    database.Database
 	repo                  *repository.WorkspaceRepository
 	itemRepo              *repository.ItemRepository
+	slaRepo               *repository.SLARepository
 	templates             *repository.WorkspaceTemplateRepository
+	boards                *repository.BoardConfigurationRepository
 	integrationLinkGuards *IntegrationLinkGuards
 	access                WorkspaceSourceAccess
+	packProvisioner       WorkspacePackProvisioner
+}
+
+// SetPackProvisioner installs the optional create-from-template-pack
+// provisioner. Called after construction because PackApplyService depends on
+// this service for name-based workspace creation.
+func (s *WorkspaceService) SetPackProvisioner(provisioner WorkspacePackProvisioner) {
+	s.packProvisioner = provisioner
 }
 
 // NewWorkspaceService creates a new WorkspaceService.
@@ -42,7 +74,9 @@ func NewWorkspaceService(db database.Database) *WorkspaceService {
 		db:                    db,
 		repo:                  repository.NewWorkspaceRepository(db),
 		itemRepo:              repository.NewItemRepository(db),
+		slaRepo:               repository.NewSLARepository(db),
 		templates:             repository.NewWorkspaceTemplateRepository(db),
+		boards:                repository.NewBoardConfigurationRepository(db),
 		integrationLinkGuards: NewIntegrationLinkGuards(db),
 	}
 }
@@ -169,6 +203,15 @@ type CreateWorkspaceParams struct {
 	DefaultView   string
 
 	TemplateWorkspaceID *int
+	// TemplatePack, when set, is a built-in pack name whose configuration set,
+	// content, and conformance are applied to the new workspace. Mutually
+	// exclusive with TemplateWorkspaceID.
+	TemplatePack string
+
+	// RestrictedToCreator grants the creator the Viewer role inside the
+	// creation transaction, gating the workspace to assigned users from the
+	// first committed moment instead of briefly exposing it as open.
+	RestrictedToCreator *bool
 }
 
 // CreateWorkspaceResult contains the result of creating a workspace. The
@@ -193,6 +236,23 @@ func (s *WorkspaceService) Create(ctx context.Context, params CreateWorkspacePar
 	}
 	if params.IsPersonal && params.TemplateWorkspaceID != nil {
 		return nil, fmt.Errorf("%w: personal workspaces cannot be created from a template", ErrInvalidWorkspaceTemplate)
+	}
+	if params.TemplatePack != "" && params.TemplateWorkspaceID != nil {
+		return nil, fmt.Errorf("%w: template_pack and template_workspace_id are mutually exclusive", ErrWorkspacePackProvisioning)
+	}
+	if params.TemplatePack != "" {
+		if s.packProvisioner == nil {
+			return nil, ErrWorkspacePackUnavailable
+		}
+		// Resolve and verify the pack before the workspace exists, so an unknown
+		// or unsatisfiable pack never creates an orphan.
+		report, err := s.packProvisioner.VerifyBuiltinPack(ctx, params.TemplatePack)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %q: %w", ErrWorkspacePackNotFound, params.TemplatePack, err)
+		}
+		if report == nil || report.Status != PackVerifyStatusVerified {
+			return nil, fmt.Errorf("%w: pack %q requirements are not satisfied", ErrWorkspacePackProvisioning, params.TemplatePack)
+		}
 	}
 
 	key := strings.ToUpper(params.Key)
@@ -241,9 +301,131 @@ func (s *WorkspaceService) Create(ctx context.Context, params CreateWorkspacePar
 			repository.InvalidateItemListCountCache(s.db, result.Workspace.ID)
 			logWorkspaceCloneResult(result, time.Since(started))
 		}
+		if params.TemplatePack != "" {
+			if err := s.provisionTemplatePack(ctx, params, result); err != nil {
+				return nil, err
+			}
+		}
 		return result, nil
 	}
 	return nil, fmt.Errorf("workspace creation failed after retries: %w", lastErr)
+}
+
+// provisionTemplatePack applies the pack's schema, content, and conformance to
+// a freshly committed workspace. No single transaction spans workspace
+// creation, configuration-set import, and bundle import, so a provisioning
+// failure compensates by deleting the workspace the caller just asked for.
+func (s *WorkspaceService) provisionTemplatePack(ctx context.Context, params CreateWorkspaceParams, result *CreateWorkspaceResult) error {
+	// PostgreSQL item numbering needs the per-workspace sequence; content import
+	// may create items. The application layer also ensures this, idempotently.
+	if err := s.repo.CreateItemSequence(int64(result.Workspace.ID)); err != nil {
+		slog.Warn("failed to create item sequence before pack provisioning",
+			"workspace_id", result.Workspace.ID, "error", err)
+	}
+	report, provisionErr := s.packProvisioner.ApplyBuiltinPackToWorkspace(ctx, AuditActor{UserID: params.CreatorID}, params.TemplatePack, result.Workspace.ID)
+	if provisionErr == nil && report != nil && report.Status == PackApplyStatusApplied {
+		return nil
+	}
+	detail := "provisioning did not complete"
+	if provisionErr != nil {
+		detail = provisionErr.Error()
+	} else if failed := firstFailedPackStage(report); failed != nil {
+		detail = fmt.Sprintf("stage %q failed: %s", failed.Name, failed.Detail)
+	} else if report != nil {
+		detail = report.Status
+	}
+
+	// The schema stage may have imported a configuration set that the failure
+	// now orphans. Remove it (and the workflow it created fresh) before the
+	// workspace disappears; shared global registries are adopted by design and
+	// intentionally survive. A schema stage reported ok is a fresh import; a
+	// skipped stage means an existing set was adopted and must be left alone.
+	if freshConfigSetID := freshlyImportedConfigSetID(report); freshConfigSetID > 0 {
+		s.compensateFreshPackConfigurationSet(ctx, freshConfigSetID, result.Workspace.ID)
+	}
+	if delErr := s.Delete(result.Workspace.ID); delErr != nil {
+		slog.Error("failed to roll back workspace after pack provisioning failure",
+			"workspace_id", result.Workspace.ID, "pack", params.TemplatePack, "error", delErr)
+	}
+	return fmt.Errorf("%w: pack %q: %s", ErrWorkspacePackProvisioning, params.TemplatePack, detail)
+}
+
+// freshlyImportedConfigSetID returns the configuration set a pack apply
+// imported from the template, or 0 when the schema stage adopted an existing
+// set (or never reached a set). The schema stage is only reported ok on a
+// fresh import; reuse is reported skipped.
+func freshlyImportedConfigSetID(report *PackApplyReport) int {
+	if report == nil || report.ConfigSetID <= 0 {
+		return 0
+	}
+	for i := range report.Stages {
+		if report.Stages[i].Name == PackStageSchema && report.Stages[i].Status == PackStageStatusOK {
+			return report.ConfigSetID
+		}
+	}
+	return 0
+}
+
+// compensateFreshPackConfigurationSet removes a configuration set imported by
+// a failed create-from-template-pack together with the workflow it created.
+// It refuses when another workspace already adopted the set or another
+// configuration set references the workflow, so a concurrent or shared apply
+// is never damaged. Deleting the workflow cascades its condition and approval
+// sets. Shared global registries (statuses, item types, custom fields,
+// priorities, link types, screens) are matched by name and adopted rather than
+// owned, so they stay for the next apply.
+func (s *WorkspaceService) compensateFreshPackConfigurationSet(ctx context.Context, configSetID, workspaceID int) {
+	repo := repository.NewConfigurationSetRepository(s.db)
+	set, err := repo.FindByIDBasic(configSetID)
+	if errors.Is(err, repository.ErrNotFound) {
+		return
+	}
+	if err != nil {
+		slog.Warn("failed to load configuration set for pack rollback",
+			"configuration_set_id", configSetID, "error", err)
+		return
+	}
+
+	var otherWorkspaces int
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM workspace_configuration_sets
+		WHERE configuration_set_id = ? AND workspace_id != ?
+	`, configSetID, workspaceID).Scan(&otherWorkspaces); err != nil {
+		slog.Warn("failed to check configuration-set sharing for pack rollback",
+			"configuration_set_id", configSetID, "error", err)
+		return
+	}
+	if otherWorkspaces > 0 {
+		slog.Warn("leaving configuration set behind: another workspace adopted it",
+			"configuration_set_id", configSetID)
+		return
+	}
+
+	workflowID := set.WorkflowID
+	if err := repo.Delete(configSetID); err != nil {
+		slog.Warn("failed to remove configuration set after pack provisioning failure",
+			"configuration_set_id", configSetID, "error", err)
+		return
+	}
+	if workflowID == nil {
+		return
+	}
+
+	var workflowRefs int
+	if err := s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM configuration_sets WHERE workflow_id = ?`, *workflowID,
+	).Scan(&workflowRefs); err != nil {
+		slog.Warn("failed to check workflow references for pack rollback",
+			"workflow_id", *workflowID, "error", err)
+		return
+	}
+	if workflowRefs > 0 {
+		return
+	}
+	if _, err := s.db.ExecWriteContext(ctx, `DELETE FROM workflows WHERE id = ?`, *workflowID); err != nil {
+		slog.Warn("failed to remove workflow after pack provisioning failure",
+			"workflow_id", *workflowID, "error", err)
+	}
 }
 
 // NullableUpdate distinguishes an omitted field from an explicit null.
@@ -340,6 +522,9 @@ func (s *WorkspaceService) Update(params UpdateWorkspaceParams) (*models.Workspa
 		appendField("avatar_url", nullableUpdateValue(params.AvatarURL))
 	}
 	if params.DefaultView != nil {
+		if err := s.validateDefaultView(params.ID, *params.DefaultView); err != nil {
+			return nil, err
+		}
 		appendField("default_view", *params.DefaultView)
 	}
 	if params.InternalCommentsEnabled != nil {
@@ -380,6 +565,27 @@ func (s *WorkspaceService) Update(params UpdateWorkspaceParams) (*models.Workspa
 	return s.GetByID(params.ID)
 }
 
+// validateDefaultView rejects a default_view that the workspace's view
+// settings disable. Values outside the known view set (legacy data) pass.
+func (s *WorkspaceService) validateDefaultView(workspaceID int, defaultView string) error {
+	if !slices.Contains(models.BoardViewIDs, defaultView) {
+		return nil
+	}
+	wsConfig, err := s.boards.GetByWorkspaceID(workspaceID)
+	if errors.Is(err, repository.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("failed to load workspace view settings: %w", err)
+	}
+	if set := wsConfig.ViewSettings.EnabledViewSet(); set != nil {
+		if _, ok := set[defaultView]; !ok {
+			return fmt.Errorf("%w: view %q is disabled by the workspace view settings", ErrWorkspaceMutationInvalid, defaultView)
+		}
+	}
+	return nil
+}
+
 func nullableUpdateValue[T any](update NullableUpdate[T]) any {
 	if update.Value == nil {
 		return nil
@@ -407,6 +613,13 @@ func (s *WorkspaceService) Delete(id int) error {
 		}
 		if hasProtectedLinks {
 			return ErrWorkspaceHasProtectedIntegrationLinks
+		}
+
+		// Remove SLA configuration first so goal targets are gone before the
+		// workspace's calendars cascade; the goal-target calendar FK would
+		// otherwise abort the delete depending on cascade order.
+		if err := s.slaRepo.DeleteWorkspaceMetricsTx(context.Background(), tx, id); err != nil {
+			return err
 		}
 
 		if err := s.repo.DeleteTx(tx, id); err != nil {

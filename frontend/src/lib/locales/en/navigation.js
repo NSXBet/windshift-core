@@ -35,6 +35,8 @@ export default {
     loading: 'Loading...',
     retry: 'Retry',
     knowledgeBase: 'Knowledge Base',
+    scrollDownForMore: 'Scroll down to see more',
+    scrollUpForMore: 'Scroll up to see more',
   },
 
   commandPalette: {
@@ -345,6 +347,8 @@ export default {
       upcomingDeadlines: { name: 'Upcoming Deadlines', description: 'Items with approaching due dates' },
       iterationTimeline: { name: 'Iteration Timeline', description: 'Current and upcoming iteration schedule' },
       testCoverage: { name: 'Test Coverage', description: 'Requirements covered by test cases' },
+      supportMetrics: { name: 'Support Metrics', description: 'Backlog, first response, resolution, and SLA compliance for customer tickets' },
+      zammadSupportOverview: { name: 'Zammad support overview', description: 'Workspace-wide linked-ticket status and observed changes' },
     },
     customization: {
       widgets: 'Widgets', builtIn: 'Built-in widgets', builtInDescription: 'Core workspace metrics and charts',
@@ -421,5 +425,20 @@ export default {
     browseAllWorkspaces: 'Browse all {count} workspaces',
     noWorkspacesAvailable:
       'No workspaces are available yet. Please contact your administrator to get access to a workspace.',
+  },
+  navConfig: {
+    configureTitle: 'Configure navigation',
+    scopeWorkspace: 'Workspace default — {name}',
+    scopeCollection: 'Collection — {name}',
+    collectionScopeHelp:
+      'These toggles override the workspace default for this collection. Tools and tests follow the workspace setting.',
+    inheritedBadge: 'Following the workspace default — toggle a view to override it.',
+    resetToInherited: 'Reset to workspace default',
+    alwaysVisible: 'Always visible',
+    adminOnlyHint: 'Visible to workspace admins',
+    moduleHint: 'Appears when the test management module is enabled and the viewer can access tests.',
+    defaultViewHint: "The workspace's default view — cannot be disabled",
+    saveError: 'Could not save navigation settings: {error}',
+    loadError: 'Could not load navigation settings: {error}',
   },
 };

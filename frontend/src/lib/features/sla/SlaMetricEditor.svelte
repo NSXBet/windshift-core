@@ -109,8 +109,7 @@
       targets: (goal.targets ?? []).map((target) => ({
         is_fallback: !!target.is_fallback,
         priority_id: target.priority_id ?? null,
-        value: msToUnit(target.target_ms),
-        unit: 'h',
+        ...msToUnit(target.target_ms),
         calendar_id: target.calendar_id,
       })),
     }));
@@ -125,10 +124,10 @@
   }
 
   function msToUnit(ms) {
-    if (!ms || ms <= 0) return 4;
-    if (ms % 86400000 === 0) return ms / 86400000;
-    if (ms % 3600000 === 0) return ms / 3600000;
-    return ms / 60000;
+    if (!ms || ms <= 0) return { value: 4, unit: 'h' };
+    if (ms % 86400000 === 0) return { value: ms / 86400000, unit: 'd' };
+    if (ms % 3600000 === 0) return { value: ms / 3600000, unit: 'h' };
+    return { value: ms / 60000, unit: 'm' };
   }
 
   function unitToMs(value, unit) {

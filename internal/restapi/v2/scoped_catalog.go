@@ -84,6 +84,7 @@ type workspaceDTO struct {
 	Color                   string  `json:"color"`
 	AvatarURL               *string `json:"avatar_url"`
 	DefaultView             string  `json:"default_view"`
+	IsRestricted            bool    `json:"is_restricted,omitempty"`
 	ConfigurationSetID      *int64  `json:"configuration_set_id"`
 	CreatedAt               string  `json:"created_at"`
 	UpdatedAt               string  `json:"updated_at"`
@@ -113,6 +114,8 @@ type workspaceCreateRequest struct {
 	AvatarURL           *string `json:"avatar_url"`
 	DefaultView         string  `json:"default_view"`
 	TemplateWorkspaceID *int    `json:"template_workspace_id"`
+	TemplatePack        string  `json:"template_pack"`
+	RestrictedToCreator bool    `json:"restricted_to_creator"`
 }
 
 type workspacePatchRequest struct {
@@ -209,7 +212,8 @@ func createWorkspace(workspaces workspaceApplication) jsonOperation[workspaceCre
 			Name: input.Name, Key: input.Key, Description: input.Description, Active: input.Active,
 			TimeProjectID: input.TimeProjectID, IsPersonal: input.IsPersonal, OwnerID: input.OwnerID,
 			Icon: input.Icon, Color: input.Color, AvatarURL: input.AvatarURL, DefaultView: input.DefaultView,
-			TemplateWorkspaceID: input.TemplateWorkspaceID,
+			TemplateWorkspaceID: input.TemplateWorkspaceID, TemplatePack: input.TemplatePack,
+			RestrictedToCreator: &input.RestrictedToCreator,
 		})
 		if err != nil {
 			return workspaceDTO{}, workspaceMutationError(err)
@@ -278,6 +282,10 @@ func workspaceMutationError(err error) error {
 	case errors.Is(err, services.ErrInvalidWorkspaceTemplate), errors.Is(err, services.ErrWorkspaceTemplateTooLarge), errors.Is(err, services.ErrPersonalWorkspaceTemplate),
 		errors.Is(err, services.ErrPersonalWorkspaceDeactivation), errors.Is(err, services.ErrWorkspaceKeyImmutable):
 		return newError(http.StatusUnprocessableEntity, "unprocessable_entity", err.Error())
+	case errors.Is(err, services.ErrWorkspacePackNotFound):
+		return newError(http.StatusUnprocessableEntity, "unknown_pack", "Template pack was not found")
+	case errors.Is(err, services.ErrWorkspacePackProvisioning):
+		return newError(http.StatusUnprocessableEntity, "pack_provisioning_failed", err.Error())
 	default:
 		return internalError(err)
 	}
@@ -680,7 +688,7 @@ func workspaceFromModel(workspace *models.Workspace) workspaceDTO {
 	return workspaceDTO{
 		ID: workspace.ID, Name: workspace.Name, Key: workspace.Key, Description: workspace.Description,
 		Active: workspace.Active, TimeProjectID: workspace.TimeProjectID, IsPersonal: workspace.IsPersonal,
-		OwnerID: workspace.OwnerID, IsTemplate: workspace.IsTemplate,
+		OwnerID: workspace.OwnerID, IsTemplate: workspace.IsTemplate, IsRestricted: workspace.IsRestricted,
 		InternalCommentsEnabled: workspace.InternalCommentsEnabled, Icon: workspace.Icon, Color: workspace.Color,
 		AvatarURL: workspace.AvatarURL, DefaultView: workspace.DefaultView, ConfigurationSetID: workspace.ConfigurationSetID,
 		CreatedAt: timestamp(workspace.CreatedAt), UpdatedAt: timestamp(workspace.UpdatedAt),

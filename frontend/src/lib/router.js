@@ -34,6 +34,7 @@ const routes = {
   '/workspaces/:id/settings/issue-sync': 'workspace-settings-issue-sync',
   '/workspaces/:id/settings/action-credentials': 'workspace-settings-action-credentials',
   '/workspaces/:id/settings/templates': 'workspace-settings-templates',
+  '/workspaces/:id/settings/canned-responses': 'workspace-settings-canned-responses',
   '/workspaces/:id/settings/service-levels': 'workspace-settings-service-levels',
   '/workspaces/:id/settings/danger': 'workspace-settings-danger',
   '/workspaces/:id/actions': 'workspace-actions',
@@ -45,6 +46,8 @@ const routes = {
   '/item/:itemKey': 'item-detail',
   '/zammad/:correlationKey': 'zammad-resolve',
   // Routes without collection (show all workspace items)
+  '/workspaces/:id/queue': 'workspace-queue',
+  '/workspaces/:id/nav-config': 'workspace-nav-config',
   '/workspaces/:id/board': 'workspace-board',
   '/workspaces/:id/board/configure': 'workspace-board-config',
   '/workspaces/:id/backlog': 'workspace-backlog',
@@ -67,8 +70,10 @@ const routes = {
   // Chrome-free print/PDF view for a single page (opened in a new tab).
   '/workspaces/:id/pages/:pageId/print': 'page-print',
   // Routes with collection ID filtering
+  '/workspaces/:id/collections/:collectionId/queue': 'workspace-queue',
   '/workspaces/:id/collections/:collectionId/board': 'workspace-board',
   '/workspaces/:id/collections/:collectionId/board/configure': 'workspace-board-config',
+  '/workspaces/:id/collections/:collectionId/nav-config': 'workspace-nav-config',
   '/workspaces/:id/collections/:collectionId/backlog': 'workspace-backlog',
   '/workspaces/:id/collections/:collectionId/list': 'workspace-list',
   '/workspaces/:id/collections/:collectionId/tree': 'workspace-tree',
@@ -82,6 +87,7 @@ const routes = {
   // Global collection views (no workspace)
   '/collections/:id/board': 'collection-board',
   '/collections/:id/board/configure': 'collection-board-config',
+  '/collections/:id/nav-config': 'collection-nav-config',
   '/collections/:id/backlog': 'collection-backlog',
   '/collections/:id/list': 'collection-list',
   '/collections/:id/tree': 'collection-tree',

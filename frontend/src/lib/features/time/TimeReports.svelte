@@ -164,6 +164,9 @@
   }
 
   async function loadReports() {
+    if (!filters.date_from || !filters.date_to) {
+      return;
+    }
     loading = true;
     try {
       const query = { ...filters, timezone: reportTimezone };
@@ -176,9 +179,6 @@
       entryTotal = page?.pagination?.total ?? worklogs.length;
     } catch (error) {
       console.error('Failed to load reports:', error);
-      worklogs = [];
-      entryTotal = 0;
-      summary = { totalHours: 0, totalEntries: 0, averageHoursPerDay: 0, topProject: null, topCustomer: null };
     } finally {
       loading = false;
     }
@@ -204,14 +204,20 @@
   // Fetches every remaining entry page (server-side paging, large pages) for
   // the CSV/PDF exports, which keep their full raw-entry contract.
   async function fetchAllPersonalEntries() {
-    const rows = [...worklogs];
-    let page = Math.floor(rows.length / EXPORT_PAGE_SIZE) + 1;
-    let totalPages = page + 1;
+    const seen = new Set();
+    const rows = [];
+    let page = 1;
+    let totalPages = 1;
     while (page <= totalPages) {
       const document = await api.time.worklogs.getPage(
         { ...filters, timezone: reportTimezone, page_size: EXPORT_PAGE_SIZE, page }
       );
-      rows.push(...(document?.data || []));
+      for (const row of document?.data || []) {
+        const key = row.id ?? `${row.user_id}:${row.start_time}:${row.end_time}:${row.description}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        rows.push(row);
+      }
       totalPages = document?.pagination?.total_pages || 1;
       page += 1;
     }
@@ -223,16 +229,21 @@
       projectAggregate = { daily: [], totals: [] };
       return;
     }
+    if (!projectDateFrom || !projectDateTo) {
+      return;
+    }
     projectLoading = true;
     try {
-      const dateFilters = { timezone: reportTimezone, project_id: selectedProjectId };
-      if (projectDateFrom) dateFilters.date_from = projectDateFrom;
-      if (projectDateTo) dateFilters.date_to = projectDateTo;
+      const dateFilters = {
+        timezone: reportTimezone,
+        project_id: selectedProjectId,
+        date_from: projectDateFrom,
+        date_to: projectDateTo,
+      };
       const aggregate = await api.time.worklogs.aggregate(dateFilters);
       projectAggregate = aggregate || { daily: [], totals: [] };
     } catch (error) {
       console.error('Failed to load project worklogs:', error);
-      projectAggregate = { daily: [], totals: [] };
     } finally {
       projectLoading = false;
     }
@@ -303,7 +314,7 @@
     /** @type {(string | number)[][]} */
     const csvData = [headers];
 
-    worklogs.forEach(worklog => {
+    allEntries.forEach(worklog => {
       csvData.push([
         dateKeyInZone(worklog.start_time, reportTimezone),
         worklog.customer_name,
@@ -375,6 +386,7 @@
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   }
 
   async function exportToPDF() {
@@ -499,6 +511,7 @@
         loading={exportLoading}
         icon={Download}
         size="medium"
+        dataTestid="time-report-export-csv"
       >
         {t('time.reports.exportCSV')}
       </Button>
@@ -597,6 +610,7 @@
         loading={loading}
         icon={Filter}
         size="medium"
+        dataTestid="time-report-apply-filters"
       >
         {t('time.reports.applyFilters')}
       </Button>
@@ -708,6 +722,7 @@
         loading={projectLoading}
         icon={Filter}
         size="medium"
+        dataTestid="project-report-apply-filters"
       >
         {t('time.reports.applyFilters')}
       </Button>

@@ -12,6 +12,8 @@
     DEFAULT_LIST_COLUMNS,
     getListColumnLabel,
     listColumnsFromConfig,
+    listGridMinWidth,
+    listGridTemplateColumns,
   } from '../../utils/workItemListColumns.js';
   import { useGradientStyles } from '../../stores/workspaceGradient.svelte.js';
   import { workspacePermissions } from '../../stores/workspacePermissions.svelte.js';
@@ -106,62 +108,11 @@
     });
   });
 
-  // Computed: Generate grid-template-columns CSS
-  // Per-column baselines (rem) — what "M" looks like today.
-  // S/L/XL scale around this so the size picker has visible effect.
-  const baseFixedWidths = {
-    status: 8,
-    priority: 7,
-    assignee: 9,
-    milestone: 12,
-    iteration: 9,
-    due_date: 7,
-    created_at: 7,
-    project: 9,
-  };
+  // Computed: Generate grid-template-columns CSS via the shared list grid
+  // helpers (also used by the support queue's list-shaped table).
+  let gridTemplateColumns = $derived(listGridTemplateColumns(listColumns));
 
-  // width values: 1=S, 2=M, 3=L, 4=XL
-  const widthScale = { 1: 0.75, 2: 1, 3: 1.5, 4: 2 };
-
-  // Fixed columns may shrink down to their S size when a row is tight. Without
-  // a floor they hold their configured width and squeeze the flexible Title
-  // track until its text spills over the next cell.
-  const minFixedScale = 0.75;
-  const minTitleWidth = 16;
-  const minFlexibleWidth = 10;
-
-  function columnTrack(col) {
-    if (col.field_identifier === 'key') return 'max-content';
-
-    const base = baseFixedWidths[col.field_identifier];
-    if (base !== undefined) {
-      const min = base * minFixedScale;
-      const max = base * (widthScale[col.width] ?? 1);
-      return max > min ? `minmax(${min}rem, ${max}rem)` : `${min}rem`;
-    }
-
-    const min = col.field_identifier === 'title' ? minTitleWidth : minFlexibleWidth;
-    const fr = Number(col.width) || 2;
-    return `minmax(${min}rem, ${fr}fr)`;
-  }
-
-  // Floor for the whole row. When it exceeds the viewport the list scrolls
-  // horizontally instead of letting columns collapse into each other.
-  function columnMinWidth(col) {
-    if (col.field_identifier === 'key') return 5;
-    const base = baseFixedWidths[col.field_identifier];
-    if (base !== undefined) return base * minFixedScale;
-    return col.field_identifier === 'title' ? minTitleWidth : minFlexibleWidth;
-  }
-
-  let gridTemplateColumns = $derived(
-    listColumns.map(columnTrack).join(' ') + ' auto'
-  );
-
-  // 2.5rem covers the actions track, plus gap-4 (1rem) between every track.
-  let gridMinWidth = $derived(
-    `${listColumns.reduce((sum, col) => sum + columnMinWidth(col), 0) + 2.5 + listColumns.length}rem`
-  );
+  let gridMinWidth = $derived(listGridMinWidth(listColumns));
 
   useEventListener(() => window, 'refresh-work-items', async (/** @type {CustomEvent} */ event) => {
     const item = event.detail?.item;
@@ -268,6 +219,13 @@
     });
   });
   let filteredItemsById = $derived(new Map(filteredItems.map((item) => [item.id, item])));
+
+  // Resolve only the assignees the visible rows reference instead of waiting
+  // for the whole directory before the list can render.
+  $effect(() => {
+    const ids = filteredItems.map((item) => item.assignee_id).filter(Boolean);
+    if (ids.length > 0) void workspaceDataStore.hydrateUsers(ids);
+  });
 
   function registerListRow(element, itemId) {
     const cleanup = draggable({

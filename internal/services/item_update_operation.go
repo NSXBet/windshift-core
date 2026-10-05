@@ -245,6 +245,7 @@ func publishUpdatedItem(original, updated *models.Item, statusChanged bool) {
 		changeKind = ItemChangeStatus
 	}
 	PublishItemChange(updated.ID, changeKind)
+	PublishWorkspaceChange(updated.WorkspaceID, WorkspaceChangeItems)
 	oldParent, newParent := original.ParentID, updated.ParentID
 	reparented := (oldParent == nil) != (newParent == nil) ||
 		(oldParent != nil && newParent != nil && *oldParent != *newParent)

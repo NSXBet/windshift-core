@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -191,11 +192,13 @@ type WorklogAggregateInput struct {
 	CustomerName    string
 }
 
-// ListAggregateInputs returns the slim projection for every worklog matching
-// the filter, ordered for deterministic aggregation.
-func (r *TimeWorklogRepository) ListAggregateInputs(filter WorklogDetailFilter) ([]WorklogAggregateInput, error) {
+// StreamAggregateInputs invokes fn for every worklog matching the filter,
+// ordered for deterministic aggregation, without materializing the whole
+// result set. The query runs under ctx, so a canceled report request stops
+// the scan (WI-1598).
+func (r *TimeWorklogRepository) StreamAggregateInputs(ctx context.Context, filter WorklogDetailFilter, fn func(*WorklogAggregateInput) error) error {
 	if filter.AccessibleProjectIDs != nil && len(filter.AccessibleProjectIDs) == 0 {
-		return []WorklogAggregateInput{}, nil
+		return nil
 	}
 	where, args := worklogDetailWhere(filter)
 	query := `SELECT w.start_time, w.end_time, w.duration_minutes,
@@ -207,23 +210,24 @@ func (r *TimeWorklogRepository) ListAggregateInputs(filter WorklogDetailFilter) 
 	LEFT JOIN users u ON w.user_id = u.id
 	` + where + "\n ORDER BY w.start_time ASC, w.id ASC"
 
-	rows, err := r.db.Query(query, args...)
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("list worklog aggregate inputs: %w", err)
+		return fmt.Errorf("stream worklog aggregate inputs: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
-	items := make([]WorklogAggregateInput, 0)
 	for rows.Next() {
 		var item WorklogAggregateInput
 		if scanErr := rows.Scan(&item.StartTimeUnix, &item.EndTimeUnix, &item.DurationMinutes,
 			&item.UserID, &item.UserName, &item.ProjectID, &item.ProjectName,
 			&item.CustomerID, &item.CustomerName); scanErr != nil {
-			return nil, fmt.Errorf("scan worklog aggregate input: %w", scanErr)
+			return fmt.Errorf("scan worklog aggregate input: %w", scanErr)
 		}
-		items = append(items, item)
+		if err := fn(&item); err != nil {
+			return err
+		}
 	}
-	return items, rows.Err()
+	return rows.Err()
 }
 
 // ListDetails returns joined worklogs ordered newest-first.

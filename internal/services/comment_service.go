@@ -25,6 +25,12 @@ type WebhookDispatcher interface {
 	DispatchEvent(eventType string, item *models.Item)
 }
 
+// InactivityMarkClearer re-arms item_inactive triggers after comment
+// activity (WI-1132).
+type InactivityMarkClearer interface {
+	ClearItemMarks(itemID int) error
+}
+
 // EmailReplyHandler is an interface for handling outbound email replies on comment creation.
 // This avoids an import cycle with the email reply service.
 type EmailReplyHandler interface {
@@ -101,6 +107,8 @@ type CommentService struct {
 	notificationService *NotificationService
 	mentionService      *MentionService
 	webhookSender       WebhookDispatcher
+	actionEvents        ActionEventEmitter
+	inactivityMarks     InactivityMarkClearer
 	emailReplyService   EmailReplyHandler
 	agentMentionTrigger AgentMentionTrigger
 	issueSync           CommentIssueSync
@@ -294,6 +302,18 @@ func (s *CommentService) SetWebhookSender(ws WebhookDispatcher) {
 	s.webhookSender = ws
 }
 
+// SetActionEventEmitter wires the comment_created automation trigger.
+func (s *CommentService) SetActionEventEmitter(e ActionEventEmitter) {
+	s.actionEvents = e
+}
+
+// SetInactivityMarkClearer wires inactivity re-arming on comment activity.
+func (s *CommentService) SetInactivityMarkClearer(c InactivityMarkClearer) {
+	if c != nil {
+		s.inactivityMarks = c
+	}
+}
+
 // SetEmailReplyService sets the email reply service for sending threaded replies to portal customers.
 func (s *CommentService) SetEmailReplyService(ers EmailReplyHandler) {
 	s.emailReplyService = ers
@@ -414,6 +434,9 @@ func (s *CommentService) CreateInTx(ctx context.Context, tx database.Tx, itemID,
 	_, err = itemevents.NewRecorder(s.db).CommentCreated(ctx, tx, workspaceID, itemevents.CommentCreatedV1{
 		ItemID: itemID, CommentID: id, AuthorID: authorIDPtr, SuppressSideEffects: true,
 	}, metadata)
+	if err == nil && authorID > 0 {
+		err = repository.NewItemSupportEventRepository(s.db).RecordFirstResponse(tx, itemID, createdAt)
+	}
 	return id, err
 }
 
@@ -442,6 +465,13 @@ func (s *CommentService) CreateImported(params CreateCommentParams) (*CreateComm
 	return s.create(params)
 }
 
+// isPublicAgentComment reports whether a comment counts as the
+// customer-visible response for support metrics (WI-1133): not private and
+// written by a user rather than a portal customer or the system.
+func isPublicAgentComment(isPrivate bool, authorID int, portalCustomerID *int) bool {
+	return !isPrivate && authorID > 0 && portalCustomerID == nil
+}
+
 func (s *CommentService) create(params CreateCommentParams) (*CreateCommentResult, error) {
 	// 2. Get item details for notifications and the webhook payload
 	item, err := repository.NewItemRepository(s.db).FindByIDWithDetails(params.ItemID)
@@ -450,6 +480,11 @@ func (s *CommentService) create(params CreateCommentParams) (*CreateCommentResul
 			return nil, fmt.Errorf("item not found: %d", params.ItemID)
 		}
 		return nil, fmt.Errorf("failed to fetch item details: %w", err)
+	}
+	// A merged duplicate is a read-only redirect: comments belong on the
+	// canonical ticket (WI-1528).
+	if mergedInto, err := repository.NewItemRepository(s.db).MergedIntoItemID(context.Background(), params.ItemID); err == nil && mergedInto != nil {
+		return nil, NewServiceError(409, fmt.Sprintf("item %d was merged into item %d; comment on the canonical ticket instead", params.ItemID, *mergedInto))
 	}
 
 	// 3. Insert into DB
@@ -510,6 +545,11 @@ func (s *CommentService) create(params CreateCommentParams) (*CreateCommentResul
 		SuppressSideEffects: params.SuppressNotifications,
 	}, metadata); err != nil {
 		return nil, err
+	}
+	if isPublicAgentComment(params.IsPrivate, params.AuthorID, params.PortalCustomerID) {
+		if err := repository.NewItemSupportEventRepository(s.db).RecordFirstResponse(tx, params.ItemID, now); err != nil {
+			return nil, err
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("failed to commit comment: %w", err)
@@ -636,6 +676,34 @@ func (s *CommentService) create(params CreateCommentParams) (*CreateCommentResul
 		// 7. Dispatch webhook (if webhookSender != nil)
 		if s.webhookSender != nil {
 			s.webhookSender.DispatchEvent("comment.created", item)
+		}
+
+		// 7b. Dispatch the comment_created automation trigger (WI-1132).
+		// Admission outlives the request; failures never block comments.
+		if s.actionEvents != nil {
+			fromCustomer := params.PortalCustomerID != nil
+			s.actionEvents.EmitActionEvent(&models.ActionEvent{
+				EventType:   models.ActionTriggerCommentCreated,
+				WorkspaceID: item.WorkspaceID,
+				ItemID:      params.ItemID,
+				ActorUserID: params.ActorUserID,
+				ItemTypeID:  item.ItemTypeID,
+				NewValues: map[string]any{
+					"comment_id":            int(commentID),
+					"comment_is_private":    params.IsPrivate,
+					"comment_from_customer": fromCustomer,
+				},
+			})
+		}
+		// Fresh comment activity re-arms item_inactive triggers for the item.
+		if s.inactivityMarks != nil {
+			if err := s.inactivityMarks.ClearItemMarks(params.ItemID); err != nil {
+				slog.Warn("failed to clear inactivity marks",
+					slog.String("component", "comment_service"),
+					slog.Int("item_id", params.ItemID),
+					slog.Any("error", err),
+				)
+			}
 		}
 
 		// 8. Handle outbound email reply (if emailReplyService != nil)

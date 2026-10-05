@@ -14,7 +14,7 @@
   import { AlertTriangle, ChevronLeft, ChevronRight, Mail, MessageSquare, FileText } from '@lucide/svelte';
   import SearchInput from '../components/SearchInput.svelte';
 
-  let { isOpen = false, channel = null, onClose = () => {} } = $props();
+  let { isOpen = false, channel = null, initialTab = 'inbound', onClose = () => {} } = $props();
 
   let loading = $state(false);
   let error = $state(null);
@@ -25,7 +25,8 @@
   const pageSize = 50;
 
   // Outbound customer-reply queue state.
-  let activeTab = $state('inbound');
+  // The modal opens on the requested tab; later prop changes must not move it.
+  let activeTab = $state(untrack(() => initialTab));
   let outboxStatus = $state('pending');
   let outboxData = $state(null);
   let outboxLoading = $state(false);
@@ -256,10 +257,16 @@
     { value: 'all', label: t('channel.emailLog.outboxFilterAll') },
   ];
 
-  const modalTabs = [
-    { id: 'inbound', label: t('channel.emailLog.tabInbound'), testid: 'email-log-tab-inbound' },
-    { id: 'outbox', label: t('channel.emailLog.tabOutbox'), testid: 'email-log-tab-outbox' },
-  ];
+  // Portal-originated tickets' replies live in the portal channel's outbox;
+  // the inbound message log only exists for email intake channels.
+  const modalTabs = $derived(
+    channel?.type === 'email'
+      ? [
+          { id: 'inbound', label: t('channel.emailLog.tabInbound'), testid: 'email-log-tab-inbound' },
+          { id: 'outbox', label: t('channel.emailLog.tabOutbox'), testid: 'email-log-tab-outbox' },
+        ]
+      : [{ id: 'outbox', label: t('channel.emailLog.tabOutbox'), testid: 'email-log-tab-outbox' }]
+  );
 </script>
 
 <Modal

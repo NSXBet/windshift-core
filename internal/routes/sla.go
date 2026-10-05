@@ -12,6 +12,7 @@ func RegisterSLARoutes(deps *Deps) {
 
 	// Item SLA state.
 	api.HandleH("GET /items/{id}/sla", auth(http.HandlerFunc(deps.SLA.GetItemSLA)))
+	api.HandleH("GET /workspaces/{id}/sla/items", auth(http.HandlerFunc(deps.SLA.GetWorkspaceItemsSLA)))
 
 	// Workspace calendars.
 	api.HandleH("GET /workspaces/{id}/sla/calendars", auth(http.HandlerFunc(deps.SLA.ListWorkspaceCalendars)))

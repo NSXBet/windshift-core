@@ -145,6 +145,9 @@ CREATE TABLE IF NOT EXISTS customer_organisations (
 	active BOOLEAN DEFAULT true,
 	avatar_url TEXT,
 	custom_field_values JSONB,
+	-- Flexible per-organisation attributes (portal request sharing, etc.).
+	-- Empty object means "all defaults".
+	settings JSONB NOT NULL DEFAULT '{}'::JSONB,
 	created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
 	updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
@@ -324,10 +327,11 @@ CREATE TABLE IF NOT EXISTS board_configurations (
 	id SERIAL PRIMARY KEY,
 	workspace_id INTEGER,
 	collection_id INTEGER,
-	backlog_status_ids TEXT,
-	list_columns TEXT,
-	roadmap_config TEXT,
-	card_fields TEXT,
+	backlog_status_ids JSONB,
+	list_columns JSONB,
+	roadmap_config JSONB,
+	card_fields JSONB,
+	view_settings JSONB,
 	show_rightmost_column_last_50 BOOLEAN DEFAULT false,
 	completed_item_retention_days INTEGER,
 	created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
@@ -428,6 +432,7 @@ CREATE TABLE IF NOT EXISTS contact_roles (
 	name TEXT NOT NULL UNIQUE,
 	description TEXT,
 	is_system BOOLEAN DEFAULT false,
+	sort_order INTEGER NOT NULL DEFAULT 0,
 	created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 

@@ -158,6 +158,21 @@ var pagesSchema string
 //go:embed schema/page_labels.sql
 var pageLabelsSchema string
 
+//go:embed schema/canned_responses.sql
+var cannedResponsesSchema string
+
+//go:embed schema/queues.sql
+var queuesSchema string
+
+//go:embed schema/item_participants.sql
+var itemParticipantsSchema string
+
+//go:embed schema/item_support_events.sql
+var itemSupportEventsSchema string
+
+//go:embed schema/action_trigger_marks.sql
+var actionTriggerMarksSchema string
+
 //go:embed schema/agents.sql
 var agentsSchema string
 

@@ -121,6 +121,9 @@ const shortcuts = {
   templates: {
     add: { key: 'a' },
   },
+  cannedResponses: {
+    add: { key: 'a' },
+  },
   themes: {
     add: { key: 'a' },
   },

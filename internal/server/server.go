@@ -154,6 +154,7 @@ type Server struct {
 	eventEngine                  *events.Engine
 	approvalEscalationSweeper    *services.ApprovalEscalationSweeper
 	incidentEscalationSweeper    *services.IncidentEscalationSweeper
+	actionInactivitySweeper      *services.ActionInactivitySweeper
 	slaEngine                    *sla.Engine
 	slaLoop                      *sla.Loop
 	slaLoopCancel                context.CancelFunc
@@ -161,6 +162,8 @@ type Server struct {
 	emailScheduler               *scheduler.EmailScheduler
 	ticketImport                 *services.TicketImportService
 	emailTrackingRetention       *scheduler.EmailTrackingRetentionSweeper
+	portalAuthRetention          *scheduler.PortalAuthRetentionSweeper
+	kbEventsRetention            *scheduler.KBEventsRetentionSweeper
 	briefingScheduler            *scheduler.BriefingScheduler
 	pluginScheduleScheduler      *scheduler.PluginScheduleScheduler
 	activityTracker              *services.ActivityTracker
@@ -237,6 +240,15 @@ func New(cfg Config) (*Server, error) {
 }
 
 // initialize sets up all services and handlers.
+// newConfigSetConformanceService builds the conformance service with the
+// custom-field cleanup scheduler wired, so option-set repairs commit their
+// scrubbing jobs atomically (WI-1529).
+func newConfigSetConformanceService(db database.Database) *services.ConfigSetConformanceService {
+	svc := services.NewConfigSetConformanceService(db, repository.NewConfigurationSetRepository(db))
+	svc.SetOptionRemovalEnqueuer(scheduler.EnqueueOptionRemovalTx)
+	return svc
+}
+
 func (s *Server) initialize() error {
 	// FIXME: split initialization into focused builders and lifecycle registries.
 	cfg := s.config
@@ -304,6 +316,11 @@ func (s *Server) initialize() error {
 	}
 	if err = database.ValidateCanonicalSchemaCheckpoint(s.db); err != nil {
 		return fmt.Errorf("database startup refused: %w", err)
+	}
+	// Shipped framework packs are embedded assets; a malformed one is a build
+	// defect, so refuse to start rather than fail at first apply.
+	if err = services.ValidateBuiltinPacks(); err != nil {
+		return fmt.Errorf("built-in packs startup refused: %w", err)
 	}
 	objectTranslationService := objecttranslation.NewService(s.db)
 	if err := objectTranslationService.SyncSystem(context.Background(), objecttranslation.ShippedSystemTranslations()); err != nil {
@@ -740,8 +757,14 @@ func (s *Server) initialize() error {
 	teamService := services.NewTeamService(s.db, teamRepo, leaveRepo)
 	onCallService := services.NewOnCallService(s.db, onCallRepo, leaveRepo)
 	itemRepo := repository.NewItemRepository(s.db)
+	cannedResponseService := services.NewCannedResponseService(
+		repository.NewCannedResponseRepository(s.db),
+		repository.NewUserRepository(s.db),
+		itemRepo,
+		logger.NewAuditor(s.db),
+	)
 	incidentService := services.NewIncidentService(s.db, onCallRepo, itemRepo, onCallService, teamRepo, s.notificationService)
-	teamHandler := handlers.NewTeamHandler(teamRepo, leaveRepo, permService, logger.NewAuditor(s.db))
+	teamHandler := handlers.NewTeamHandler(teamRepo, leaveRepo, repository.NewSLARepository(s.db), permService, logger.NewAuditor(s.db))
 	leaveHandler := handlers.NewLeaveHandler(leaveRepo, repository.NewUserRepository(s.db), permService)
 	onCallHandler := handlers.NewOnCallHandler(onCallRepo, teamRepo, itemRepo, onCallService, incidentService, permService, logger.NewAuditor(s.db))
 	s.actionService.SetTeamService(teamService)
@@ -1002,6 +1025,15 @@ func (s *Server) initialize() error {
 	s.emailTrackingRetention = scheduler.NewEmailTrackingRetentionSweeper(s.db)
 	s.emailTrackingRetention.Start()
 
+	// Daily retention sweeps for portal credential and analytics data:
+	// expired sessions and consumed magic links (system_settings windows,
+	// default 30 days) and kb_events analytics (per-channel override, default
+	// 365 days).
+	s.portalAuthRetention = scheduler.NewPortalAuthRetentionSweeper(s.db)
+	s.portalAuthRetention.Start()
+	s.kbEventsRetention = scheduler.NewKBEventsRetentionSweeper(s.db)
+	s.kbEventsRetention.Start()
+
 	integrationProviderHandler := handlers.NewIntegrationProviderHandler(repository.NewIntegrationProviderRepository(s.db), scmProviderHandler.GetEncryption(), logger.NewAuditor(s.db))
 	integrationOAuthHandler := handlers.NewIntegrationOAuthHandler(s.db, scmProviderHandler.GetEncryption(), baseURL)
 	integrationItemLinksHandler := handlers.NewIntegrationItemLinksHandler(s.db, scmProviderHandler.GetEncryption(), permService)
@@ -1045,7 +1077,10 @@ func (s *Server) initialize() error {
 	// give the item handler the hub so GET /items/{id}/events can subscribe.
 	sseHub := services.NewSSEHub()
 	services.SetItemChangePublisher(sseHub)
+	services.SetWorkspaceChangePublisher(sseHub)
+	services.SetUserChangePublisher(sseHub)
 	itemHandler.SetSSEHub(sseHub)
+	notificationHandler.SetSSEHub(sseHub)
 
 	mentionService := services.NewMentionService(s.db, s.notificationService, permService)
 	mentionService.SetWorkspaceUserResolver(workspaceUsers)
@@ -1063,6 +1098,8 @@ func (s *Server) initialize() error {
 		commentService.SetAgentMentionTrigger(bindingSvc)
 	}
 	s.actionService.SetCommentService(commentService)
+	commentService.SetActionEventEmitter(s.actionService)
+	commentService.SetInactivityMarkClearer(repository.NewActionTriggerMarkRepository(s.db))
 
 	// Wire email reply service for bidirectional email threading
 	emailReplyService := services.NewEmailReplyService(s.db, smtpSender)
@@ -1071,6 +1108,15 @@ func (s *Server) initialize() error {
 	}
 	commentService.SetEmailReplyService(emailReplyService)
 	s.notificationScheduler.SetEmailReplyOutbox(emailReplyService)
+
+	// External request participants (WI-1136): the reply service sends the
+	// customer-facing "you were added" notice.
+	participantService := services.NewItemParticipantService(s.db)
+	participantService.SetNotifier(emailReplyService)
+
+	// Wire the helpdesk automation nodes (WI-1132/WI-1138). The reply
+	// service doubles as the customer notifier for notify_customer.
+	s.actionService.RegisterHelpdeskNodeExecutors(cannedResponseService, commentService, emailReplyService)
 
 	// Wire CommentService into email processor for unified comment creation
 	s.emailScheduler.SetCommentService(commentService)
@@ -1149,6 +1195,9 @@ func (s *Server) initialize() error {
 	s.incidentEscalationSweeper = services.NewIncidentEscalationSweeper(s.db, incidentService, services.DefaultIncidentEscalationSweeperConfig())
 	s.incidentEscalationSweeper.Start()
 
+	s.actionInactivitySweeper = services.NewActionInactivitySweeper(s.db, s.actionService, services.DefaultActionInactivitySweeperConfig())
+	s.actionInactivitySweeper.Start()
+
 	// SLA evaluation runs inline with item facts, and one process-wide
 	// goroutine fires deadline and recalculation jobs. Under the e2e test hook
 	// a manually advanced clock drives derivation and the loop stays off, so a
@@ -1163,6 +1212,7 @@ func (s *Server) initialize() error {
 	s.slaEngine.SetSideEffectEmitter(services.NewSLASideEffectEmitter(s.db))
 	s.slaEngine.SetInlineObserver(s.metrics)
 	s.slaLoop = sla.NewLoop(repository.NewSLARepository(s.db), s.slaEngine, slaClock, nil, sla.LoopConfig{})
+	s.slaEngine.SetJobOwner(s.slaLoop.Owner())
 	s.slaEngine.SetNudge(s.slaLoop.Nudge)
 	itemevents.RegisterFactObserver(s.slaEngine)
 	slaLoopCtx, slaLoopCancel := context.WithCancel(context.Background())
@@ -1240,6 +1290,7 @@ func (s *Server) initialize() error {
 	portalHandler.SetChannelService(channelService)
 	portalHandler.SetKnowledgePublicationService(knowledgePublication)
 	portalHandler.SetKBSignalService(services.NewKBSignalService(s.db))
+	portalHandler.SetCommentService(commentService)
 	portalAuthHandler := handlers.NewPortalAuthHandler(repository.NewPortalAuthRepository(s.db), portalSessionManager, sessionManager, magicLinkService, ipExtractor)
 	var portalWebAuthnHandler *handlers.PortalWebAuthnHandler
 	if portalWebAuthnConfig != nil {
@@ -1733,6 +1784,33 @@ func (s *Server) initialize() error {
 		pluginRouter.RegisterRoutes(mux)
 	}
 
+	// Workspace creation wiring: the v2 application service, the v1 and
+	// session create handlers, and the pack apply service share one
+	// create-from-template-pack provisioner. PackApplyService depends on the
+	// application service for name-based workspace creation, so it is wired
+	// after construction.
+	v2Access := authz.New(s.db, permService)
+	workspaceAppService := services.NewWorkspaceApplicationService(s.db, v2Access, authorizationCacheInvalidator)
+	workspaceBundleImportService := services.NewWorkspaceBundleImportService(
+		s.db,
+		repository.NewConfigurationSetRepository(s.db),
+		repository.NewItemTypeRepository(s.db),
+		repository.NewLabelRepository(s.db),
+		pageApplication,
+		pageLabelService,
+		itemHandler.ItemCreationService(),
+		itemLinkService,
+		permService,
+	)
+	packApplyService := services.NewPackApplyService(
+		s.db,
+		workspaceAppService,
+		repository.NewConfigurationSetRepository(s.db),
+		newConfigSetConformanceService(s.db),
+		workspaceBundleImportService,
+	)
+	workspaceAppService.SetPackProvisioner(packApplyService)
+
 	// REST API v1
 	restapi.SetupRoutes(restapi.Deps{
 		Mux:                            mux,
@@ -1752,6 +1830,7 @@ func (s *Server) initialize() error {
 		PageDiagramService:             pageDiagramService,
 		ObjectTranslationService:       objectTranslationService,
 		AuthorizationCacheInvalidator:  authorizationCacheInvalidator,
+		PackProvisioner:                packApplyService,
 		AI:                             aiHandler,
 		AIRateLimiter:                  s.aiRateLimiter,
 	}, v1.RegisterRoutes)
@@ -1759,7 +1838,6 @@ func (s *Server) initialize() error {
 	if !cfg.DisableCSRF {
 		v2CSRF = middleware.NewCSRFValidator(csrfOrigins)
 	}
-	v2Access := authz.New(s.db, permService)
 	planningCredentialResolver := scm.NewCredentialResolver(s.db, scmProviderHandler.GetEncryption())
 	planningApplication := services.NewPlanningApplicationService(
 		milestonePlanningService,
@@ -1808,7 +1886,6 @@ func (s *Server) initialize() error {
 		WithStoryPointRollups(repository.NewItemRepository(s.db))
 	catalogMutations := services.NewCatalogMutationService(s.db, permService, workflowService)
 	governanceApplication := services.NewGovernanceApplicationService(s.db, permService, approvalSetService, approvalService)
-	workspaceAppService := services.NewWorkspaceApplicationService(s.db, v2Access, authorizationCacheInvalidator)
 	if err := v2.RegisterRoutes(v2.Deps{
 		Mux:                mux,
 		Tokens:             tokenManager,
@@ -1835,88 +1912,64 @@ func (s *Server) initialize() error {
 		WorkspaceRoles:               services.NewWorkspaceRoleProvisioningService(s.db, repository.NewWorkspaceRoleRepository(s.db), permService, approvalService),
 		ConfigurationSetProvisioning: services.NewConfigurationSetProvisioningService(s.db, repository.NewConfigurationSetRepository(s.db), permService, s.notificationService),
 		ConfigurationSetExport:       services.NewConfigSetExportService(s.db, repository.NewConfigurationSetRepository(s.db)),
-		ConfigSetConformance:         services.NewConfigSetConformanceService(s.db, repository.NewConfigurationSetRepository(s.db)),
+		ConfigSetConformance:         newConfigSetConformanceService(s.db),
 		WorkspaceBundleExport:        services.NewWorkspaceBundleExportService(s.db, services.NewConfigSetExportService(s.db, repository.NewConfigurationSetRepository(s.db))),
-		PackApply: services.NewPackApplyService(
-			s.db,
-			workspaceAppService,
-			repository.NewConfigurationSetRepository(s.db),
-			services.NewConfigSetConformanceService(s.db, repository.NewConfigurationSetRepository(s.db)),
-			services.NewWorkspaceBundleImportService(
-				s.db,
-				repository.NewConfigurationSetRepository(s.db),
-				repository.NewItemTypeRepository(s.db),
-				repository.NewLabelRepository(s.db),
-				pageApplication,
-				pageLabelService,
-				itemHandler.ItemCreationService(),
-				itemLinkService,
-				permService,
-			),
-		),
-		WorkspaceBundleImport: services.NewWorkspaceBundleImportService(
-			s.db,
-			repository.NewConfigurationSetRepository(s.db),
-			repository.NewItemTypeRepository(s.db),
-			repository.NewLabelRepository(s.db),
-			pageApplication,
-			pageLabelService,
-			itemHandler.ItemCreationService(),
-			itemLinkService,
-			permService,
-		),
-		StoryPointRollup:  repository.NewItemRepository(s.db),
-		HierarchyLevels:   hierarchyLevelEnumService,
-		Workspaces:        workspaceAppService,
-		ItemTemplates:     services.NewItemTemplateApplicationService(s.db, v2Access),
-		Labels:            services.NewLabelApplicationService(s.db),
-		Items:             repository.NewItemRepository(s.db),
-		Access:            v2Access,
-		Preferences:       userPreferencesService,
-		Recurrence:        recurrenceService,
-		ItemDiagrams:      itemDiagramService,
-		Pages:             pageService,
-		PageApplication:   pageApplication,
-		PageDiagrams:      pageDiagramService,
-		PageAccess:        pagePermissionService,
-		PageLabels:        pageLabelService,
-		PagePublication:   knowledgePublication,
-		Worklogs:          timeWorklogService,
-		TimeAccess:        timePermissionService,
-		TimeProjects:      services.NewTimeProjectApplicationService(s.db, timePermissionService, v2Access),
-		Timers:            timerService,
-		SystemAdmins:      permService,
-		GlobalPermission:  permService,
-		Groups:            groupHandler.Application(),
-		AdminUsers:        services.NewUserReadService(s.db),
-		AuditLogs:         repository.NewAuditLogRepository(s.db),
-		AdminTokens:       tokenManager,
-		AdminAuditor:      logger.NewAuditor(s.db),
-		AdminTranslations: objectTranslationService,
-		Comments:          commentService,
-		CommentAccess:     permService,
-		Attachments:       services.NewItemAttachmentService(s.db, cfg.AttachmentPath, permService),
-		PageAttachments:   services.NewPageAttachmentUploadService(s.db, cfg.AttachmentPath, permService, pagePermissionService),
-		Collections:       services.NewCollectionApplicationService(s.db, permService),
-		Planning:          planningApplication,
-		Links:             itemLinkService,
-		AgentRuns:         agentRunApplication,
-		AgentSkills:       services.NewAgentSkillApplicationService(s.db, permService),
-		ConditionSets:     services.NewConditionSetApplicationService(s.db, permService),
-		Governance:        governanceApplication,
-		Actions:           actionApplication,
-		TestManagement:    services.NewTestManagementApplicationService(s.db, permService),
-		Assets:            assetApplication,
-		ItemApplication:   itemApplication,
-		ItemDetail:        itemDetailApplication,
-		ItemLifecycle:     services.NewItemLifecycleService(s.db, permService),
-		TicketImport:      services.NewTicketImportService(s.db, permService, cfg.AttachmentPath),
-		SessionMiddleware: authMiddleware.OptionalAuth,
-		SearchAllowed:     s.searchLimiter.AllowRequest,
-		DBRequestTimeout:  s.config.DB.RequestTimeout,
-		CORS:              v2.NewCORS(csrfOrigins, cfg.DisableCSRF, !cfg.DisableCSRF),
-		CSRF:              v2CSRF,
-		Concurrency:       s.userConcurrency,
+		PackApply:                    packApplyService,
+		WorkspaceBundleImport:        workspaceBundleImportService,
+		StoryPointRollup:             repository.NewItemRepository(s.db),
+		HierarchyLevels:              hierarchyLevelEnumService,
+		Workspaces:                   workspaceAppService,
+		ItemTemplates:                services.NewItemTemplateApplicationService(s.db, v2Access),
+		Labels:                       services.NewLabelApplicationService(s.db),
+		Participants:                 participantService,
+		Items:                        repository.NewItemRepository(s.db),
+		Access:                       v2Access,
+		Preferences:                  userPreferencesService,
+		Recurrence:                   recurrenceService,
+		ItemDiagrams:                 itemDiagramService,
+		Pages:                        pageService,
+		PageApplication:              pageApplication,
+		PageDiagrams:                 pageDiagramService,
+		PageAccess:                   pagePermissionService,
+		PageLabels:                   pageLabelService,
+		CannedResponses:              cannedResponseService,
+		PagePublication:              knowledgePublication,
+		Worklogs:                     timeWorklogService,
+		TimeAccess:                   timePermissionService,
+		TimeProjects:                 services.NewTimeProjectApplicationService(s.db, timePermissionService, v2Access),
+		Timers:                       timerService,
+		SystemAdmins:                 permService,
+		GlobalPermission:             permService,
+		Groups:                       groupHandler.Application(),
+		AdminUsers:                   services.NewUserReadService(s.db),
+		AuditLogs:                    repository.NewAuditLogRepository(s.db),
+		AdminTokens:                  tokenManager,
+		AdminAuditor:                 logger.NewAuditor(s.db),
+		AdminTranslations:            objectTranslationService,
+		Comments:                     commentService,
+		CommentAccess:                permService,
+		Attachments:                  services.NewItemAttachmentService(s.db, cfg.AttachmentPath, permService),
+		PageAttachments:              services.NewPageAttachmentUploadService(s.db, cfg.AttachmentPath, permService, pagePermissionService),
+		Collections:                  services.NewCollectionApplicationService(s.db, permService),
+		Planning:                     planningApplication,
+		Links:                        itemLinkService,
+		AgentRuns:                    agentRunApplication,
+		AgentSkills:                  services.NewAgentSkillApplicationService(s.db, permService),
+		ConditionSets:                services.NewConditionSetApplicationService(s.db, permService),
+		Governance:                   governanceApplication,
+		Actions:                      actionApplication,
+		TestManagement:               services.NewTestManagementApplicationService(s.db, permService),
+		Assets:                       assetApplication,
+		ItemApplication:              itemApplication,
+		ItemDetail:                   itemDetailApplication,
+		ItemLifecycle:                services.NewItemLifecycleService(s.db, permService),
+		TicketImport:                 services.NewTicketImportService(s.db, permService, cfg.AttachmentPath),
+		SessionMiddleware:            authMiddleware.OptionalAuth,
+		SearchAllowed:                s.searchLimiter.AllowRequest,
+		DBRequestTimeout:             s.config.DB.RequestTimeout,
+		CORS:                         v2.NewCORS(csrfOrigins, cfg.DisableCSRF, !cfg.DisableCSRF),
+		CSRF:                         v2CSRF,
+		Concurrency:                  s.userConcurrency,
 	}); err != nil {
 		return fmt.Errorf("register REST API v2: %w", err)
 	}
@@ -2270,6 +2323,11 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		s.incidentEscalationSweeper.Stop()
 	}
 
+	if s.actionInactivitySweeper != nil {
+		slog.Info("stopping action inactivity sweeper")
+		s.actionInactivitySweeper.Stop()
+	}
+
 	if s.slaLoopCancel != nil {
 		slog.Info("stopping SLA due-work loop")
 		s.slaLoopCancel()
@@ -2289,6 +2347,16 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	if s.emailTrackingRetention != nil {
 		slog.Info("stopping email tracking retention sweeper")
 		s.emailTrackingRetention.Stop()
+	}
+
+	if s.portalAuthRetention != nil {
+		slog.Info("stopping portal auth retention sweeper")
+		s.portalAuthRetention.Stop()
+	}
+
+	if s.kbEventsRetention != nil {
+		slog.Info("stopping kb events retention sweeper")
+		s.kbEventsRetention.Stop()
 	}
 
 	if s.briefingScheduler != nil {

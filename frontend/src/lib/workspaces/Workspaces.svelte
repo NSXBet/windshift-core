@@ -107,6 +107,11 @@
       slot: 'status'
     },
     {
+      key: 'visibility',
+      label: t('workspaces.visibility'),
+      slot: 'visibility'
+    },
+    {
       key: 'created_at',
       label: t('common.created'),
       sortable: true,
@@ -204,6 +209,22 @@
 
     {#snippet status(workspace)}
       <Lozenge color={workspace.active ? 'green' : 'gray'} text={workspace.active ? 'Active' : 'Inactive'} />
+    {/snippet}
+
+    {#snippet visibility(workspace)}
+      {#if workspace.is_restricted}
+        <Lozenge
+          color="orange"
+          text={t('workspaces.restricted')}
+          dataTestid={`workspace-restricted-badge-${workspace.id}`}
+        />
+      {:else}
+        <Lozenge
+          color="gray"
+          text={t('workspaces.open')}
+          dataTestid={`workspace-open-${workspace.id}`}
+        />
+      {/if}
     {/snippet}
   </DataTable>
     </div>

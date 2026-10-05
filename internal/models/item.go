@@ -109,6 +109,10 @@ type Item struct {
 	ReporterAvatar             string `json:"reporter_avatar,omitempty"`               // Avatar URL of reporter
 	CreatorPortalCustomerName  string `json:"creator_portal_customer_name,omitempty"`  // Name of portal customer creator
 	CreatorPortalCustomerEmail string `json:"creator_portal_customer_email,omitempty"` // Email of portal customer creator
+	// Customer organisation of the portal-customer creator, for the ticket
+	// customer-context panel. Empty for internal creators.
+	CreatorCustomerOrganisationID   *int   `json:"creator_customer_organisation_id,omitempty"`
+	CreatorCustomerOrganisationName string `json:"creator_customer_organisation_name,omitempty"`
 	// Portal submission tracking joined fields
 	ChannelName     string `json:"channel_name,omitempty"`      // Name of the portal/channel
 	RequestTypeName string `json:"request_type_name,omitempty"` // Name of the request type
@@ -156,6 +160,15 @@ type ItemHistory struct {
 	UserName  string `json:"user_name,omitempty"`  // Full name of user who made the change
 	UserEmail string `json:"user_email,omitempty"` // Email of user who made the change
 	IsAgent   bool   `json:"is_agent"`             // Whether the user is an AI agent
+	// ActorKind is "user" (default/legacy), "portal_customer", or "system".
+	// UserID is 0 for non-user actors and PortalCustomerID carries the
+	// acting portal customer instead.
+	ActorKind          string `json:"actor_kind,omitempty"`
+	PortalCustomerID   *int   `json:"portal_customer_id,omitempty"`
+	PortalCustomerName string `json:"portal_customer_name,omitempty"`
+	// PortalCustomerEmail is the resolved portal-customer email for
+	// non-user actors; not set for user rows.
+	PortalCustomerEmail string `json:"portal_customer_email,omitempty"`
 	// AgentOwnerName is permission-filtered by the item-history handler.
 	AgentOwnerName string `json:"agent_owner_name,omitempty"`
 	// Source names the acting surface when an agent made the change on the
@@ -246,20 +259,27 @@ type Mention struct {
 
 // Attachment represents a file attached to an item
 type Attachment struct {
-	ID               int       `json:"id"`
-	ItemID           *int      `json:"item_id,omitempty"`
-	Filename         string    `json:"filename"`          // Stored filename (UUID-based)
-	OriginalFilename string    `json:"original_filename"` // Original user filename
-	FilePath         string    `json:"-"`                 // Full file path, not sent to client
-	MimeType         string    `json:"mime_type"`
-	FileSize         int64     `json:"file_size"`
-	UploadedBy       *int      `json:"uploaded_by,omitempty"`
-	HasThumbnail     bool      `json:"has_thumbnail"` // Whether thumbnail was generated
-	ThumbnailPath    string    `json:"-"`             // Thumbnail file path, not sent to client
-	CreatedAt        time.Time `json:"created_at"`
+	ID               int    `json:"id"`
+	ItemID           *int   `json:"item_id,omitempty"`
+	Filename         string `json:"filename"`          // Stored filename (UUID-based)
+	OriginalFilename string `json:"original_filename"` // Original user filename
+	FilePath         string `json:"-"`                 // Full file path, not sent to client
+	MimeType         string `json:"mime_type"`
+	FileSize         int64  `json:"file_size"`
+	UploadedBy       *int   `json:"uploaded_by,omitempty"`
+	// UploadedByPortalCustomerID carries the portal-customer uploader when
+	// the file was submitted through a portal or public form; UploadedBy is
+	// nil in that case.
+	UploadedByPortalCustomerID *int      `json:"uploaded_by_portal_customer_id,omitempty"`
+	HasThumbnail               bool      `json:"has_thumbnail"` // Whether thumbnail was generated
+	ThumbnailPath              string    `json:"-"`             // Thumbnail file path, not sent to client
+	CreatedAt                  time.Time `json:"created_at"`
 	// Joined fields for API responses
 	UploaderName  string `json:"uploader_name,omitempty"`
 	UploaderEmail string `json:"uploader_email,omitempty"`
+	// UploaderPortalCustomerName is the resolved portal-customer uploader
+	// name for portal/form submissions.
+	UploaderPortalCustomerName string `json:"uploader_portal_customer_name,omitempty"`
 }
 
 // AttachmentSettings represents system-wide attachment configuration

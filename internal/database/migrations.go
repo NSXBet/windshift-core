@@ -4,9 +4,31 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"slices"
 )
+
+// pgJSONBColumnsCheck reports whether every named column already has the
+// JSONB type, so type-conversion migrations stamp instead of re-running.
+func pgJSONBColumnsCheck(columns ...[2]string) func(Database) (bool, error) {
+	return func(db Database) (bool, error) {
+		for _, column := range columns {
+			var count int
+			err := db.QueryRow(fmt.Sprintf(
+				"SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='%s' AND column_name='%s' AND data_type='jsonb'",
+				column[0], column[1],
+			)).Scan(&count)
+			if err != nil {
+				return false, err
+			}
+			if count == 0 {
+				return false, nil
+			}
+		}
+		return true, nil
+	}
+}
 
 const zammadSchemaMigrationSQLite = `
 	CREATE TABLE zammad_connections (
@@ -1531,10 +1553,15 @@ var Catalog = []Migration{
 		`,
 	},
 	{
-		Version:       "20260925_incidents",
-		Name:          "Model incidents as pager state on work items",
-		CheckSQLite:   sqliteTableCheck("incidents"),
-		CheckPostgres: pgTableCheck("incidents"),
+		// Carries the on-call incident history forward from 0.8.9 (WI-1535):
+		// rows archive to on_call_incidents_archive and the latest open
+		// incident per item migrates into the new model. ReconcileChecksum
+		// restamps installs that already ran the original destructive body.
+		Version:           "20260925_incidents",
+		Name:              "Model incidents as pager state on work items",
+		CheckSQLite:       sqliteTableCheck("incidents"),
+		CheckPostgres:     pgTableCheck("incidents"),
+		ReconcileChecksum: true,
 		SQLite: `
 			CREATE TABLE incidents (
 				id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1566,6 +1593,51 @@ var Catalog = []Migration{
 			CREATE UNIQUE INDEX uq_incidents_open_item ON incidents(item_id) WHERE status = 'triggered';
 			ALTER TABLE items ADD COLUMN incident_id INTEGER REFERENCES incidents(id) ON DELETE SET NULL;
 			CREATE UNIQUE INDEX uq_items_incident ON items(incident_id) WHERE incident_id IS NOT NULL;
+			CREATE TABLE on_call_incidents_archive (
+				id INTEGER PRIMARY KEY,
+				escalation_policy_id INTEGER,
+				item_id INTEGER,
+				status TEXT,
+				triggered_at DATETIME,
+				acknowledged_at DATETIME,
+				acknowledged_by INTEGER,
+				resolved_at DATETIME,
+				resolved_by INTEGER,
+				current_escalation_step INTEGER,
+				escalation_repeat_count INTEGER,
+				created_at DATETIME
+			);
+			INSERT INTO on_call_incidents_archive
+				SELECT id, escalation_policy_id, item_id, status, triggered_at, acknowledged_at,
+					acknowledged_by, resolved_at, resolved_by, current_escalation_step,
+					escalation_repeat_count, created_at
+				FROM on_call_incidents;
+			INSERT INTO incidents (item_id, status, urgency, source, escalation_policy_id,
+					triggered_at, acknowledged_at, acknowledged_by, escalation_step,
+					escalation_repeat_count, next_escalation_at, created_at, updated_at)
+			SELECT o.item_id, o.status, 'high', 'manual',
+				CASE WHEN EXISTS (
+					SELECT 1 FROM on_call_escalation_policies p WHERE p.id = o.escalation_policy_id
+				) THEN o.escalation_policy_id END,
+				o.triggered_at, o.acknowledged_at, o.acknowledged_by,
+				COALESCE(o.current_escalation_step, 0), COALESCE(o.escalation_repeat_count, 0),
+				CASE WHEN o.status = 'triggered' THEN CURRENT_TIMESTAMP END,
+				o.created_at, CURRENT_TIMESTAMP
+			FROM on_call_incidents o
+			WHERE o.item_id IS NOT NULL AND o.status IN ('triggered', 'acknowledged')
+				AND NOT EXISTS (
+					SELECT 1 FROM on_call_incidents o2
+					WHERE o2.item_id = o.item_id AND o2.status IN ('triggered', 'acknowledged')
+						AND o2.id > o.id
+				);
+			UPDATE items SET incident_id = (
+				SELECT i.id FROM incidents i
+				WHERE i.item_id = items.id AND i.status != 'resolved'
+				ORDER BY i.id DESC LIMIT 1
+			), updated_at = CURRENT_TIMESTAMP
+			WHERE EXISTS (
+				SELECT 1 FROM incidents i WHERE i.item_id = items.id
+			);
 			DROP TABLE IF EXISTS on_call_incidents;
 		`,
 		Postgres: `
@@ -1599,6 +1671,51 @@ var Catalog = []Migration{
 			CREATE UNIQUE INDEX IF NOT EXISTS uq_incidents_open_item ON incidents(item_id) WHERE status = 'triggered';
 			ALTER TABLE items ADD COLUMN IF NOT EXISTS incident_id INTEGER REFERENCES incidents(id) ON DELETE SET NULL;
 			CREATE UNIQUE INDEX IF NOT EXISTS uq_items_incident ON items(incident_id) WHERE incident_id IS NOT NULL;
+			CREATE TABLE on_call_incidents_archive (
+				id INTEGER PRIMARY KEY,
+				escalation_policy_id INTEGER,
+				item_id INTEGER,
+				status TEXT,
+				triggered_at TIMESTAMPTZ,
+				acknowledged_at TIMESTAMPTZ,
+				acknowledged_by INTEGER,
+				resolved_at TIMESTAMPTZ,
+				resolved_by INTEGER,
+				current_escalation_step INTEGER,
+				escalation_repeat_count INTEGER,
+				created_at TIMESTAMPTZ
+			);
+			INSERT INTO on_call_incidents_archive
+				SELECT id, escalation_policy_id, item_id, status, triggered_at, acknowledged_at,
+					acknowledged_by, resolved_at, resolved_by, current_escalation_step,
+					escalation_repeat_count, created_at
+				FROM on_call_incidents;
+			INSERT INTO incidents (item_id, status, urgency, source, escalation_policy_id,
+					triggered_at, acknowledged_at, acknowledged_by, escalation_step,
+					escalation_repeat_count, next_escalation_at, created_at, updated_at)
+			SELECT o.item_id, o.status, 'high', 'manual',
+				CASE WHEN EXISTS (
+					SELECT 1 FROM on_call_escalation_policies p WHERE p.id = o.escalation_policy_id
+				) THEN o.escalation_policy_id END,
+				o.triggered_at, o.acknowledged_at, o.acknowledged_by,
+				COALESCE(o.current_escalation_step, 0), COALESCE(o.escalation_repeat_count, 0),
+				CASE WHEN o.status = 'triggered' THEN CURRENT_TIMESTAMP END,
+				o.created_at, CURRENT_TIMESTAMP
+			FROM on_call_incidents o
+			WHERE o.item_id IS NOT NULL AND o.status IN ('triggered', 'acknowledged')
+				AND NOT EXISTS (
+					SELECT 1 FROM on_call_incidents o2
+					WHERE o2.item_id = o.item_id AND o2.status IN ('triggered', 'acknowledged')
+						AND o2.id > o.id
+				);
+			UPDATE items SET incident_id = (
+				SELECT i.id FROM incidents i
+				WHERE i.item_id = items.id AND i.status != 'resolved'
+				ORDER BY i.id DESC LIMIT 1
+			), updated_at = CURRENT_TIMESTAMP
+			WHERE EXISTS (
+				SELECT 1 FROM incidents i WHERE i.item_id = items.id
+			);
 			DROP TABLE IF EXISTS on_call_incidents;
 		`,
 	},
@@ -1668,6 +1785,10 @@ var Catalog = []Migration{
 		CheckPostgres: pgTableCheck("sla_metrics"),
 		SQLite:        slaSchema,
 		Postgres:      slaSchemaPostgres,
+		// The canonical schema was corrected in place (BIGINT durations and
+		// hot-path indexes) while this migration was unreleased, so advance the
+		// checksum instead of failing databases stamped with the earlier body.
+		ReconcileChecksum: true,
 	},
 	{
 		Version:       "20260929_sla_warning_thresholds",
@@ -1684,6 +1805,668 @@ var Catalog = []Migration{
 		CheckPostgres: pgColumnCheck("item_sla_cycles", "source_id"),
 		SQLite:        slaImportSchema,
 		Postgres:      slaImportSchemaPostgres,
+	},
+	{
+		Version:       "20260932_sla_hot_indexes",
+		Name:          "Add SLA job and cycle hot-path indexes",
+		CheckSQLite:   sqliteIndexCheck("idx_item_sla_cycles_metric"),
+		CheckPostgres: pgIndexCheck("idx_item_sla_cycles_metric"),
+		SQLite: `
+			CREATE INDEX IF NOT EXISTS idx_item_sla_cycles_metric ON item_sla_cycles(metric_id);
+			CREATE INDEX IF NOT EXISTS idx_item_sla_cycles_goal ON item_sla_cycles(goal_id);
+			CREATE INDEX IF NOT EXISTS idx_item_sla_cycles_calendar ON item_sla_cycles(calendar_id);
+			CREATE INDEX IF NOT EXISTS idx_sla_jobs_cycle ON sla_jobs(cycle_id);
+			CREATE INDEX IF NOT EXISTS idx_sla_jobs_item ON sla_jobs(item_id);
+			CREATE INDEX IF NOT EXISTS idx_sla_jobs_metric ON sla_jobs(metric_id);
+		`,
+		Postgres: `
+			CREATE INDEX IF NOT EXISTS idx_item_sla_cycles_metric ON item_sla_cycles(metric_id);
+			CREATE INDEX IF NOT EXISTS idx_item_sla_cycles_goal ON item_sla_cycles(goal_id);
+			CREATE INDEX IF NOT EXISTS idx_item_sla_cycles_calendar ON item_sla_cycles(calendar_id);
+			CREATE INDEX IF NOT EXISTS idx_sla_jobs_cycle ON sla_jobs(cycle_id);
+			CREATE INDEX IF NOT EXISTS idx_sla_jobs_item ON sla_jobs(item_id);
+			CREATE INDEX IF NOT EXISTS idx_sla_jobs_metric ON sla_jobs(metric_id);
+		`,
+	},
+	{
+		Version:       "20261001_action_trigger_marks",
+		Name:          "Per-action inactivity trigger marks (WI-1132)",
+		CheckSQLite:   sqliteTableCheck("action_trigger_marks"),
+		CheckPostgres: pgTableCheck("action_trigger_marks"),
+		SQLite: `
+			CREATE TABLE action_trigger_marks (
+				action_id INTEGER NOT NULL,
+				item_id INTEGER NOT NULL,
+				last_activity_at DATETIME NOT NULL,
+				marked_at DATETIME NOT NULL,
+				PRIMARY KEY (action_id, item_id),
+				FOREIGN KEY (action_id) REFERENCES actions(id) ON DELETE CASCADE,
+				FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE
+			);
+			CREATE INDEX idx_action_trigger_marks_item ON action_trigger_marks(item_id);
+		`,
+		Postgres: `
+			CREATE TABLE action_trigger_marks (
+				action_id BIGINT NOT NULL,
+				item_id BIGINT NOT NULL,
+				last_activity_at TIMESTAMPTZ NOT NULL,
+				marked_at TIMESTAMPTZ NOT NULL,
+				PRIMARY KEY (action_id, item_id),
+				FOREIGN KEY (action_id) REFERENCES actions(id) ON DELETE CASCADE,
+				FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE
+			);
+			CREATE INDEX IF NOT EXISTS idx_action_trigger_marks_item ON action_trigger_marks(item_id);
+		`,
+	},
+	{
+		Version:       "20261001_canned_responses",
+		Name:          "Workspace canned responses for support agents (WI-1138)",
+		CheckSQLite:   sqliteTableCheck("canned_responses"),
+		CheckPostgres: pgTableCheck("canned_responses"),
+		SQLite: `
+			CREATE TABLE canned_responses (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				workspace_id INTEGER NOT NULL,
+				name TEXT NOT NULL,
+				body TEXT NOT NULL,
+				is_private BOOLEAN NOT NULL DEFAULT false,
+				is_active BOOLEAN NOT NULL DEFAULT true,
+				created_by INTEGER,
+				updated_by INTEGER,
+				used_count INTEGER NOT NULL DEFAULT 0,
+				last_used_at DATETIME,
+				created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+				updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+				FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+				FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
+				FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL
+			);
+			CREATE UNIQUE INDEX uq_canned_responses_ws_name_ci ON canned_responses(LOWER(name), workspace_id);
+			CREATE INDEX idx_canned_responses_ws_active ON canned_responses(workspace_id, is_active, name);
+		`,
+		Postgres: `
+			CREATE TABLE canned_responses (
+				id BIGSERIAL PRIMARY KEY,
+				workspace_id BIGINT NOT NULL,
+				name TEXT NOT NULL,
+				body TEXT NOT NULL,
+				is_private BOOLEAN NOT NULL DEFAULT false,
+				is_active BOOLEAN NOT NULL DEFAULT true,
+				created_by BIGINT,
+				updated_by BIGINT,
+				used_count INTEGER NOT NULL DEFAULT 0,
+				last_used_at TIMESTAMPTZ,
+				created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+				updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+				FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+				FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
+				FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL
+			);
+			CREATE UNIQUE INDEX IF NOT EXISTS uq_canned_responses_ws_name_ci ON canned_responses(LOWER(name), workspace_id);
+			CREATE INDEX IF NOT EXISTS idx_canned_responses_ws_active ON canned_responses(workspace_id, is_active, name);
+		`,
+	},
+	{
+		Version:       "20261001_board_view_settings",
+		Name:          "Add view settings and convert board JSON columns to JSONB",
+		CheckSQLite:   sqliteColumnCheck("board_configurations", "view_settings"),
+		CheckPostgres: pgColumnCheck("board_configurations", "view_settings"),
+		SQLite:        "ALTER TABLE board_configurations ADD COLUMN view_settings TEXT",
+		Postgres: `
+			ALTER TABLE board_configurations ADD COLUMN view_settings JSONB;
+			ALTER TABLE board_configurations ALTER COLUMN backlog_status_ids TYPE JSONB USING NULLIF(btrim(backlog_status_ids), '')::jsonb;
+			ALTER TABLE board_configurations ALTER COLUMN list_columns TYPE JSONB USING NULLIF(btrim(list_columns), '')::jsonb;
+			ALTER TABLE board_configurations ALTER COLUMN roadmap_config TYPE JSONB USING NULLIF(btrim(roadmap_config), '')::jsonb;
+			ALTER TABLE board_configurations ALTER COLUMN card_fields TYPE JSONB USING NULLIF(btrim(card_fields), '')::jsonb;
+		`,
+	},
+	{
+		Version: "20261002_jsonb_hygiene",
+		Name:    "Convert remaining legacy JSON TEXT columns to JSONB",
+		CheckPostgresFn: pgJSONBColumnsCheck(
+			[2]string{"reviews", "review_data"},
+			[2]string{"test_coverage_configurations", "requirement_item_type_ids"},
+		),
+		SQLite: "",
+		Postgres: `
+			ALTER TABLE reviews ALTER COLUMN review_data TYPE JSONB USING NULLIF(btrim(review_data), '')::jsonb;
+			ALTER TABLE test_coverage_configurations ALTER COLUMN requirement_item_type_ids TYPE JSONB USING NULLIF(btrim(requirement_item_type_ids), '')::jsonb;
+		`,
+	},
+	{
+		Version:       "20261003_item_history_portal_actors",
+		Name:          "Carry portal-customer and system actors in item history",
+		CheckSQLite:   sqliteColumnCheck("item_history", "actor_kind"),
+		CheckPostgres: pgColumnCheck("item_history", "actor_kind"),
+		// SQLite cannot drop NOT NULL in place; ApplySQLite rebuilds the table.
+		SQLite: "item_history actor attribution rebuild (applySQLiteItemHistoryPortalActors)",
+		Postgres: `
+			ALTER TABLE item_history ALTER COLUMN user_id DROP NOT NULL;
+			ALTER TABLE item_history ADD COLUMN actor_kind TEXT NOT NULL DEFAULT 'user';
+			ALTER TABLE item_history ADD COLUMN actor_portal_customer_id INTEGER REFERENCES portal_customers(id) ON DELETE SET NULL;
+		`,
+		ApplySQLite: applySQLiteItemHistoryPortalActors,
+	},
+	{
+		Version:       "20261003_attachments_portal_uploader",
+		Name:          "Attribute attachment uploads to portal customers",
+		CheckSQLite:   sqliteColumnCheck("attachments", "uploaded_by_portal_customer_id"),
+		CheckPostgres: pgColumnCheck("attachments", "uploaded_by_portal_customer_id"),
+		SQLite: `
+			ALTER TABLE attachments ADD COLUMN uploaded_by_portal_customer_id INTEGER REFERENCES portal_customers(id) ON DELETE SET NULL;
+			CREATE INDEX idx_attachments_uploaded_by_portal_customer ON attachments(uploaded_by_portal_customer_id);
+		`,
+		Postgres: `
+			ALTER TABLE attachments ADD COLUMN IF NOT EXISTS uploaded_by_portal_customer_id INTEGER REFERENCES portal_customers(id) ON DELETE SET NULL;
+			CREATE INDEX IF NOT EXISTS idx_attachments_uploaded_by_portal_customer ON attachments(uploaded_by_portal_customer_id);
+		`,
+	},
+	{
+		Version: "20261004_import_jobs_scope_fk",
+		Name:    "Drop the stale asset-set foreign key from the generic import tables",
+		// The 20260924 rename preserved the original set_id →
+		// asset_management_sets foreign keys under the new scope_id name, so
+		// on every upgraded install ticket CSV imports (scope_id = workspace
+		// id) fail the constraint and deleting an asset set can cascade into
+		// unrelated import rows. Fresh installs never had the FKs; the checks
+		// report the effect present when neither table carries such an FK.
+		CheckSQLite: `
+			SELECT CASE WHEN (SELECT COUNT(*) FROM pragma_foreign_key_list('import_jobs') WHERE "table"='asset_management_sets') = 0
+				AND (SELECT COUNT(*) FROM pragma_foreign_key_list('import_uploads') WHERE "table"='asset_management_sets') = 0
+			THEN 1 ELSE 0 END`,
+		CheckPostgres: `
+			SELECT CASE WHEN COUNT(*) = 0 THEN 1 ELSE 0 END
+			FROM pg_constraint con
+			JOIN pg_class child ON child.oid = con.conrelid
+			JOIN pg_class parent ON parent.oid = con.confrelid
+			JOIN pg_namespace n ON n.oid = child.relnamespace
+			WHERE con.contype = 'f'
+				AND n.nspname = current_schema()
+				AND child.relname IN ('import_jobs', 'import_uploads')
+				AND parent.relname = 'asset_management_sets'`,
+		// SQLite cannot drop a constraint in place; rebuild both tables
+		// without the asset-set FK, copying rows and restoring the indexes.
+		SQLite: `
+			CREATE TABLE import_jobs_scope_fk_rebuild (
+				id TEXT PRIMARY KEY,
+				kind TEXT NOT NULL DEFAULT 'asset',
+				scope_id INTEGER NOT NULL,
+				status TEXT NOT NULL DEFAULT 'queued',
+				phase TEXT DEFAULT 'initializing',
+				file_path TEXT NOT NULL,
+				config_json TEXT,
+				progress_json TEXT,
+				error_message TEXT,
+				created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+				created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+				started_at DATETIME,
+				completed_at DATETIME,
+				lease_expires_at BIGINT
+			);
+			INSERT INTO import_jobs_scope_fk_rebuild
+				SELECT id, kind, scope_id, status, phase, file_path, config_json, progress_json, error_message, created_by, created_at, started_at, completed_at, lease_expires_at
+				FROM import_jobs;
+			DROP TABLE import_jobs;
+			ALTER TABLE import_jobs_scope_fk_rebuild RENAME TO import_jobs;
+			CREATE INDEX IF NOT EXISTS idx_import_jobs_scope ON import_jobs(scope_id);
+			CREATE INDEX IF NOT EXISTS idx_import_jobs_status ON import_jobs(status);
+			CREATE INDEX IF NOT EXISTS idx_import_jobs_created_by ON import_jobs(created_by);
+			CREATE TABLE import_uploads_scope_fk_rebuild (
+				id TEXT PRIMARY KEY,
+				kind TEXT NOT NULL DEFAULT 'asset',
+				scope_id INTEGER NOT NULL,
+				created_by INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+				created_at BIGINT NOT NULL
+			);
+			INSERT INTO import_uploads_scope_fk_rebuild
+				SELECT id, kind, scope_id, created_by, created_at
+				FROM import_uploads;
+			DROP TABLE import_uploads;
+			ALTER TABLE import_uploads_scope_fk_rebuild RENAME TO import_uploads;
+		`,
+		Postgres: `
+			DO $$
+			DECLARE fk record;
+			BEGIN
+				FOR fk IN
+					SELECT rel.relname AS table_name, con.conname AS constraint_name
+					FROM pg_constraint con
+					JOIN pg_class rel ON rel.oid = con.conrelid
+					JOIN pg_class parent ON parent.oid = con.confrelid
+					JOIN pg_namespace n ON n.oid = rel.relnamespace
+					WHERE con.contype = 'f'
+						AND n.nspname = current_schema()
+						AND rel.relname IN ('import_jobs', 'import_uploads')
+						AND parent.relname = 'asset_management_sets'
+				LOOP
+					EXECUTE format('ALTER TABLE %I DROP CONSTRAINT %I', fk.table_name, fk.constraint_name);
+				END LOOP;
+			END $$;
+		`,
+	},
+	{
+		Version:       "20261005_portal_customers_erased_at",
+		Name:          "Add irreversible Article 17 erasure state to portal customers (WI-1550)",
+		CheckSQLite:   sqliteColumnCheck("portal_customers", "erased_at"),
+		CheckPostgres: pgColumnCheck("portal_customers", "erased_at"),
+		SQLite:        `ALTER TABLE portal_customers ADD COLUMN erased_at DATETIME`,
+		Postgres:      `ALTER TABLE portal_customers ADD COLUMN IF NOT EXISTS erased_at TIMESTAMPTZ`,
+	},
+	{
+		Version:       "20261005_customer_erasure_records",
+		Name:          "Add DSAR erasure completion evidence table for portal customers (WI-1550)",
+		CheckSQLite:   sqliteTableCheck("customer_erasure_records"),
+		CheckPostgres: pgTableCheck("customer_erasure_records"),
+		SQLite: `
+			CREATE TABLE IF NOT EXISTS customer_erasure_records (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				portal_customer_id INTEGER NOT NULL,
+				requested_by TEXT NOT NULL,
+				requested_at DATETIME NOT NULL,
+				approved_by INTEGER NOT NULL,
+				executed_at DATETIME NOT NULL,
+				policy_version TEXT NOT NULL,
+				notes TEXT,
+				FOREIGN KEY (portal_customer_id) REFERENCES portal_customers(id) ON DELETE CASCADE
+			);
+			CREATE INDEX IF NOT EXISTS idx_customer_erasure_records_customer_id ON customer_erasure_records(portal_customer_id);
+		`,
+		Postgres: `
+			CREATE TABLE IF NOT EXISTS customer_erasure_records (
+				id SERIAL PRIMARY KEY,
+				portal_customer_id INTEGER NOT NULL,
+				requested_by TEXT NOT NULL,
+				requested_at TIMESTAMPTZ NOT NULL,
+				approved_by INTEGER NOT NULL,
+				executed_at TIMESTAMPTZ NOT NULL,
+				policy_version TEXT NOT NULL,
+				notes TEXT,
+				FOREIGN KEY (portal_customer_id) REFERENCES portal_customers(id) ON DELETE CASCADE
+			);
+			CREATE INDEX IF NOT EXISTS idx_customer_erasure_records_customer_id ON customer_erasure_records(portal_customer_id);
+		`,
+	},
+	{
+		Version:       "20261006_portal_customers_deactivated_at",
+		Name:          "Add security deactivation lifecycle state to portal customers (WI-1554)",
+		CheckSQLite:   sqliteColumnCheck("portal_customers", "deactivated_at"),
+		CheckPostgres: pgColumnCheck("portal_customers", "deactivated_at"),
+		SQLite:        `ALTER TABLE portal_customers ADD COLUMN deactivated_at DATETIME`,
+		Postgres:      `ALTER TABLE portal_customers ADD COLUMN IF NOT EXISTS deactivated_at TIMESTAMPTZ`,
+	},
+	{
+		Version:       "20261006_portal_customers_created_via",
+		Name:          "Record creation provenance on portal customers (WI-1553)",
+		CheckSQLite:   sqliteColumnCheck("portal_customers", "created_via"),
+		CheckPostgres: pgColumnCheck("portal_customers", "created_via"),
+		// The DEFAULT backfills existing rows to 'unknown' in the same
+		// statement — no separate rewrite is needed.
+		SQLite:   `ALTER TABLE portal_customers ADD COLUMN created_via TEXT NOT NULL DEFAULT 'unknown'`,
+		Postgres: `ALTER TABLE portal_customers ADD COLUMN IF NOT EXISTS created_via TEXT NOT NULL DEFAULT 'unknown'`,
+	},
+	{
+		Version:       "20261006_item_import_rows_lookup_indexes",
+		Name:          "Index ticket import mapping by job and item (WI-1596)",
+		CheckSQLite:   sqliteIndexCheck("idx_item_import_rows_job_id"),
+		CheckPostgres: pgIndexCheck("idx_item_import_rows_job_id"),
+		SQLite: `
+			CREATE INDEX IF NOT EXISTS idx_item_import_rows_job_id ON item_import_rows(job_id);
+			CREATE INDEX IF NOT EXISTS idx_item_import_rows_item_id ON item_import_rows(item_id);
+		`,
+		Postgres: `
+			CREATE INDEX IF NOT EXISTS idx_item_import_rows_job_id ON item_import_rows(job_id);
+			CREATE INDEX IF NOT EXISTS idx_item_import_rows_item_id ON item_import_rows(item_id);
+		`,
+	},
+	{
+		Version:       "20261006_email_tracking_sender_indexes",
+		Name:          "Index email sender lookups by channel and normalized address (WI-1597)",
+		CheckSQLite:   sqliteIndexCheck("idx_email_message_tracking_sender"),
+		CheckPostgres: pgIndexCheck("idx_email_message_tracking_sender"),
+		SQLite: `
+			CREATE INDEX IF NOT EXISTS idx_email_message_tracking_sender ON email_message_tracking(from_email);
+			CREATE INDEX IF NOT EXISTS idx_email_message_tracking_channel_sender_time ON email_message_tracking(channel_id, LOWER(from_email), processed_at);
+		`,
+		Postgres: `
+			CREATE INDEX IF NOT EXISTS idx_email_message_tracking_sender ON email_message_tracking(from_email);
+			CREATE INDEX IF NOT EXISTS idx_email_message_tracking_channel_sender_time ON email_message_tracking(channel_id, LOWER(from_email), processed_at);
+		`,
+	},
+	{
+		// Incidents had a never-read dedup_key column and scheduled incident
+		// notifications kept no escalation-rule reference (WI-1536). The drop
+		// removes the dead column; the state table rebuild adds the missing
+		// foreign key after clearing rows whose rule no longer exists.
+		Version: "20261006_incident_state_hardening",
+		Name:    "Drop incidents.dedup_key and reference escalation rules from notification state",
+		CheckSQLite: `
+			SELECT CASE WHEN (SELECT COUNT(*) FROM pragma_table_info('incidents') WHERE name='dedup_key') = 0
+				AND (SELECT COUNT(*) FROM pragma_foreign_key_list('incident_notification_state') WHERE "table"='on_call_escalation_rules') > 0
+			THEN 1 ELSE 0 END`,
+		CheckPostgres: `
+			SELECT CASE WHEN NOT EXISTS (
+				SELECT 1 FROM information_schema.columns
+				WHERE table_schema = current_schema() AND table_name = 'incidents' AND column_name = 'dedup_key'
+			) AND EXISTS (
+				SELECT 1 FROM pg_constraint con
+				JOIN pg_class child ON child.oid = con.conrelid
+				JOIN pg_class parent ON parent.oid = con.confrelid
+				JOIN pg_namespace n ON n.oid = child.relnamespace
+				WHERE con.contype = 'f' AND n.nspname = current_schema()
+					AND child.relname = 'incident_notification_state'
+					AND parent.relname = 'on_call_escalation_rules'
+			) THEN 1 ELSE 0 END`,
+		SQLite: `
+			ALTER TABLE incidents DROP COLUMN dedup_key;
+			DELETE FROM incident_notification_state WHERE escalation_rule_id NOT IN (SELECT id FROM on_call_escalation_rules);
+			CREATE TABLE incident_notification_state_state_fk_rebuild (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				incident_id INTEGER NOT NULL,
+				escalation_rule_id INTEGER NOT NULL,
+				notification_rule_id INTEGER NOT NULL,
+				repeat_index INTEGER NOT NULL DEFAULT 0,
+				next_notification_at DATETIME NOT NULL,
+				created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+				updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+				FOREIGN KEY (incident_id) REFERENCES incidents(id) ON DELETE CASCADE,
+				FOREIGN KEY (escalation_rule_id) REFERENCES on_call_escalation_rules(id) ON DELETE CASCADE,
+				FOREIGN KEY (notification_rule_id) REFERENCES on_call_notification_rules(id) ON DELETE CASCADE
+			);
+			INSERT INTO incident_notification_state_state_fk_rebuild
+				SELECT id, incident_id, escalation_rule_id, notification_rule_id, repeat_index,
+					next_notification_at, created_at, updated_at
+				FROM incident_notification_state;
+			DROP TABLE incident_notification_state;
+			ALTER TABLE incident_notification_state_state_fk_rebuild RENAME TO incident_notification_state;
+			CREATE UNIQUE INDEX uq_incident_notification_state ON incident_notification_state(incident_id, notification_rule_id, repeat_index);
+			CREATE INDEX idx_incident_notification_state_due ON incident_notification_state(next_notification_at);
+		`,
+		Postgres: `
+			ALTER TABLE incidents DROP COLUMN IF EXISTS dedup_key;
+			DELETE FROM incident_notification_state WHERE escalation_rule_id NOT IN (SELECT id FROM on_call_escalation_rules);
+			ALTER TABLE incident_notification_state DROP CONSTRAINT IF EXISTS incident_notification_state_escalation_rule_fkey;
+			ALTER TABLE incident_notification_state ADD CONSTRAINT incident_notification_state_escalation_rule_fkey
+				FOREIGN KEY (escalation_rule_id) REFERENCES on_call_escalation_rules(id) ON DELETE CASCADE;
+		`,
+	},
+	{
+		// Outbox delivery leases need an owner so a manual retry can tell a
+		// live claim from retry backoff (WI-1572).
+		Version:       "20261006_email_outbox_lease_owner",
+		Name:          "Track outbound-email delivery lease ownership",
+		CheckSQLite:   sqliteColumnCheck("email_reply_outbox", "lease_owner"),
+		CheckPostgres: pgColumnCheck("email_reply_outbox", "lease_owner"),
+		SQLite: `
+			ALTER TABLE email_reply_outbox ADD COLUMN lease_owner TEXT;
+		`,
+		Postgres: `
+			ALTER TABLE email_reply_outbox ADD COLUMN IF NOT EXISTS lease_owner TEXT;
+		`,
+	},
+	{
+		Version:         "20261002_view_settings_backfill_tools",
+		Name:            "Backfill tools entries into stored workspace view-visibility overrides",
+		CheckSQLiteFn:   checkViewSettingsToolsBackfill,
+		CheckPostgresFn: checkViewSettingsToolsBackfill,
+		SQLite:          "applyViewSettingsToolsBackfill:v1",
+		Postgres:        "applyViewSettingsToolsBackfill:v1",
+		ApplySQLite:     applyViewSettingsToolsBackfill,
+		ApplyPostgres:   applyViewSettingsToolsBackfill,
+	},
+	{
+		Version:       "20261007_support_queues",
+		Name:          "Persisted, scope-aware support queues (WI-1603)",
+		CheckSQLite:   sqliteTableCheck("queues"),
+		CheckPostgres: pgTableCheck("queues"),
+		SQLite: `
+			CREATE TABLE queues (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				workspace_id INTEGER NOT NULL,
+				collection_id INTEGER,
+				name TEXT NOT NULL,
+				ql_query TEXT NOT NULL,
+				filter_state TEXT,
+				position INTEGER NOT NULL DEFAULT 0,
+				created_by INTEGER,
+				builtin_key TEXT,
+				is_hidden BOOLEAN NOT NULL DEFAULT false,
+				created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+				updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+				FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+				FOREIGN KEY (collection_id) REFERENCES collections(id) ON DELETE CASCADE,
+				FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+			);
+			CREATE INDEX idx_queues_workspace_scope ON queues(workspace_id, collection_id, position);
+			CREATE UNIQUE INDEX uq_queues_ws_builtin ON queues(workspace_id, builtin_key) WHERE collection_id IS NULL AND builtin_key IS NOT NULL;
+			CREATE UNIQUE INDEX uq_queues_coll_builtin ON queues(collection_id, builtin_key) WHERE collection_id IS NOT NULL AND builtin_key IS NOT NULL;
+		`,
+		Postgres: `
+			CREATE TABLE queues (
+				id BIGSERIAL PRIMARY KEY,
+				workspace_id BIGINT NOT NULL,
+				collection_id BIGINT,
+				name TEXT NOT NULL,
+				ql_query TEXT NOT NULL,
+				filter_state TEXT,
+				position INTEGER NOT NULL DEFAULT 0,
+				created_by BIGINT,
+				builtin_key TEXT,
+				is_hidden BOOLEAN NOT NULL DEFAULT false,
+				created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+				updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+				FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+				FOREIGN KEY (collection_id) REFERENCES collections(id) ON DELETE CASCADE,
+				FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+			);
+			CREATE INDEX IF NOT EXISTS idx_queues_workspace_scope ON queues(workspace_id, collection_id, position);
+			CREATE UNIQUE INDEX IF NOT EXISTS uq_queues_ws_builtin ON queues(workspace_id, builtin_key) WHERE collection_id IS NULL AND builtin_key IS NOT NULL;
+			CREATE UNIQUE INDEX IF NOT EXISTS uq_queues_coll_builtin ON queues(collection_id, builtin_key) WHERE collection_id IS NOT NULL AND builtin_key IS NOT NULL;
+		`,
+	},
+	{
+		Version:       "20261008_item_participants",
+		Name:          "External request participants on work items (WI-1136)",
+		CheckSQLite:   sqliteTableCheck("item_participants"),
+		CheckPostgres: pgTableCheck("item_participants"),
+		SQLite: `
+			CREATE TABLE item_participants (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				item_id INTEGER NOT NULL,
+				portal_customer_id INTEGER NOT NULL,
+				added_by INTEGER,
+				created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+				FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE,
+				FOREIGN KEY (portal_customer_id) REFERENCES portal_customers(id) ON DELETE CASCADE,
+				FOREIGN KEY (added_by) REFERENCES users(id) ON DELETE SET NULL,
+				UNIQUE(item_id, portal_customer_id)
+			);
+			CREATE INDEX idx_item_participants_item ON item_participants(item_id);
+			CREATE INDEX idx_item_participants_customer ON item_participants(portal_customer_id);
+		`,
+		Postgres: `
+			CREATE TABLE item_participants (
+				id BIGSERIAL PRIMARY KEY,
+				item_id BIGINT NOT NULL,
+				portal_customer_id BIGINT NOT NULL,
+				added_by BIGINT,
+				created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+				FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE,
+				FOREIGN KEY (portal_customer_id) REFERENCES portal_customers(id) ON DELETE CASCADE,
+				FOREIGN KEY (added_by) REFERENCES users(id) ON DELETE SET NULL,
+				UNIQUE(item_id, portal_customer_id)
+			);
+			CREATE INDEX IF NOT EXISTS idx_item_participants_item ON item_participants(item_id);
+			CREATE INDEX IF NOT EXISTS idx_item_participants_customer ON item_participants(portal_customer_id);
+		`,
+	},
+	{
+		Version:       "20261009_email_reply_outbox_per_recipient",
+		Name:          "Allow one outbound reply per comment recipient (WI-1136)",
+		CheckSQLite:   sqliteIndexCheck("uq_email_reply_outbox_comment_recipient"),
+		CheckPostgres: pgIndexCheck("uq_email_reply_outbox_comment_recipient"),
+		Postgres: `
+			ALTER TABLE email_reply_outbox DROP CONSTRAINT IF EXISTS email_reply_outbox_comment_id_key;
+			CREATE UNIQUE INDEX IF NOT EXISTS uq_email_reply_outbox_comment_recipient
+				ON email_reply_outbox(comment_id, to_email);
+		`,
+		// SQLite cannot drop the inline UNIQUE(comment_id) without a table
+		// rebuild. The SQL field stays non-empty so the runner reaches
+		// ApplySQLite instead of stamping the row.
+		SQLite:      "applySQLiteEmailReplyOutboxPerRecipient:v1",
+		ApplySQLite: applySQLiteEmailReplyOutboxPerRecipient,
+	},
+	{
+		Version:       "20261010_portal_org_sharing",
+		Name:          "Portal organisation request sharing (WI-1139)",
+		CheckSQLite:   sqliteColumnCheck("customer_organisations", "settings"),
+		CheckPostgres: pgColumnCheck("customer_organisations", "settings"),
+		SQLite: `
+			ALTER TABLE customer_organisations ADD COLUMN settings TEXT NOT NULL DEFAULT '{}';
+			ALTER TABLE contact_roles ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0;
+			ALTER TABLE items ADD COLUMN portal_org_shared BOOLEAN NOT NULL DEFAULT false;
+		`,
+		Postgres: `
+			ALTER TABLE customer_organisations ADD COLUMN IF NOT EXISTS settings JSONB NOT NULL DEFAULT '{}'::JSONB;
+			ALTER TABLE contact_roles ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0;
+			ALTER TABLE items ADD COLUMN IF NOT EXISTS portal_org_shared BOOLEAN NOT NULL DEFAULT false;
+		`,
+	},
+	{
+		Version:       "20261011_item_support_events",
+		Name:          "Append-only ticket fact events for support metrics (WI-1133)",
+		CheckSQLite:   sqliteTableCheck("item_support_events"),
+		CheckPostgres: pgTableCheck("item_support_events"),
+		SQLite: `
+			CREATE TABLE IF NOT EXISTS item_support_events (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				workspace_id INTEGER NOT NULL,
+				item_id INTEGER NOT NULL,
+				kind TEXT NOT NULL,
+				occurred_at DATETIME NOT NULL,
+				FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+				FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE
+			);
+			CREATE INDEX IF NOT EXISTS idx_item_support_events_scope ON item_support_events(workspace_id, kind, occurred_at);
+			CREATE INDEX IF NOT EXISTS idx_item_support_events_item ON item_support_events(item_id, kind);
+			CREATE UNIQUE INDEX IF NOT EXISTS uq_item_support_events_single_shot ON item_support_events(item_id, kind) WHERE kind IN ('first_response', 'resolved');
+
+			INSERT INTO item_support_events (workspace_id, item_id, kind, occurred_at)
+			SELECT i.workspace_id, i.id, 'first_response', MIN(c.created_at)
+			FROM items i
+			JOIN comments c ON c.item_id = i.id
+			WHERE (i.channel_id IS NOT NULL OR i.creator_portal_customer_id IS NOT NULL)
+				AND c.is_private = false
+				AND c.author_id IS NOT NULL
+				AND c.portal_customer_id IS NULL
+			GROUP BY i.workspace_id, i.id
+			ON CONFLICT DO NOTHING;
+
+			INSERT INTO item_support_events (workspace_id, item_id, kind, occurred_at)
+			SELECT i.workspace_id, ih.item_id, 'resolved', MIN(ih.changed_at)
+			FROM items i
+			JOIN item_history ih ON ih.item_id = i.id AND ih.field_name = 'status_id'
+			JOIN statuses st ON ih.new_value = CAST(st.id AS TEXT)
+			JOIN status_categories sc ON st.category_id = sc.id AND sc.is_completed = true
+			WHERE (i.channel_id IS NOT NULL OR i.creator_portal_customer_id IS NOT NULL)
+			GROUP BY i.workspace_id, ih.item_id
+			ON CONFLICT DO NOTHING;
+
+			INSERT INTO item_support_events (workspace_id, item_id, kind, occurred_at)
+			SELECT i.workspace_id, ih.item_id, 'reopened', ih.changed_at
+			FROM items i
+			JOIN item_history ih ON ih.item_id = i.id AND ih.field_name = 'status_id'
+			JOIN statuses st_old ON ih.old_value = CAST(st_old.id AS TEXT)
+			JOIN status_categories sc_old ON st_old.category_id = sc_old.id AND sc_old.is_completed = true
+			LEFT JOIN statuses st_new ON ih.new_value = CAST(st_new.id AS TEXT)
+			LEFT JOIN status_categories sc_new ON st_new.category_id = sc_new.id
+			WHERE (i.channel_id IS NOT NULL OR i.creator_portal_customer_id IS NOT NULL)
+				AND COALESCE(sc_new.is_completed, false) = false;
+		`,
+		Postgres: `
+			CREATE TABLE IF NOT EXISTS item_support_events (
+				id BIGSERIAL PRIMARY KEY,
+				workspace_id BIGINT NOT NULL,
+				item_id BIGINT NOT NULL,
+				kind TEXT NOT NULL,
+				occurred_at TIMESTAMPTZ NOT NULL,
+				FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+				FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE
+			);
+			CREATE INDEX IF NOT EXISTS idx_item_support_events_scope ON item_support_events(workspace_id, kind, occurred_at);
+			CREATE INDEX IF NOT EXISTS idx_item_support_events_item ON item_support_events(item_id, kind);
+			CREATE UNIQUE INDEX IF NOT EXISTS uq_item_support_events_single_shot ON item_support_events(item_id, kind) WHERE kind IN ('first_response', 'resolved');
+
+			INSERT INTO item_support_events (workspace_id, item_id, kind, occurred_at)
+			SELECT i.workspace_id, i.id, 'first_response', MIN(c.created_at)
+			FROM items i
+			JOIN comments c ON c.item_id = i.id
+			WHERE (i.channel_id IS NOT NULL OR i.creator_portal_customer_id IS NOT NULL)
+				AND c.is_private = false
+				AND c.author_id IS NOT NULL
+				AND c.portal_customer_id IS NULL
+			GROUP BY i.workspace_id, i.id
+			ON CONFLICT DO NOTHING;
+
+			INSERT INTO item_support_events (workspace_id, item_id, kind, occurred_at)
+			SELECT i.workspace_id, ih.item_id, 'resolved', MIN(ih.changed_at)
+			FROM items i
+			JOIN item_history ih ON ih.item_id = i.id AND ih.field_name = 'status_id'
+			JOIN statuses st ON ih.new_value = CAST(st.id AS TEXT)
+			JOIN status_categories sc ON st.category_id = sc.id AND sc.is_completed = true
+			WHERE (i.channel_id IS NOT NULL OR i.creator_portal_customer_id IS NOT NULL)
+			GROUP BY i.workspace_id, ih.item_id
+			ON CONFLICT DO NOTHING;
+
+			INSERT INTO item_support_events (workspace_id, item_id, kind, occurred_at)
+			SELECT i.workspace_id, ih.item_id, 'reopened', ih.changed_at
+			FROM items i
+			JOIN item_history ih ON ih.item_id = i.id AND ih.field_name = 'status_id'
+			JOIN statuses st_old ON ih.old_value = CAST(st_old.id AS TEXT)
+			JOIN status_categories sc_old ON st_old.category_id = sc_old.id AND sc_old.is_completed = true
+			LEFT JOIN statuses st_new ON ih.new_value = CAST(st_new.id AS TEXT)
+			LEFT JOIN status_categories sc_new ON st_new.category_id = sc_new.id
+			WHERE (i.channel_id IS NOT NULL OR i.creator_portal_customer_id IS NOT NULL)
+				AND COALESCE(sc_new.is_completed, false) = false;
+		`,
+	},
+	{
+		Version: "20261002_zammad_ticket_change_history",
+		Name:    "Record observed Zammad ticket field changes",
+		CheckSQLite: `
+			SELECT CASE WHEN EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'zammad_ticket_changes')
+			THEN 1 ELSE 0 END
+		`,
+		CheckPostgres: `
+			SELECT CASE WHEN EXISTS(SELECT 1 FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = 'zammad_ticket_changes')
+			THEN 1 ELSE 0 END
+		`,
+		SQLite: `
+			CREATE TABLE zammad_ticket_changes (
+				id TEXT PRIMARY KEY,
+				ticket_link_id TEXT NOT NULL,
+				field_name TEXT NOT NULL CHECK (field_name IN ('status', 'owner', 'group')),
+				old_value_id INTEGER,
+				old_value_name TEXT NOT NULL DEFAULT '',
+				new_value_id INTEGER,
+				new_value_name TEXT NOT NULL DEFAULT '',
+				observed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+				FOREIGN KEY (ticket_link_id) REFERENCES zammad_ticket_links(id) ON DELETE CASCADE
+			);
+			CREATE INDEX idx_zammad_ticket_changes_link_observed ON zammad_ticket_changes(ticket_link_id, observed_at DESC);
+		`,
+		Postgres: `
+			CREATE TABLE IF NOT EXISTS zammad_ticket_changes (
+				id TEXT PRIMARY KEY,
+				ticket_link_id TEXT NOT NULL REFERENCES zammad_ticket_links(id) ON DELETE CASCADE,
+				field_name TEXT NOT NULL CHECK (field_name IN ('status', 'owner', 'group')),
+				old_value_id INTEGER,
+				old_value_name TEXT NOT NULL DEFAULT '',
+				new_value_id INTEGER,
+				new_value_name TEXT NOT NULL DEFAULT '',
+				observed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+			);
+			CREATE INDEX IF NOT EXISTS idx_zammad_ticket_changes_link_observed ON zammad_ticket_changes(ticket_link_id, observed_at DESC);
+		`,
 	},
 	{
 		Version:       "20260931_item_history_source",
@@ -1709,6 +2492,112 @@ var Catalog = []Migration{
 		SQLite:        "ALTER TABLE llm_usage ADD COLUMN calls INTEGER NOT NULL DEFAULT 1",
 		Postgres:      "ALTER TABLE llm_usage ADD COLUMN IF NOT EXISTS calls INTEGER NOT NULL DEFAULT 1",
 	},
+}
+
+// viewSettingsToolsBackfillIDs lists the workspace tools ids as they existed
+// when the migration shipped. The list is deliberately frozen: later id
+// additions must not change what this one-time backfill does.
+var viewSettingsToolsBackfillIDs = []string{
+	"queue", "agents", "iterations", "milestones", "analytics", "actions", "pages",
+}
+
+// checkViewSettingsToolsBackfill reports the migration as already applied
+// when no workspace-scope override lacks the tools ids — trivially true on
+// fresh installs, where no board configuration rows exist yet.
+func checkViewSettingsToolsBackfill(db Database) (bool, error) {
+	rows, err := db.Query(
+		`SELECT view_settings FROM board_configurations WHERE workspace_id IS NOT NULL AND view_settings IS NOT NULL`,
+	)
+	if err != nil {
+		return false, fmt.Errorf("read board configuration view settings: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			return false, fmt.Errorf("scan view settings: %w", err)
+		}
+		var settings struct {
+			EnabledViews *[]string `json:"enabled_views"`
+		}
+		if err := json.Unmarshal([]byte(raw), &settings); err != nil {
+			continue
+		}
+		if settings.EnabledViews == nil || len(*settings.EnabledViews) == 0 {
+			continue
+		}
+		needsBackfill := !slices.ContainsFunc(*settings.EnabledViews, func(id string) bool {
+			return slices.Contains(viewSettingsToolsBackfillIDs, id)
+		})
+		if needsBackfill {
+			return false, nil
+		}
+	}
+	return rows.Err() == nil, rows.Err()
+}
+
+// applyViewSettingsToolsBackfill appends the tools ids to workspace-scope
+// view-visibility overrides that predate toggleable tools entries. Such
+// overrides can only hold the six collection views; without the backfill the
+// tools entries would read as deliberately disabled. Idempotent: rows that
+// already name any tools id are left alone.
+func applyViewSettingsToolsBackfill(db Database) error {
+	rows, err := db.Query(
+		`SELECT id, view_settings FROM board_configurations WHERE workspace_id IS NOT NULL AND view_settings IS NOT NULL`,
+	)
+	if err != nil {
+		return fmt.Errorf("read board configuration view settings: %w", err)
+	}
+	defer rows.Close()
+
+	type backfill struct {
+		id   int
+		next string
+	}
+	var updates []backfill
+	for rows.Next() {
+		var id int
+		var raw string
+		if err := rows.Scan(&id, &raw); err != nil {
+			return fmt.Errorf("scan view settings: %w", err)
+		}
+		var settings struct {
+			EnabledViews *[]string `json:"enabled_views"`
+		}
+		if err := json.Unmarshal([]byte(raw), &settings); err != nil {
+			// Unreadable legacy payload: read-side normalization already
+			// tolerates it, so there is nothing to backfill.
+			continue
+		}
+		if settings.EnabledViews == nil || len(*settings.EnabledViews) == 0 {
+			continue
+		}
+		hasTools := slices.ContainsFunc(*settings.EnabledViews, func(id string) bool {
+			return slices.Contains(viewSettingsToolsBackfillIDs, id)
+		})
+		if hasTools {
+			continue
+		}
+		merged := append(slices.Clone(*settings.EnabledViews), viewSettingsToolsBackfillIDs...)
+		out, err := json.Marshal(struct {
+			EnabledViews []string `json:"enabled_views"`
+		}{merged})
+		if err != nil {
+			return fmt.Errorf("marshal backfilled view settings: %w", err)
+		}
+		updates = append(updates, backfill{id: id, next: string(out)})
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate view settings: %w", err)
+	}
+	for _, u := range updates {
+		if _, err := db.Exec(
+			`UPDATE board_configurations SET view_settings = ? WHERE id = ?`, u.next, u.id,
+		); err != nil {
+			return fmt.Errorf("backfill view settings for configuration %d: %w", u.id, err)
+		}
+	}
+	return nil
 }
 
 func applySQLitePersonalLabelsPerUserUnique(db Database) (retErr error) {
@@ -1770,6 +2659,174 @@ func applySQLitePersonalLabelsPerUserUnique(db Database) (retErr error) {
 
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit personal_labels rebuild: %w", err)
+	}
+
+	return nil
+}
+
+// applySQLiteEmailReplyOutboxPerRecipient rebuilds email_reply_outbox without
+// the inline UNIQUE(comment_id) constraint and adds the per-recipient unique
+// index (WI-1136). SQLite cannot drop the constraint in place.
+func applySQLiteEmailReplyOutboxPerRecipient(db Database) (retErr error) {
+	sqliteDB, ok := db.(*SQLiteDB)
+	if !ok {
+		return fmt.Errorf("expected SQLite database, got %T", db)
+	}
+
+	ctx := context.Background()
+	conn, err := sqliteDB.writeConn.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("acquire SQLite write connection: %w", err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	var foreignKeysEnabled bool
+	if err := conn.QueryRowContext(ctx, "PRAGMA foreign_keys").Scan(&foreignKeysEnabled); err != nil {
+		return fmt.Errorf("read foreign_keys pragma: %w", err)
+	}
+	if foreignKeysEnabled {
+		if _, err := conn.ExecContext(ctx, "PRAGMA foreign_keys=OFF"); err != nil {
+			return fmt.Errorf("disable foreign keys: %w", err)
+		}
+		defer func() {
+			if _, err := conn.ExecContext(ctx, "PRAGMA foreign_keys=ON"); retErr == nil && err != nil {
+				retErr = fmt.Errorf("restore foreign keys: %w", err)
+			}
+		}()
+	}
+
+	tx, err := conn.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin email_reply_outbox rebuild: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	statements := []string{
+		`CREATE TABLE email_reply_outbox_migration (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			comment_id INTEGER NOT NULL,
+			channel_id INTEGER NOT NULL,
+			item_id INTEGER NOT NULL,
+			to_email TEXT NOT NULL,
+			to_name TEXT NOT NULL DEFAULT '',
+			subject TEXT NOT NULL,
+			html_body TEXT NOT NULL,
+			text_body TEXT NOT NULL,
+			message_id TEXT NOT NULL,
+			in_reply_to TEXT NOT NULL DEFAULT '',
+			references_json TEXT NOT NULL DEFAULT '[]',
+			from_email TEXT NOT NULL,
+			from_name TEXT NOT NULL DEFAULT '',
+			attempt_count INTEGER NOT NULL DEFAULT 0,
+			next_attempt_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			lease_owner TEXT,
+			last_error TEXT,
+			delivered_at DATETIME,
+			discarded_at DATETIME,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (comment_id) REFERENCES comments(id) ON DELETE CASCADE,
+			FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE CASCADE,
+			FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE
+		)`,
+		`INSERT INTO email_reply_outbox_migration (
+			id, comment_id, channel_id, item_id, to_email, to_name, subject, html_body, text_body,
+			message_id, in_reply_to, references_json, from_email, from_name, attempt_count,
+			next_attempt_at, lease_owner, last_error, delivered_at, discarded_at, created_at, updated_at
+		)
+		SELECT id, comment_id, channel_id, item_id, to_email, to_name, subject, html_body, text_body,
+			message_id, in_reply_to, references_json, from_email, from_name, attempt_count,
+			next_attempt_at, lease_owner, last_error, delivered_at, discarded_at, created_at, updated_at
+		FROM email_reply_outbox`,
+		`DROP TABLE email_reply_outbox`,
+		`ALTER TABLE email_reply_outbox_migration RENAME TO email_reply_outbox`,
+		`CREATE INDEX idx_email_reply_outbox_pending ON email_reply_outbox(delivered_at, next_attempt_at)`,
+		`CREATE UNIQUE INDEX uq_email_reply_outbox_comment_recipient ON email_reply_outbox(comment_id, to_email)`,
+	}
+	for _, statement := range statements {
+		if _, err := tx.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("rebuild email_reply_outbox: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit email_reply_outbox rebuild: %w", err)
+	}
+	return nil
+}
+
+// applySQLiteItemHistoryPortalActors rebuilds item_history with a nullable
+// user_id plus the actor_kind / actor_portal_customer_id columns. SQLite
+// cannot drop a NOT NULL constraint in place, so the rows are copied into a
+// fresh table and swapped. Existing rows all had a user actor, so they keep
+// user_id and the default actor_kind 'user'.
+func applySQLiteItemHistoryPortalActors(db Database) (retErr error) {
+	sqliteDB, ok := db.(*SQLiteDB)
+	if !ok {
+		return fmt.Errorf("expected SQLite database, got %T", db)
+	}
+
+	ctx := context.Background()
+	conn, err := sqliteDB.writeConn.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("acquire SQLite write connection: %w", err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	var foreignKeysEnabled bool
+	if err := conn.QueryRowContext(ctx, "PRAGMA foreign_keys").Scan(&foreignKeysEnabled); err != nil {
+		return fmt.Errorf("read foreign_keys pragma: %w", err)
+	}
+	if foreignKeysEnabled {
+		if _, err := conn.ExecContext(ctx, "PRAGMA foreign_keys=OFF"); err != nil {
+			return fmt.Errorf("disable foreign keys: %w", err)
+		}
+		defer func() {
+			if _, err := conn.ExecContext(ctx, "PRAGMA foreign_keys=ON"); retErr == nil && err != nil {
+				retErr = fmt.Errorf("restore foreign keys: %w", err)
+			}
+		}()
+	}
+
+	tx, err := conn.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin item_history rebuild: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	statements := []string{
+		`CREATE TABLE item_history_migration (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			item_id INTEGER NOT NULL,
+			user_id INTEGER,
+			actor_kind TEXT NOT NULL DEFAULT 'user',
+			actor_portal_customer_id INTEGER,
+			changed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			field_name TEXT NOT NULL,
+			old_value TEXT,
+			new_value TEXT,
+			FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE,
+			FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT,
+			FOREIGN KEY (actor_portal_customer_id) REFERENCES portal_customers(id) ON DELETE SET NULL
+		)`,
+		`INSERT INTO item_history_migration (id, item_id, user_id, actor_kind, changed_at, field_name, old_value, new_value)
+			SELECT id, item_id, user_id, 'user', changed_at, field_name, old_value, new_value FROM item_history`,
+		`DROP TABLE item_history`,
+		`ALTER TABLE item_history_migration RENAME TO item_history`,
+		`CREATE INDEX idx_item_history_item_id_changed_at ON item_history(item_id, changed_at DESC)`,
+		`CREATE INDEX idx_item_history_current_status_latest
+			ON item_history(item_id, new_value, changed_at DESC)
+			WHERE field_name = 'status_id'`,
+		`CREATE INDEX idx_item_history_user_id ON item_history(user_id)`,
+	}
+	for _, statement := range statements {
+		if _, err := tx.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("rebuild item_history: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit item_history rebuild: %w", err)
 	}
 
 	return nil

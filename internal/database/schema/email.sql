@@ -107,13 +107,15 @@ CREATE INDEX IF NOT EXISTS idx_email_message_tracking_channel_id ON email_messag
 CREATE INDEX IF NOT EXISTS idx_email_message_tracking_message_id ON email_message_tracking(message_id);
 CREATE INDEX IF NOT EXISTS idx_email_message_tracking_in_reply_to ON email_message_tracking(in_reply_to);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_email_message_tracking_dedup ON email_message_tracking(channel_id, dedup_key);
+CREATE INDEX IF NOT EXISTS idx_email_message_tracking_sender ON email_message_tracking(from_email);
+CREATE INDEX IF NOT EXISTS idx_email_message_tracking_channel_sender_time ON email_message_tracking(channel_id, LOWER(from_email), processed_at);
 
 -- Durable at-least-once queue for comment replies. Sending SMTP inline is an
 -- optimization; a transient failure leaves this row pending for the
 -- notification scheduler instead of silently losing the customer reply.
 CREATE TABLE IF NOT EXISTS email_reply_outbox (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
-	comment_id INTEGER NOT NULL UNIQUE,
+	comment_id INTEGER NOT NULL,
 	channel_id INTEGER NOT NULL,
 	item_id INTEGER NOT NULL,
 	to_email TEXT NOT NULL,
@@ -128,6 +130,9 @@ CREATE TABLE IF NOT EXISTS email_reply_outbox (
 	from_name TEXT NOT NULL DEFAULT '',
 	attempt_count INTEGER NOT NULL DEFAULT 0,
 	next_attempt_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	-- Set while a worker holds a delivery lease; NULL means next_attempt_at
+	-- is retry backoff rather than a claim.
+	lease_owner TEXT,
 	last_error TEXT,
 	delivered_at DATETIME,
 	-- discarded_at marks an operator's explicit "never send" decision. A
@@ -142,6 +147,11 @@ CREATE TABLE IF NOT EXISTS email_reply_outbox (
 
 CREATE INDEX IF NOT EXISTS idx_email_reply_outbox_pending
 	ON email_reply_outbox(delivered_at, next_attempt_at);
+
+-- One outbound reply per comment recipient (WI-1136): the creator plus every
+-- external request participant gets their own row.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_email_reply_outbox_comment_recipient
+	ON email_reply_outbox(comment_id, to_email);
 
 -- Email OAuth state for tracking OAuth flow state
 CREATE TABLE IF NOT EXISTS email_oauth_state (

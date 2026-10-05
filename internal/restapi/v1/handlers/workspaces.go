@@ -40,6 +40,12 @@ func NewWorkspaceHandler(db database.Database, permissionService *services.Permi
 	}
 }
 
+// SetPackProvisioner forwards the create-from-template-pack provisioner to the
+// handler's workspace service.
+func (h *WorkspaceHandler) SetPackProvisioner(provisioner services.WorkspacePackProvisioner) {
+	h.workspaceService.SetPackProvisioner(provisioner)
+}
+
 // WorkspaceResponse is the public API representation of a Workspace.
 // Warnings carries user-facing strings for any field the handler had
 // to sanitize at decode time; the frontend toasts them at info
@@ -72,6 +78,7 @@ type WorkspaceCreateRequest struct {
 	Icon                string `json:"icon,omitempty"`
 	Color               string `json:"color,omitempty"`
 	TemplateWorkspaceID *int   `json:"template_workspace_id,omitempty"`
+	TemplatePack        string `json:"template_pack,omitempty"`
 }
 
 // WorkspaceUpdateRequest is the request body for updating a workspace
@@ -253,6 +260,7 @@ func (h *WorkspaceHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Color:               req.Color,
 		CreatorID:           user.ID,
 		TemplateWorkspaceID: req.TemplateWorkspaceID,
+		TemplatePack:        req.TemplatePack,
 	})
 	if err != nil {
 		if errors.Is(err, repository.ErrDuplicateEntry) {
@@ -269,6 +277,14 @@ func (h *WorkspaceHandler) Create(w http.ResponseWriter, r *http.Request) {
 		}
 		if errors.Is(err, services.ErrWorkspaceTemplateTooLarge) {
 			h.RespondError(w, r, restapi.NewAPIError(http.StatusUnprocessableEntity, restapi.ErrCodeWorkspaceTemplateTooLarge, "Template workspace exceeds the seed item limit"))
+			return
+		}
+		if errors.Is(err, services.ErrWorkspacePackNotFound) {
+			h.RespondError(w, r, restapi.NewAPIError(http.StatusUnprocessableEntity, "unknown_pack", "Template pack was not found"))
+			return
+		}
+		if errors.Is(err, services.ErrWorkspacePackProvisioning) {
+			h.RespondError(w, r, restapi.NewAPIError(http.StatusUnprocessableEntity, "pack_provisioning_failed", err.Error()))
 			return
 		}
 		h.RespondInternalError(w, r)

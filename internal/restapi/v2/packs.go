@@ -1,8 +1,10 @@
 package v2
 
 import (
+	"errors"
 	"io"
 	"net/http"
+	"strings"
 
 	"windshift/internal/services"
 )
@@ -62,7 +64,83 @@ func parsePackUpload(w http.ResponseWriter, r *http.Request) (*services.PackArch
 	return archive, target, nil
 }
 
+// packBuiltinTarget is the JSON body for applying a built-in pack: either an
+// existing workspace by ID, or a workspace by name created when missing.
+type packBuiltinTarget struct {
+	WorkspaceID   int    `json:"workspace_id"`
+	WorkspaceName string `json:"workspace_name"`
+}
+
+func (t packBuiltinTarget) resolve() (services.PackApplyTarget, error) {
+	if t.WorkspaceID < 0 {
+		return services.PackApplyTarget{}, newError(http.StatusBadRequest, "invalid_request", "workspace_id must be a positive integer")
+	}
+	name := strings.TrimSpace(t.WorkspaceName)
+	switch {
+	case t.WorkspaceID == 0 && name == "":
+		return services.PackApplyTarget{}, newError(http.StatusBadRequest, "invalid_request", "either workspace_id or workspace_name is required")
+	case t.WorkspaceID > 0 && name != "":
+		return services.PackApplyTarget{}, newError(http.StatusBadRequest, "invalid_request", "workspace_id and workspace_name are mutually exclusive")
+	}
+	return services.PackApplyTarget{WorkspaceID: t.WorkspaceID, WorkspaceName: name}, nil
+}
+
+// listBuiltinPacks lists the packs embedded in the running server. System
+// administrators only, matching the apply surface.
+func listBuiltinPacks(deps Deps) readOperation[[]services.BuiltinPackSummary] {
+	return func(r *http.Request) ([]services.BuiltinPackSummary, error) {
+		if _, err := requireSystemAdmin(r, deps); err != nil {
+			return nil, err
+		}
+		packs, err := services.BuiltinPacks()
+		if err != nil {
+			return nil, internalError(err)
+		}
+		return packs, nil
+	}
+}
+
+// applyBuiltinPack applies (or dry-run verifies) one embedded pack. It reuses
+// the upload path's PackApplyService, so the report is identical.
+func applyBuiltinPack(deps Deps, dryRun bool) jsonOperation[packBuiltinTarget, *services.PackApplyReport] {
+	return func(r *http.Request, input packBuiltinTarget) (*services.PackApplyReport, error) {
+		actor, err := requireSystemAdmin(r, deps)
+		if err != nil {
+			return nil, err
+		}
+		archive, err := services.BuiltinPackArchive(r.PathValue("name"))
+		if err != nil {
+			if errors.Is(err, services.ErrBuiltinPackNotFound) {
+				return nil, newError(http.StatusNotFound, "not_found", "Built-in pack was not found")
+			}
+			return nil, internalError(err)
+		}
+		target, err := input.resolve()
+		if err != nil {
+			return nil, err
+		}
+		req := services.PackApplyRequest{Archive: archive, Target: target, Actor: auditActor(r, actor)}
+		var report *services.PackApplyReport
+		if dryRun {
+			report, err = deps.PackApply.Verify(r.Context(), req)
+		} else {
+			report, err = deps.PackApply.Apply(r.Context(), req)
+		}
+		if err != nil {
+			return nil, internalError(err)
+		}
+		if !dryRun {
+			deps.PackApply.AuditApply(auditActor(r, actor), report.WorkspaceID, report.Pack, report.PackVersion, report.Status)
+		}
+		return report, nil
+	}
+}
+
 func registerPackRoutes(b *routeBuilder, deps Deps) {
+	b.Read("/packs", AuthAuthenticated, []string{"workspaces:read"}, listBuiltinPacks(deps))
+	b.JSON(http.MethodPost, "/packs/{name}/apply", http.StatusOK, false, AuthAuthenticated, []string{"workspaces:write"}, applyBuiltinPack(deps, false))
+	b.JSON(http.MethodPost, "/packs/{name}/verify", http.StatusOK, false, AuthAuthenticated, []string{"workspaces:read"}, applyBuiltinPack(deps, true))
+
 	apply := func(w http.ResponseWriter, r *http.Request, dryRun bool) error {
 		if _, err := principal(r); err != nil {
 			return err

@@ -22,13 +22,14 @@
 	import { agentOwnerName, loadAttributedComments } from './activityAttributionData.js';
 	import { isExpectedBackgroundSyncError } from '../../utils/backgroundSync.js';
 	import { workspacePermissions } from '../../stores/workspacePermissions.svelte.js';
+	import CannedResponsePicker from '../support/CannedResponsePicker.svelte';
 
 	const COMMENT_PAGE_SIZE = 25;
 
 	// Get shortcut configuration (use same as description save)
 	const submitShortcut = getShortcut('description', 'save');
 
-	let { itemId, workspaceId = null, isPersonalWorkspace = false, isPortalRequest = false, enableInternalComments = false, onCommentsLoaded } = $props();
+	let { itemId, workspaceId = null, isPersonalWorkspace = false, isPortalRequest = false, isExternalRequest = false, enableInternalComments = false, onCommentsLoaded } = $props();
 
 	let comments = $state([]);
 	let newCommentContent = $state('');
@@ -322,6 +323,28 @@
 		const leftTime = new Date(left.created_at).getTime();
 		const rightTime = new Date(right.created_at).getTime();
 		return leftTime - rightTime || left.id - right.id;
+	}
+
+	// Insert a canned response (WI-1138) into the composer. Private snippets
+	// flip the composer to an internal note so they never reach customers.
+	// The markdown goes through the editor so the canvas and the bound
+	// content stay in sync.
+	function insertCannedResponse(response) {
+		if (!response?.body) return;
+		const text = newCommentContent.trim()
+			? `\n\n${response.body}`
+			: response.body;
+		if (editorRef?.insertMarkdown) {
+			editorRef.insertMarkdown(text);
+		} else {
+			newCommentContent = newCommentContent.trim()
+				? `${newCommentContent.trimEnd()}${text}`
+				: text;
+		}
+		if (response.is_private) {
+			isInternalComment = true;
+		}
+		editorRef?.focus();
 	}
 
 	async function submitComment() {
@@ -647,12 +670,22 @@
 				</div>
 				<div class="flex items-center justify-between mt-3">
 					<div class="flex items-center gap-4">
+						<!-- Canned responses are support-reply snippets, so they only
+						     belong on external requests. The picker hides itself when the
+						     workspace has none. -->
+						{#if workspaceId && !isPersonalWorkspace && isExternalRequest}
+							<CannedResponsePicker
+								{workspaceId}
+								onSelect={insertCannedResponse}
+							/>
+						{/if}
 						<div class="text-xs" style="color: var(--ds-text-subtle);">
 							{t('comments.markdownSupported')}
 						</div>
-						{#if isPortalRequest || enableInternalComments}
+						{#if isExternalRequest || isPortalRequest || enableInternalComments}
 							<Checkbox
 								bind:checked={isInternalComment}
+								dataTestid="comment-internal-note"
 								label={t('comments.internalNote')}
 								hint={isPortalRequest ? t('comments.internalNoteHint') : t('comments.internalNoteHintGeneral')}
 								size="small"

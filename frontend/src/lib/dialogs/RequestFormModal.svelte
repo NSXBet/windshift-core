@@ -6,9 +6,10 @@
   import { portalCustomizationStore as portalStore } from '../stores/portal.svelte.js';
   import { iconMap } from '../stores/portalPresentation.js';
   import Button from '../components/Button.svelte';
+  import Checkbox from '../components/Checkbox.svelte';
   import AlertBox from '../components/AlertBox.svelte';
   import PortalModal from './PortalModal.svelte';
-  import { ChevronLeft, ChevronRight, Package, X } from '@lucide/svelte';
+  import { ChevronLeft, ChevronRight, Package, Paperclip, X } from '@lucide/svelte';
   import { t } from '../stores/i18n.svelte.js';
   import FormFields from '../features/forms/FormFields.svelte';
   import {
@@ -40,6 +41,13 @@
   let error = $state(null);
   let success = $state(false);
 
+  // Organisation sharing (WI-1139): the org decides whether contacts may opt
+  // in, and the creator's choice is fixed at submission. automatic shares
+  // every request, disabled never shares.
+  let shareWithOrganisation = $state(false);
+  const orgSharingMode = $derived($portalAuthStore.userBootstrap?.request_sharing || 'disabled');
+  const canShareWithOrg = $derived(orgSharingMode === 'requester_choice');
+
   // Multi-step support
   let steps = $state([1]);
   let currentStep = $state(1);
@@ -61,6 +69,12 @@
   let isLastStep = $derived(currentStep === Math.max(...steps));
   let isFirstStep = $derived(currentStep === Math.min(...steps));
   let hasPortalVisual = $derived(portalStore.hasBackgroundImage || portalStore.hasGradient);
+
+  // Files staged for upload once the request exists. Drafts store form data
+  // only, so staged files intentionally do not survive close-and-reopen.
+  let stagedFiles = $state([]);
+  let uploadingFiles = $state(false);
+  let uploadFailures = $state([]);
 
 
   // Load fields when modal opens
@@ -192,6 +206,9 @@
     resumedDraft = null;
     savingDraft = false;
     draftJustSaved = false;
+    stagedFiles = [];
+    uploadingFiles = false;
+    uploadFailures = [];
   }
 
   function buildDraftPayload() {
@@ -247,6 +264,7 @@
     currentStep = steps[0] || 1;
     resumedDraft = null;
     error = null;
+    applyPrefill(prefill);
   }
 
   function validateCurrentStep() {
@@ -313,10 +331,29 @@
         request_type_id: requestType.id,
         title: formData.title,
         description: formData.description,
-        custom_fields: customFieldValues
+        custom_fields: customFieldValues,
+        share_with_organisation: canShareWithOrg && shareWithOrganisation
       };
 
       const result = await api.portal.submit(portalSlug, submissionData);
+
+      // Upload staged files to the created request. The request already
+      // exists at this point, so per-file failures are reported but never
+      // fail the submission — the customer can retry from the timeline.
+      if (stagedFiles.length > 0) {
+        uploadingFiles = true;
+        const failures = [];
+        for (const file of stagedFiles) {
+          try {
+            await api.portal.addRequestAttachment(portalSlug, result.item_id, file);
+          } catch (err) {
+            console.error('Failed to upload attachment after submit:', err);
+            failures.push(file.name);
+          }
+        }
+        uploadFailures = failures;
+        uploadingFiles = false;
+      }
 
       success = true;
 
@@ -332,11 +369,15 @@
         });
       }
 
-      // Close modal after short delay
-      setTimeout(() => {
-        handleClose();
-        onsubmitted(result.item_id);
-      }, 1500);
+      // Close modal after short delay. Upload failures keep it open so the
+      // customer can read the retry hint before the timeline takes over.
+      setTimeout(
+        () => {
+          handleClose();
+          onsubmitted(result.item_id);
+        },
+        uploadFailures.length > 0 ? 6000 : 1500
+      );
     } catch (err) {
       console.error('Failed to submit request:', err);
       error = err.message || t('requestForm.failedToSubmit');
@@ -412,6 +453,13 @@
     {:else if success}
       <div class="px-6 py-4">
         <AlertBox variant="success" message={t('requestForm.requestSubmittedSuccess')} />
+        {#if uploadFailures.length > 0}
+          <AlertBox
+            variant="warning"
+            message="Some attachments failed to upload. You can attach them from the request timeline."
+            class="mt-3"
+          />
+        {/if}
       </div>
     {:else}
       <div class="px-5 sm:px-6 py-5 sm:py-6 max-h-[60vh] overflow-y-auto">
@@ -450,6 +498,50 @@
             idPrefix="request"
           />
 
+          <!-- Staged attachments (last step only). Uploads happen after the
+               request is created; per-file failures surface on the success
+               screen and can be retried from the request timeline. -->
+          {#if isLastStep}
+            <div class="pt-4" data-testid="request-form-attachments">
+              <label
+                class="inline-flex items-center gap-1.5 text-sm cursor-pointer hover:underline"
+                style="color: var(--ds-text-link);"
+                for="request-form-attachment-input"
+              >
+                <Paperclip class="w-4 h-4" aria-hidden="true" />
+                Attach files
+              </label>
+              <input
+                id="request-form-attachment-input"
+                type="file"
+                class="hidden"
+                multiple
+                onchange={(event) => {
+                  const input = event.currentTarget;
+                  stagedFiles = [...stagedFiles, ...Array.from(input.files ?? [])];
+                  input.value = '';
+                }}
+              />
+              {#if stagedFiles.length > 0}
+                <ul class="mt-2 space-y-1">
+                  {#each stagedFiles as file, index}
+                    <li class="flex items-center gap-2 text-xs" style="color: var(--ds-text-subtle);">
+                      <span class="truncate max-w-60">{file.name}</span>
+                      <button
+                        type="button"
+                        class="hover:underline"
+                        style="color: var(--ds-text-link);"
+                        onclick={() => (stagedFiles = stagedFiles.filter((_, i) => i !== index))}
+                      >
+                        Remove
+                      </button>
+                    </li>
+                  {/each}
+                </ul>
+              {/if}
+            </div>
+          {/if}
+
           <!-- Submitting as info (only on last step, only when we know who).
                portalAuthStore has two authenticated shapes: an internal user
                (signed into the main app and using the portal) populates `user`
@@ -465,6 +557,24 @@
                 {:else if $portalAuthStore.isAuthenticated && $portalAuthStore.customer}
                   {t('requestForm.submittingAs', { name: $portalAuthStore.customer.name || t('portal.portalCustomer'), email: $portalAuthStore.customer.email })}
                 {/if}
+              </p>
+            </div>
+          {/if}
+
+          {#if isLastStep && canShareWithOrg}
+            <div class="pt-4 border-t" style="border-color: var(--ds-border);">
+              <Checkbox
+                bind:checked={shareWithOrganisation}
+                dataTestid="request-form-share-with-organisation"
+                label={t('requestForm.shareWithOrganisation')}
+                hint={t('requestForm.shareWithOrganisationHint')}
+                size="small"
+              />
+            </div>
+          {:else if isLastStep && orgSharingMode === 'automatic'}
+            <div class="pt-4 border-t" style="border-color: var(--ds-border);">
+              <p class="text-xs" style="color: var(--ds-text-subtle);">
+                {t('requestForm.sharedWithOrganisationNote')}
               </p>
             </div>
           {/if}
@@ -515,7 +625,7 @@
               size="medium"
               disabled={submitting || loading}
             >
-              {submitting ? t('requestForm.submitting') : t('requestForm.submitRequest')}
+              {submitting || uploadingFiles ? t('requestForm.submitting') : t('requestForm.submitRequest')}
             </Button>
           {:else}
             <Button

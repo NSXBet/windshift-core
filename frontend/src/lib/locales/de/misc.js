@@ -501,6 +501,8 @@ export default {
     workspaceTemplateBlank: 'Leerer Arbeitsbereich',
     workspaceTemplateLoading: 'Vorlagen werden geladen...',
     workspaceTemplateError: 'Arbeitsbereich-Vorlagen konnten nicht geladen werden',
+    workspaceRestrict: 'Sichtbarkeit einschränken',
+    workspaceRestrictHint: 'Nur du und zugewiesene Personen können diesen Arbeitsbereich sehen',
     workspaceTemplateMeta: '{templates} Vorlagen · {items} Elemente',
     type: 'Typ',
     priority: 'Priorität',

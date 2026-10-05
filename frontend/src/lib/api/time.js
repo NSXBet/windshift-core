@@ -74,7 +74,7 @@ export const time = {
     // Server-side report aggregates (day-split minutes + duration/entry
     // totals). Requires from/to; see GET /time/worklogs/aggregate.
     aggregate: (filters = {}, requestOptions = {}) =>
-      fetchV2Data(
+      fetchAPIV2(
         `/time/worklogs/aggregate${buildQueryString(v2WorklogFilters(filters))}`,
         requestOptions
       ),

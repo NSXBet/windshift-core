@@ -64,6 +64,10 @@ export default {
         title: 'Priorities',
         description: 'Configure priority levels with icons and colors',
       },
+      contactLevels: {
+        title: 'Contact levels',
+        description: 'Manage the portal contact levels used for organisation request sharing',
+      },
       configurationSets: { title: 'Configuration Sets', description: 'Manage configuration sets' },
       statuses: {
         title: 'Statuses',
@@ -135,6 +139,47 @@ export default {
         title: 'Diagnostics',
         description: 'System health: server clock, action failures, and other operational signals',
       },
+      packs: {
+        title: 'Framework Packs',
+        description: 'Install built-in configuration-set and content packs into a workspace',
+      },
+    },
+
+    // Framework packs (system admin)
+    featurePacks: {
+      title: 'Framework Packs',
+      subtitle:
+        'Install a built-in pack to provision a workspace with its configuration set and content',
+      loading: 'Loading packs…',
+      empty: 'This server ships no built-in packs.',
+      loadFailed: 'Failed to load built-in packs',
+      version: 'Version',
+      content: 'Content',
+      plugins: 'Plugins',
+      noContent: 'Schema only',
+      apply: 'Apply',
+      verify: 'Verify',
+      cancel: 'Cancel',
+      targetExisting: 'Existing workspace',
+      targetNew: 'New workspace',
+      selectWorkspace: 'Select a workspace',
+      newWorkspaceName: 'New workspace name',
+      targetRequired: 'Choose a target workspace first',
+      reportTitle: 'Apply report',
+      reportStatus: 'Status',
+      stagePlugins: 'Plugins',
+      stageWorkspace: 'Workspace',
+      stageSchema: 'Configuration set',
+      stageContent: 'Content',
+      stageConformance: 'Conformance',
+      stageOk: 'ok',
+      stageSkipped: 'skipped',
+      stageFailed: 'failed',
+      conformant: 'Conformant',
+      driftRows: '{count} drift rows',
+      verified: 'Pack is valid and can be applied',
+      applied: 'Pack applied to the workspace',
+      failed: 'Pack did not apply cleanly',
     },
 
     // Attachment Settings
@@ -1057,6 +1102,11 @@ export default {
       cardFields: 'Card Fields',
       cardFieldsTitle: 'Card Fields',
       cardFieldsDescription: 'Configure which fields are displayed on board cards.',
+      views: 'Views',
+      viewsHelp: 'Choose which collection views are available here. Disabled views disappear from navigation and direct links fall back to an enabled view.',
+      viewsInheritedHint: 'This collection follows the workspace default views.',
+      viewsOverrideHint: 'This collection overrides the workspace default views.',
+      resetViews: 'Reset to workspace default',
       noCardFields: 'No card fields configured.',
       addField: 'Add Field',
       systemFields: 'System Fields',
@@ -1105,6 +1155,22 @@ export default {
     roleUpdated: 'Role updated successfully',
     roleDeleted: 'Role deleted successfully',
     cannotDeleteSystemRole: 'System roles cannot be deleted',
+  },
+
+  // Portal contact levels (WI-1139)
+  contactLevels: {
+    title: 'Contact levels',
+    subtitle: 'Manage the portal contact levels used for organisation request sharing',
+    createLevel: 'Create level',
+    editLevel: 'Edit level',
+    noLevels: 'No contact levels yet',
+    namePlaceholder: 'e.g. Manager, Billing, Viewer',
+    nameRequired: 'Contact level name is required.',
+    failedToLoad: 'Failed to load contact levels.',
+    failedToSave: 'Failed to save contact level.',
+    deleteFailed: 'Failed to delete contact level.',
+    confirmDelete: 'Delete “{name}”? Contacts holding this level lose it.',
+    system: 'System',
   },
 
   // Permissions

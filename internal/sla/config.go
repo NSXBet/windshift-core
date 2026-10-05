@@ -352,6 +352,14 @@ func parseQLL(query string) (*cql.ASTNode, error) {
 	return ast, nil
 }
 
+// ValidateGoalQuery reports whether an SLA goal QL expression compiles. The
+// metric service calls it before persisting a configuration so one malformed
+// native goal cannot disable workspace-wide SLA evaluation.
+func ValidateGoalQuery(query string) error {
+	_, err := parseQLL(query)
+	return err
+}
+
 // extractQLInputFields walks a goal AST and returns the canonical item change
 // fields the goal can depend on. The second result is true when the extractor
 // met a construct it does not understand and the metric must widen to every
@@ -475,6 +483,9 @@ func canonicalChangeField(field string, customFields cql.CustomFieldMap) (string
 	case "workspace", "workspace_id", "workspaceid":
 		return "workspace_id", true
 	case "labels", "components", "milestones", "links", "watchers", "comments":
+		// Collection-valued fields are not itemevents change facts yet, so
+		// they stay unextractable: metrics referencing them fall back to
+		// inputAll and evaluate every recorded fact (WI-1532).
 		return "", false
 	}
 	return "", false

@@ -93,7 +93,17 @@
   let editorElement = $state(null);
   let fileInput = $state(null);
   let editor = $state(null);
+  let disposed = false;
   let initialContent = content;
+
+  async function destroyEditor(target) {
+    if (!target) return;
+    try {
+      await target.destroy();
+    } catch (e) {
+      console.error('Error destroying editor:', e);
+    }
+  }
 
   // Mention picker state
   let mentionPickerOpen = $state(false);
@@ -498,6 +508,7 @@
             { plugin: rewriteBreakHTML, options: {} },
           ]);
           ctx.get(listenerCtx).markdownUpdated((ctx, markdown) => {
+            if (disposed) return;
             // Listener notifications can be delivered after a newer editor
             // transaction (for example, selecting an @ mention). Always
             // serialize the current document so a delayed callback cannot
@@ -515,7 +526,7 @@
           // Detect mentions on all changes: mobile keyboards may omit keyup.
           // Overlap with desktop keyup is safe because the check only reads state.
           ctx.get(listenerCtx).updated((updateCtx) => {
-            if (readonly) return;
+            if (readonly || disposed) return;
             try {
               const view = updateCtx.get(editorViewCtx);
               if (view) checkForMentionTrigger(view);
@@ -581,10 +592,18 @@
         builder.use(excalidrawBlock);
       }
 
-      editor = await builder.create();
-
+      const created = await builder.create();
+      if (disposed) {
+        // The component unmounted while the async builder was still running;
+        // destroy the late editor here so teardown owns it exactly once.
+        await destroyEditor(created);
+        return;
+      }
+      editor = created;
     } catch (error) {
-      console.error('Failed to initialize Milkdown editor:', error);
+      if (!disposed) {
+        console.error('Failed to initialize Milkdown editor:', error);
+      }
     }
   });
 
@@ -611,6 +630,7 @@
   });
 
   onDestroy(async () => {
+    disposed = true;
     if (hoverCardTimeout) {
       clearTimeout(hoverCardTimeout);
     }
@@ -623,11 +643,9 @@
     }
     clearTimeout(pageLinkTimer);
     if (editor) {
-      try {
-        await editor.destroy();
-      } catch (e) {
-        console.error('Error destroying editor:', e);
-      }
+      const target = editor;
+      editor = null;
+      await destroyEditor(target);
     }
   });
 
@@ -700,6 +718,20 @@
       editor.action(insert(imageMarkdown));
     } catch (error) {
       console.error('Failed to insert image:', error);
+    }
+  }
+
+  // Insert markdown at the cursor (canned responses, WI-1138). The listener
+  // plugin mirrors the document change back into the bindable content value.
+  export function insertMarkdown(markdown) {
+    if (!editor || readonly) {
+      console.warn('Cannot insert markdown: editor not ready or readonly');
+      return;
+    }
+    try {
+      editor.action(insert(markdown));
+    } catch (error) {
+      console.error('Failed to insert markdown:', error);
     }
   }
 
@@ -922,8 +954,14 @@
 {/if}
 <!-- Page-link picker for inserting knowledge-page links -->
 {#if pageLinkPickerOpen}
-  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-  <div class="page-link-picker" data-testid="page-link-picker" onclick={(e) => e.stopPropagation()}>
+  <!-- Container only: the click handler stops propagation to the editor.
+       role="presentation" keeps it out of the accessibility tree. -->
+  <div
+    class="page-link-picker"
+    role="presentation"
+    data-testid="page-link-picker"
+    onclick={(e) => e.stopPropagation()}
+  >
     <input
       type="text"
       class="page-link-input"

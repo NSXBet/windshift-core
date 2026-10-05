@@ -42,6 +42,9 @@ CREATE TABLE IF NOT EXISTS items (
 	-- Portal/channel fields
 	channel_id INTEGER REFERENCES channels(id) ON DELETE SET NULL,
 	request_type_id INTEGER REFERENCES request_types(id) ON DELETE SET NULL,
+	-- Set at creation when the portal requester shares the request with their
+	-- organisation (WI-1139). Immutable afterwards.
+	portal_org_shared BOOLEAN NOT NULL DEFAULT false,
 	-- Priority field (new system)
 	priority_id INTEGER REFERENCES priorities(id) ON DELETE SET NULL,
 	-- Date fields
@@ -155,11 +158,17 @@ CREATE INDEX IF NOT EXISTS idx_items_request_type_id ON items(request_type_id);
 -- Personal task relationship index
 CREATE INDEX IF NOT EXISTS idx_items_related_work_item_id ON items(related_work_item_id);
 
--- Item history table for tracking changes to items
+-- Item history table for tracking changes to items.
+-- Actor attribution mirrors comments and domain events: user_id holds the
+-- acting internal user and is NULL for portal customers and system actions;
+-- actor_kind is 'user', 'portal_customer', or 'system'; and
+-- actor_portal_customer_id carries the portal-customer actor.
 CREATE TABLE IF NOT EXISTS item_history (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	item_id INTEGER NOT NULL,
-	user_id INTEGER NOT NULL,
+	user_id INTEGER,
+	actor_kind TEXT NOT NULL DEFAULT 'user',
+	actor_portal_customer_id INTEGER,
 	changed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 	field_name TEXT NOT NULL,
 	old_value TEXT,
@@ -167,7 +176,8 @@ CREATE TABLE IF NOT EXISTS item_history (
 	source TEXT,
 	agent_run_id INTEGER,
 	FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE,
-	FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT
+	FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT,
+	FOREIGN KEY (actor_portal_customer_id) REFERENCES portal_customers(id) ON DELETE SET NULL
 );
 
 -- Index for efficient history queries (most common: get all history for an item)
@@ -238,5 +248,8 @@ CREATE TABLE IF NOT EXISTS item_import_rows (
 	FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
 	FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE
 );
+
+CREATE INDEX IF NOT EXISTS idx_item_import_rows_job_id ON item_import_rows(job_id);
+CREATE INDEX IF NOT EXISTS idx_item_import_rows_item_id ON item_import_rows(item_id);
 
 -- migration: 0000_baseline

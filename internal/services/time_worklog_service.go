@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sort"
@@ -206,12 +207,13 @@ func SplitWorklogMinutesByDay(start, end int64, location *time.Location) []struc
 // Aggregate reduces the filtered worklogs to (day, user, project, customer)
 // split-minute groups and (user, project, customer) duration/entry totals so
 // reports render without fetching every raw row.
-func (s *TimeWorklogService) Aggregate(filter repository.WorklogDetailFilter, timezone string) (*WorklogAggregate, error) {
+// Aggregate reduces the filtered worklogs to (day, user, project, customer)
+// split-minute groups and (user, project, customer) duration/entry totals so
+// reports render without fetching every raw row. Rows stream from the
+// database under ctx — a canceled request stops the scan instead of running
+// to completion (WI-1598).
+func (s *TimeWorklogService) Aggregate(ctx context.Context, filter repository.WorklogDetailFilter, timezone string) (*WorklogAggregate, error) {
 	_, location, err := ResolveTimezone(timezone)
-	if err != nil {
-		return nil, err
-	}
-	inputs, err := s.worklogs.ListAggregateInputs(filter)
 	if err != nil {
 		return nil, err
 	}
@@ -221,8 +223,7 @@ func (s *TimeWorklogService) Aggregate(filter repository.WorklogDetailFilter, ti
 	totalIndex := make(map[WorklogTotalAggregate]int)
 	totals := make([]WorklogTotalAggregate, 0)
 
-	for i := range inputs {
-		input := &inputs[i]
+	reduce := func(input *repository.WorklogAggregateInput) error {
 		for _, slice := range SplitWorklogMinutesByDay(input.StartTimeUnix, input.EndTimeUnix, location) {
 			key := WorklogDailyAggregate{
 				Day: slice.Day, UserID: input.UserID, UserName: input.UserName,
@@ -254,6 +255,11 @@ func (s *TimeWorklogService) Aggregate(filter repository.WorklogDetailFilter, ti
 			totals[idx].DurationMinutes += int64(input.DurationMinutes)
 			totals[idx].Entries++
 		}
+		return nil
+	}
+
+	if err := s.worklogs.StreamAggregateInputs(ctx, filter, reduce); err != nil {
+		return nil, err
 	}
 
 	sort.Slice(daily, func(i, j int) bool {

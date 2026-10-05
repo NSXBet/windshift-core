@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
@@ -20,6 +19,33 @@ import (
 // duplicate already points at a different canonical, or the merge would fold
 // a ticket into its own descendant. Handlers surface it as a conflict.
 var ErrItemMergeConflict = errors.New("item merge conflict")
+
+// lockCanonicalMergeTarget re-checks the canonical's merge identity inside
+// the merge transaction and fences it against concurrent merges: PostgreSQL
+// locks the row for the transaction; SQLite serializes through the write
+// lock via a no-op conditional update. A canonical that became a merged
+// duplicate in the meantime fails the merge instead of closing a redirect
+// cycle (WI-1567).
+func lockCanonicalMergeTarget(ctx context.Context, tx database.Tx, driver string, targetID int) error {
+	if database.IsPostgresDriver(driver) {
+		var id int
+		err := tx.QueryRowContext(ctx,
+			`SELECT id FROM items WHERE id = ? AND merged_into_item_id IS NULL FOR UPDATE`, targetID,
+		).Scan(&id)
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("%w: the canonical ticket became a merged duplicate", ErrItemMergeConflict)
+		}
+		return err
+	}
+	res, err := tx.Exec(`UPDATE items SET updated_at = updated_at WHERE id = ? AND merged_into_item_id IS NULL`, targetID)
+	if err != nil {
+		return err
+	}
+	if rows, _ := res.RowsAffected(); rows == 0 {
+		return fmt.Errorf("%w: the canonical ticket became a merged duplicate", ErrItemMergeConflict)
+	}
+	return nil
+}
 
 // ItemLifecycleEmitter receives post-commit side effects for lifecycle
 // mutations. *EventCoordinator satisfies it.
@@ -65,6 +91,9 @@ type ItemMergeSourceResult struct {
 	MovedAttachments int  `json:"moved_attachments"`
 	MovedLinks       int  `json:"moved_links"`
 	CommentsPrivate  bool `json:"comments_private"`
+	// ContentKeptOnSource reports that files and email threads stayed on the
+	// merged duplicate because the requesters differ.
+	ContentKeptOnSource bool `json:"content_kept_on_source,omitempty"`
 }
 
 // ItemMergeResult summarizes one merge request.
@@ -99,6 +128,15 @@ func (s *ItemLifecycleService) Merge(ctx context.Context, input ItemMergeInput) 
 	if err := s.requireEdit(input.ActorUserID, target.WorkspaceID); err != nil {
 		return nil, err
 	}
+	var targetMergedInto *int
+	if err := s.db.QueryRowContext(ctx,
+		`SELECT merged_into_item_id FROM items WHERE id = ?`, target.ID,
+	).Scan(&targetMergedInto); err != nil {
+		return nil, fmt.Errorf("load merge state for target %d: %w", target.ID, err)
+	}
+	if targetMergedInto != nil {
+		return nil, fmt.Errorf("%w: the canonical ticket is itself a merged duplicate", ErrItemMergeConflict)
+	}
 
 	// Stable source order, no duplicates within the request.
 	seen := make(map[int]bool, len(input.SourceItemIDs))
@@ -119,11 +157,6 @@ func (s *ItemLifecycleService) Merge(ctx context.Context, input ItemMergeInput) 
 		alreadyMerged bool
 		sameRequester bool
 	}
-	// The canonical's materialized path anchors the descendant check.
-	var targetPath string
-	if err := s.db.QueryRowContext(ctx, `SELECT path FROM items WHERE id = ?`, input.TargetItemID).Scan(&targetPath); err != nil {
-		return nil, fmt.Errorf("load path for item %d: %w", input.TargetItemID, err)
-	}
 
 	sources := make([]plannedSource, 0, len(ordered))
 	for _, id := range ordered {
@@ -137,14 +170,15 @@ func (s *ItemLifecycleService) Merge(ctx context.Context, input ItemMergeInput) 
 		if source.WorkspaceID != target.WorkspaceID {
 			return nil, &validation.ValidationError{Field: "source_item_ids", Message: "All items must be in the same workspace as the canonical ticket"}
 		}
-		var sourcePath string
-		if err := s.db.QueryRowContext(ctx, `SELECT path FROM items WHERE id = ?`, id).Scan(&sourcePath); err != nil {
-			return nil, fmt.Errorf("load path for item %d: %w", id, err)
-		}
 		// Folding a ticket into its own descendant would create a redirect
-		// cycle. Paths chain as "/<id>/...", so the target is a descendant of
-		// the source exactly when its path extends the source's own segment.
-		if strings.HasPrefix(targetPath, sourcePath+strconv.Itoa(id)+"/") {
+		// cycle. Follow the live parent_id chain: items.path is only written
+		// by cross-workspace moves and template clones and stays '/' for
+		// normally created items.
+		targetIsDescendant, err := s.items.IsDescendantContext(ctx, id, input.TargetItemID)
+		if err != nil {
+			return nil, err
+		}
+		if targetIsDescendant {
 			return nil, fmt.Errorf("%w: cannot merge an item into its own subticket", ErrItemMergeConflict)
 		}
 		plan := plannedSource{item: source, sameRequester: sameRequester(source, target)}
@@ -176,6 +210,12 @@ func (s *ItemLifecycleService) Merge(ctx context.Context, input ItemMergeInput) 
 
 	result := &ItemMergeResult{Target: target, Sources: make([]ItemMergeSourceResult, 0, len(sources))}
 	err = database.WithTx(s.db, func(tx database.Tx) error {
+		// Re-check the canonical's merge identity under a transaction fence so
+		// concurrent opposite-direction merges cannot both succeed and leave
+		// mutually redirecting tickets (WI-1567).
+		if err := lockCanonicalMergeTarget(ctx, tx, s.db.GetDriverName(), target.ID); err != nil {
+			return err
+		}
 		recorder := itemevents.NewRecorder(s.db)
 		now := time.Now().UTC()
 		for _, plan := range sources {
@@ -194,16 +234,28 @@ func (s *ItemLifecycleService) Merge(ctx context.Context, input ItemMergeInput) 
 			// comments become private so the canonical's requester never sees
 			// another customer's content in the portal; agents keep the full
 			// thread with per-comment attribution.
+			// thread with per-comment attribution.
 			movedComments, err := s.comments.MoveCommentsToItem(tx, int64(plan.item.ID), int64(target.ID), !plan.sameRequester)
 			if err != nil {
 				return fmt.Errorf("move comments from item %d: %w", plan.item.ID, err)
 			}
 			out.CommentsPrivate = !plan.sameRequester && movedComments > 0
-			res, err := tx.Exec(`UPDATE attachments SET item_id = ? WHERE item_id = ?`, target.ID, plan.item.ID)
-			if err != nil {
-				return fmt.Errorf("move attachments from item %d: %w", plan.item.ID, err)
+			if plan.sameRequester {
+				// One requester: files and email threads follow the canonical.
+				res, err := tx.Exec(`UPDATE attachments SET item_id = ? WHERE item_id = ? AND COALESCE(entity_type, 'item') = 'item'`, target.ID, plan.item.ID)
+				if err != nil {
+					return fmt.Errorf("move attachments from item %d: %w", plan.item.ID, err)
+				}
+				movedAttachments, _ = res.RowsAffected()
+			} else {
+				// Different requesters: files keep their original requester
+				// provenance on the merged duplicate. There is no per-file
+				// visibility flag, so moving customer files onto another
+				// customer's request would expose them through portal reads and
+				// downloads (WI-1566). Agents reach them through the source
+				// ticket, which stays in place as a redirect.
+				out.ContentKeptOnSource = true
 			}
-			movedAttachments, _ = res.RowsAffected()
 
 			// Re-point item links onto the canonical, dropping links that
 			// would collapse into duplicates or self-links.
@@ -247,19 +299,25 @@ func (s *ItemLifecycleService) Merge(ctx context.Context, input ItemMergeInput) 
 				return fmt.Errorf("move watchers from item %d: %w", plan.item.ID, err)
 			}
 
-			// Email threads tracked on the duplicate now append to the
-			// canonical, so it cannot accumulate independent replies.
-			if _, err := tx.Exec(`UPDATE email_message_tracking SET item_id = ? WHERE item_id = ?`, target.ID, plan.item.ID); err != nil {
-				return fmt.Errorf("re-point email threads from item %d: %w", plan.item.ID, err)
-			}
-			if _, err := tx.Exec(`UPDATE email_reply_outbox SET item_id = ? WHERE item_id = ?`, target.ID, plan.item.ID); err != nil {
-				return fmt.Errorf("re-point pending replies from item %d: %w", plan.item.ID, err)
+			// Email threads tracked on the duplicate append to the canonical so
+			// it cannot accumulate independent replies — but only when both
+			// tickets share a requester. Otherwise the original sender's
+			// replies would land as public comments on another customer's
+			// request; the thread stays with its requester on the merged
+			// duplicate (WI-1566).
+			if plan.sameRequester {
+				if _, err := tx.Exec(`UPDATE email_message_tracking SET item_id = ? WHERE item_id = ?`, target.ID, plan.item.ID); err != nil {
+					return fmt.Errorf("re-point email threads from item %d: %w", plan.item.ID, err)
+				}
+				if _, err := tx.Exec(`UPDATE email_reply_outbox SET item_id = ? WHERE item_id = ?`, target.ID, plan.item.ID); err != nil {
+					return fmt.Errorf("re-point pending replies from item %d: %w", plan.item.ID, err)
+				}
 			}
 
 			// The conditional update closes the race between the pre-checks and
 			// this transaction: a concurrent merge of the same duplicate rolls
 			// this one back instead of overwriting the pointer.
-			res, err = tx.Exec(`
+			res, err := tx.Exec(`
 				UPDATE items SET merged_into_item_id = ?, updated_at = ?
 				WHERE id = ? AND merged_into_item_id IS NULL
 			`, target.ID, now, plan.item.ID)
@@ -276,6 +334,19 @@ func (s *ItemLifecycleService) Merge(ctx context.Context, input ItemMergeInput) 
 				NewValue: fmt.Sprintf("%d", target.ID), ChangedAt: now,
 			}); err != nil {
 				return err
+			}
+
+			// The duplicate is a redirect now: abandon its running SLA cycles so
+			// armed warning/breach jobs stop firing for a ticket whose content
+			// moved to the canonical (WI-1528).
+			if _, err := tx.Exec(`
+				UPDATE item_sla_cycles
+				SET status = 'abandoned', abandon_reason = 'merged', stopped_at = ?,
+				    paused = false, pause_started_at = NULL, next_deadline_at = NULL,
+				    remaining_at_pause_ms = NULL, updated_at = CURRENT_TIMESTAMP
+				WHERE item_id = ? AND status = 'ongoing'
+			`, now, plan.item.ID); err != nil {
+				return fmt.Errorf("abandon SLA cycles for merged item %d: %w", plan.item.ID, err)
 			}
 
 			out.MovedComments = int(movedComments)
@@ -301,6 +372,16 @@ func (s *ItemLifecycleService) Merge(ctx context.Context, input ItemMergeInput) 
 	if s.emitter != nil {
 		if updated, err := s.items.FindByID(input.TargetItemID); err == nil && updated != nil {
 			s.emitter.EmitItemUpdated(target, updated, false, false, input.ActorUserID, nil, input.ActorUsername)
+		}
+		// Emit for each duplicate too: its merged_into_item_id changed, and
+		// automations/webhooks must learn the ticket was folded away instead
+		// of only seeing the canonical (WI-1528).
+		for _, id := range ordered {
+			source, err := s.items.FindByID(id)
+			if err != nil || source == nil {
+				continue
+			}
+			s.emitter.EmitItemUpdated(source, source, false, false, input.ActorUserID, nil, input.ActorUsername)
 		}
 	}
 	return result, nil
@@ -360,6 +441,7 @@ func (s *ItemLifecycleService) Split(ctx context.Context, input ItemSplitInput) 
 			AssigneeID:              input.AssigneeID,
 			CreatorID:               &input.ActorUserID,
 			CreatorPortalCustomerID: input.PortalCustomerID,
+			ChannelID:               source.ChannelID,
 		})
 		if err != nil {
 			return 0, err
@@ -397,7 +479,7 @@ func (s *ItemLifecycleService) Split(ctx context.Context, input ItemSplitInput) 
 		}
 		if len(input.AttachmentIDs) > 0 {
 			query := fmt.Sprintf(`
-				UPDATE attachments SET item_id = ? WHERE item_id = ? AND id IN (%s)
+				UPDATE attachments SET item_id = ? WHERE item_id = ? AND COALESCE(entity_type, 'item') = 'item' AND id IN (%s)
 			`, placeholderList(input.AttachmentIDs))
 			args := append([]any{newChildID, source.ID}, intSliceToAny(input.AttachmentIDs)...)
 			res, err := tx.Exec(query, args...)
@@ -443,6 +525,7 @@ func (s *ItemLifecycleService) Split(ctx context.Context, input ItemSplitInput) 
 
 	PublishItemChange(childID, ItemChangeCreated)
 	PublishItemChange(source.ID, ItemChangeUpdated)
+	PublishWorkspaceChange(source.WorkspaceID, WorkspaceChangeItems)
 	repository.InvalidateItemListCountCache(s.db, source.WorkspaceID)
 	if s.emitter != nil {
 		s.emitter.EmitItemCreated(child, input.ActorUserID, input.ActorUsername)
@@ -548,6 +631,7 @@ func (s *ItemLifecycleService) sourceItemLinks(tx database.Tx, itemID int) ([]so
 
 func (s *ItemLifecycleService) invalidateAfterMutation(workspaceID int, itemIDs []int) {
 	repository.InvalidateItemListCountCache(s.db, workspaceID)
+	PublishWorkspaceChange(workspaceID, WorkspaceChangeItems)
 	for _, id := range itemIDs {
 		PublishItemChange(id, ItemChangeUpdated)
 	}

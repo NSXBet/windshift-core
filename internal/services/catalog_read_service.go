@@ -23,6 +23,10 @@ type CatalogAccess interface {
 	CanViewWorkspace(userID, workspaceID int) (bool, error)
 	CanAdminWorkspace(userID, workspaceID int) (bool, error)
 	HasGlobalPermission(userID int, permission string) (bool, error)
+	// WorkspaceVisibility acquires a request-scoped evaluator so list
+	// endpoints decode the user's permission snapshot once per request
+	// instead of once per candidate workspace.
+	WorkspaceVisibility(userID int) (WorkspaceVisibility, error)
 }
 
 // CatalogReadService owns the authorization and composition shared by API catalog readers.
@@ -65,12 +69,17 @@ func (s *CatalogReadService) ListWorkspaces(userID int, page CatalogPageParams) 
 	if err != nil {
 		return nil, 0, err
 	}
-	// Visibility decisions come from the per-user permission snapshot (map
-	// lookups); only the visible IDs are handed to the paged query, so request
-	// cost no longer materializes every workspace row.
+	// One decoded permission snapshot answers every candidate: request cost
+	// is a single snapshot decode plus map lookups, and only the visible IDs
+	// are handed to the paged query, so the request never materializes every
+	// workspace row.
+	visibility, err := s.access.WorkspaceVisibility(userID)
+	if err != nil {
+		return nil, 0, err
+	}
 	visibleIDs := make([]int, 0, len(candidates))
 	for _, candidate := range candidates {
-		allowed, err := s.workspaceVisibleByID(userID, candidate.ID, candidate.Active)
+		allowed, err := workspaceVisibleWith(visibility, candidate.ID, candidate.Active)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -78,7 +87,7 @@ func (s *CatalogReadService) ListWorkspaces(userID int, page CatalogPageParams) 
 			visibleIDs = append(visibleIDs, candidate.ID)
 		}
 	}
-	return s.workspaceRepo.FindByIDsPage(repository.WorkspaceIDPageParams{
+	workspaces, total, err := s.workspaceRepo.FindByIDsPage(repository.WorkspaceIDPageParams{
 		IDs:    visibleIDs,
 		Search: page.Search,
 		Sort:   page.Sort,
@@ -86,6 +95,17 @@ func (s *CatalogReadService) ListWorkspaces(userID int, page CatalogPageParams) 
 		Limit:  page.Limit,
 		Offset: page.Offset,
 	})
+	if err != nil {
+		return nil, 0, err
+	}
+	restricted, err := s.workspaceRepo.WorkspaceIDsWithViewerAssignments()
+	if err != nil {
+		return nil, 0, err
+	}
+	for i := range workspaces {
+		workspaces[i].IsRestricted = restricted[workspaces[i].ID]
+	}
+	return workspaces, total, nil
 }
 
 func (s *CatalogReadService) ListWorkspaceTemplates(ctx context.Context, userID int) ([]models.WorkspaceTemplateSummary, error) {
@@ -93,9 +113,13 @@ func (s *CatalogReadService) ListWorkspaceTemplates(ctx context.Context, userID 
 	if err != nil {
 		return nil, err
 	}
+	visibility, err := s.access.WorkspaceVisibility(userID)
+	if err != nil {
+		return nil, err
+	}
 	visible := make([]models.WorkspaceTemplateSummary, 0, len(items))
 	for _, item := range items {
-		allowed, err := s.access.CanViewWorkspace(userID, item.ID)
+		allowed, err := visibility.CanView(item.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -335,9 +359,19 @@ func (s *CatalogReadService) workspaceVisible(userID int, workspace *models.Work
 	return s.workspaceVisibleByID(userID, workspace.ID, workspace.Active)
 }
 
-// workspaceVisibleByID applies the list visibility rule: active workspaces
-// need item.view, inactive ones need workspace administration rights (only
-// admins may see deactivated workspaces).
+// workspaceVisibleWith applies the list visibility rule through a
+// request-scoped evaluator: active workspaces need item.view, inactive ones
+// need workspace administration rights (only admins may see deactivated
+// workspaces).
+func workspaceVisibleWith(visibility WorkspaceVisibility, workspaceID int, active bool) (bool, error) {
+	if active {
+		return visibility.CanView(workspaceID)
+	}
+	return visibility.CanAdmin(workspaceID)
+}
+
+// workspaceVisibleByID applies the list visibility rule for single-workspace
+// reads, where the per-check snapshot decode is already the request budget.
 func (s *CatalogReadService) workspaceVisibleByID(userID, workspaceID int, active bool) (bool, error) {
 	if active {
 		return s.access.CanViewWorkspace(userID, workspaceID)

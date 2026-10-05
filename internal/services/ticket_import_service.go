@@ -232,6 +232,21 @@ func (s *TicketImportService) importRow(ctx context.Context, workspaceID int, jo
 	if externalRef == "" || title == "" {
 		return errors.New("external_ref and title are required")
 	}
+	// Re-importing a workspace export must be a no-op: the export writes each
+	// ticket's workspace item key as external_ref, so a matching key in this
+	// workspace means the ticket already exists. The check is workspace-scoped
+	// so a legitimate import into a different workspace still proceeds.
+	var existingItemID int
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT i.id FROM items i
+		JOIN workspaces w ON i.workspace_id = w.id
+		WHERE i.workspace_id = ? AND w.key || '-' || i.workspace_item_number = ?
+		LIMIT 1
+	`, workspaceID, externalRef).Scan(&existingItemID); err == nil {
+		return fmt.Errorf("%w: %s", csvimport.ErrSkipRow, externalRef)
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("check existing ticket for %q: %w", externalRef, err)
+	}
 	description := sanitize.RichText.Sanitize(column("description"))
 	requesterEmail := strings.ToLower(column("requester_email"))
 	assigneeEmail := strings.ToLower(column("assignee_email"))
@@ -250,10 +265,14 @@ func (s *TicketImportService) importRow(ctx context.Context, workspaceID int, jo
 		WorkspaceID: workspaceID, Title: title, Description: description,
 		CreatorID: &actorUserID, EventMetadata: itemevents.Import(jobID),
 		CreatedAt: &createdAt,
+		// The importing actor passes the same create-time validation policy
+		// as normal creation — most importantly the workflow/approval checks
+		// on an explicit status column (WI-1560).
+		ValidatingUserID: actorUserID,
 	}
 	if requesterEmail != "" {
 		customerID, _, err := repository.NewPortalCustomerRepository(s.db).
-			FindOrCreateByEmail(ctx, strings.SplitN(requesterEmail, "@", 2)[0], requesterEmail)
+			FindOrCreateByEmail(ctx, strings.SplitN(requesterEmail, "@", 2)[0], requesterEmail, models.CustomerCreatedViaTicketImport)
 		if err != nil {
 			return fmt.Errorf("resolve requester: %w", err)
 		}
@@ -308,6 +327,12 @@ func (s *TicketImportService) importRow(ctx context.Context, workspaceID int, jo
 		}
 		return nil
 	}); err != nil {
+		// The ticket was created before the mapping transaction committed. If
+		// that transaction lost its lease (or failed), delete the ticket so it
+		// cannot survive recovery as an untracked orphan.
+		if _, delErr := s.db.ExecWrite(`DELETE FROM items WHERE id = ?`, itemID); delErr != nil {
+			return fmt.Errorf("clean up untracked imported ticket %d: %w", itemID, delErr)
+		}
 		if errors.Is(err, csvimport.ErrLeaseLost) {
 			return err
 		}

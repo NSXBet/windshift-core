@@ -34,6 +34,8 @@ export default {
     loading: 'Загрузка…',
     retry: 'Повторить',
     knowledgeBase: 'База знаний',
+    scrollDownForMore: 'Прокрутите вниз, чтобы увидеть больше',
+    scrollUpForMore: 'Прокрутите вверх, чтобы увидеть больше',
   },
 
   commandPalette: {
@@ -335,6 +337,8 @@ export default {
       upcomingDeadlines: { name: 'Ближайшие сроки', description: 'Элементы с приближающимся сроком' },
       iterationTimeline: { name: 'График итераций', description: 'Текущие и ближайшие итерации' },
       testCoverage: { name: 'Покрытие тестами', description: 'Требования, связанные с тест-кейсами' },
+      supportMetrics: { name: 'Метрики поддержки', description: 'Бэклог, первый ответ, решение и соблюдение SLA для клиентских заявок' },
+      zammadSupportOverview: { name: 'Обзор поддержки Zammad', description: 'Статус связанных заявок всего пространства и наблюдаемые изменения' },
     },
     customization: {
       widgets: 'Виджеты', builtIn: 'Основные виджеты', builtInDescription: 'Основные показатели и графики пространства',
@@ -411,5 +415,20 @@ export default {
     browseAllWorkspaces: 'Показать все рабочие пространства ({count})',
     noWorkspacesAvailable:
       'Доступных рабочих пространств пока нет. Обратитесь к администратору, чтобы получить доступ.',
+  },
+  navConfig: {
+    configureTitle: 'Настроить навигацию',
+    scopeWorkspace: 'Воркспейс по умолчанию — {name}',
+    scopeCollection: 'Коллекция — {name}',
+    collectionScopeHelp:
+      'Эти переключатели переопределяют настройки воркспейса для этой коллекции. Инструменты и тесты следуют настройке воркспейса.',
+    inheritedBadge: 'Следует настройкам воркспейса — переключите представление, чтобы переопределить.',
+    resetToInherited: 'Сбросить к настройкам воркспейса',
+    alwaysVisible: 'Всегда видимо',
+    adminOnlyHint: 'Видно администраторам воркспейса',
+    moduleHint: 'Появляется, когда включён модуль тестирования и у читателя есть доступ к тестам.',
+    defaultViewHint: 'Представление по умолчанию — нельзя отключить',
+    saveError: 'Не удалось сохранить настройки навигации: {error}',
+    loadError: 'Не удалось загрузить настройки навигации: {error}',
   },
 };

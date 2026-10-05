@@ -37,6 +37,7 @@ import { assetReports, channelCategories, channels, requestTypes } from './chann
 import { collectionCategories, collections } from './collections.js';
 import { conditionSets } from './conditionSets.js';
 import {
+  cannedResponses,
   configurationSets,
   customFields,
   hierarchyLevels,
@@ -93,6 +94,7 @@ import {
 import { oauth } from './oauth.js';
 import { objectTranslations } from './objectTranslations.js';
 import { onCallSchedules } from './oncall.js';
+import { packs } from './packs.js';
 import { pageLabels, pages } from './pages.js';
 import { groups, permissions } from './permissions.js';
 import {
@@ -108,6 +110,7 @@ import { recurrence } from './recurrence.js';
 import { issueSync, itemSCMLinks, scmProviders, userSCM, workspaceSCM } from './scm.js';
 import { sla } from './sla.js';
 import { sso } from './sso.js';
+import { support } from './support.js';
 import { teams } from './teams.js';
 import { tests } from './tests/index.js';
 import { time, timer } from './time.js';
@@ -160,6 +163,7 @@ export const api = {
   customFields,
   workspaces,
   workspaceRoles,
+  packs,
   screens,
   items,
   itemIncidents,
@@ -189,6 +193,7 @@ export const api = {
 
   // SLA configuration, reporting, and item state
   sla,
+  support,
 
   // On-call schedules (per-team)
   onCallSchedules,
@@ -309,6 +314,9 @@ export const api = {
   // Item Types
   itemTypes,
   itemTemplates,
+
+  // Canned responses (WI-1138)
+  cannedResponses,
 
   // Priorities
   priorities,

@@ -70,6 +70,9 @@ func (s *SLAMetricService) Create(ctx context.Context, workspaceID int, input SL
 		return nil, err
 	}
 	err = database.WithTx(s.db, func(tx database.Tx) error {
+		if err := s.validateTargetsTx(ctx, tx, workspaceID, metric.Goals); err != nil {
+			return err
+		}
 		id, err := s.repo.CreateMetric(ctx, tx, metric)
 		if err != nil {
 			return err
@@ -95,6 +98,9 @@ func (s *SLAMetricService) Update(ctx context.Context, workspaceID, metricID int
 	}
 	metric.ID = metricID
 	err = database.WithTx(s.db, func(tx database.Tx) error {
+		if err := s.validateTargetsTx(ctx, tx, workspaceID, metric.Goals); err != nil {
+			return err
+		}
 		if err := s.repo.UpdateMetric(ctx, tx, metric); err != nil {
 			return err
 		}
@@ -131,6 +137,15 @@ func (s *SLAMetricService) Delete(ctx context.Context, workspaceID, metricID int
 // enqueued.
 func (s *SLAMetricService) EnqueueRecalculation(ctx context.Context, workspaceID, metricID int) (int, error) {
 	metricIDs := []int{metricID}
+	if metricID != 0 {
+		metric, err := s.repo.GetMetric(ctx, metricID)
+		if err != nil {
+			return 0, err
+		}
+		if metric.WorkspaceID != workspaceID {
+			return 0, repository.ErrNotFound
+		}
+	}
 	if metricID == 0 {
 		metrics, err := s.repo.ListMetrics(ctx, workspaceID)
 		if err != nil {
@@ -193,7 +208,26 @@ func (s *SLAMetricService) build(ctx context.Context, workspaceID int, input SLA
 	if err := s.validateTargets(ctx, workspaceID, metric.Goals); err != nil {
 		return nil, err
 	}
+	if err := validateNativeGoalQueries(metric.Goals); err != nil {
+		return nil, err
+	}
 	return metric, nil
+}
+
+// validateNativeGoalQueries compiles every native goal's QL before the metric
+// is persisted. Imported goals keep their original queries (validated through
+// the import path) and are skipped here.
+func validateNativeGoalQueries(goals []models.SLAGoal) error {
+	for i := range goals {
+		status := goals[i].ImportStatus
+		if status != "" && !strings.EqualFold(status, "native") {
+			continue
+		}
+		if err := sla.ValidateGoalQuery(goals[i].QLQuery); err != nil {
+			return fmt.Errorf("%w: goal %d: %v", ErrSLAMetricInvalid, i, err)
+		}
+	}
+	return nil
 }
 
 func validateSLAConditions(conditions []models.SLACondition) error {
@@ -204,8 +238,10 @@ func validateSLAConditions(conditions []models.SLACondition) error {
 		default:
 			return errors.New("condition phase must be start, pause, or stop")
 		}
-		if strings.TrimSpace(condition.ConditionType) == "" {
-			return errors.New("condition_type is required")
+		switch condition.ConditionType {
+		case "created", "status_entered", "status_exited", "status_current", "status_category_entered", "status_category_exited", "status_category_current", "assignee_set", "resolution_set", "comment_by_customer", "comment_by_agent":
+		default:
+			return fmt.Errorf("unsupported condition_type: %s", condition.ConditionType)
 		}
 	}
 	return nil
@@ -242,12 +278,27 @@ func (s *SLAMetricService) calendarAccessible(ctx context.Context, workspaceID, 
 		SELECT 1 FROM working_calendars c
 		WHERE c.id = ?
 		  AND (c.workspace_id = ?
-		       OR c.team_id IN (SELECT team_id FROM team_workspace_bindings WHERE workspace_id = ?))
+	       OR c.team_id IN (SELECT team_id FROM team_workspace_bindings WHERE workspace_id = ?))
 	)`, calendarID, workspaceID, workspaceID).Scan(&accessible)
 	if err != nil {
 		return false, err
 	}
 	return accessible, nil
+}
+
+func (s *SLAMetricService) validateTargetsTx(ctx context.Context, tx database.Tx, workspaceID int, goals []models.SLAGoal) error {
+	for _, goal := range goals {
+		for _, target := range goal.Targets {
+			accessible, err := s.repo.CalendarAccessibleToWorkspaceTx(ctx, tx, workspaceID, target.CalendarID)
+			if err != nil {
+				return err
+			}
+			if !accessible {
+				return fmt.Errorf("%w: goal target references a calendar this workspace cannot use", ErrSLAMetricInvalid)
+			}
+		}
+	}
+	return nil
 }
 
 func (s *SLAMetricService) bumpAndRecalculate(ctx context.Context, tx database.Tx, workspaceID, metricID int) error {

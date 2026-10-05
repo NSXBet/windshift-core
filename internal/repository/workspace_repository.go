@@ -162,6 +162,37 @@ func (r *WorkspaceRepository) ListActiveIDs() ([]int, error) {
 	return ids, rows.Err()
 }
 
+// WorkspaceIDsWithViewerAssignments returns the set of workspace IDs where
+// the built-in Viewer role has at least one explicit user or group
+// assignment. That assignment is what flips a workspace into restricted
+// visibility: unassigned users lose the everyone-fallback permissions and the
+// workspace disappears from their directory.
+func (r *WorkspaceRepository) WorkspaceIDsWithViewerAssignments() (map[int]bool, error) {
+	rows, err := r.db.Query(`
+		SELECT DISTINCT uwr.workspace_id
+		FROM user_workspace_roles uwr
+		JOIN workspace_roles wr ON wr.id = uwr.role_id AND wr.builtin_key = ?
+		UNION
+		SELECT DISTINCT gwr.workspace_id
+		FROM group_workspace_roles gwr
+		JOIN workspace_roles wr ON wr.id = gwr.role_id AND wr.builtin_key = ?
+	`, models.RoleBuiltinViewer, models.RoleBuiltinViewer)
+	if err != nil {
+		return nil, fmt.Errorf("list workspace viewer assignments: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	ids := make(map[int]bool)
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan workspace viewer assignment: %w", err)
+		}
+		ids[id] = true
+	}
+	return ids, rows.Err()
+}
+
 // ListActiveIDKeys returns active workspace id+key pairs.
 func (r *WorkspaceRepository) ListActiveIDKeys() ([]IDKey, error) {
 	rows, err := r.db.Query("SELECT id, key FROM workspaces WHERE active = true")
@@ -422,18 +453,21 @@ func (r *WorkspaceRepository) FindAll(userID int, isPersonalOnly bool) ([]models
 	return workspaces, rows.Err()
 }
 
-// GrantAdministratorRoleTx grants the Administrator role on a workspace to a user within a transaction.
-func (r *WorkspaceRepository) GrantAdministratorRoleTx(tx database.Tx, workspaceID int64, userID int) error {
+// GrantBuiltinRoleTx grants a built-in workspace role to a user within a
+// transaction. Creation uses it to hand the creator both Administrator and,
+// for restricted workspaces, Viewer — the Viewer grant is what flips the
+// permission cache into gated visibility.
+func (r *WorkspaceRepository) GrantBuiltinRoleTx(tx database.Tx, workspaceID int64, userID int, builtinKey string) error {
 	result, err := tx.Exec(`
 		INSERT INTO user_workspace_roles (workspace_id, user_id, role_id, granted_by, granted_at)
 		SELECT ?, ?, id, ?, CURRENT_TIMESTAMP FROM workspace_roles WHERE builtin_key = ?
-	`, workspaceID, userID, userID, models.RoleBuiltinAdministrator)
+	`, workspaceID, userID, userID, builtinKey)
 	if err != nil {
-		return fmt.Errorf("failed to grant admin role to workspace creator: %w", err)
+		return fmt.Errorf("failed to grant %s role to workspace creator: %w", builtinKey, err)
 	}
 	rows, _ := result.RowsAffected()
 	if rows == 0 {
-		return fmt.Errorf("administrator role not found; workspace creation aborted")
+		return fmt.Errorf("%s role not found; workspace creation aborted", builtinKey)
 	}
 	return nil
 }

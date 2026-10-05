@@ -1195,6 +1195,30 @@ func (r *ChannelRepository) GetEarliestRateLimitedUID(ctx context.Context, chann
 	return int(minUID.Int64), true, nil
 }
 
+// RequeueRateLimitedClaims invalidates the preclaim window on a channel's
+// rate-limited tracking rows so the next poll reclaims and reprocesses them
+// instead of deferring behind the 5-minute stale-claim lease. The
+// rate_limited_at marker stays until the message is genuinely reprocessed, so
+// the operator log keeps reporting it as waiting. Returns how many rows were
+// reset. Only rows in the given UIDVALIDITY epoch are touched: an older
+// epoch cannot be re-fetched by an IMAP watermark rewind.
+func (r *ChannelRepository) RequeueRateLimitedClaims(ctx context.Context, channelID int, uidValidity uint32) (int, error) {
+	res, err := r.db.ExecWriteContext(ctx, `
+		UPDATE email_message_tracking
+		SET processed_at = ?
+		WHERE channel_id = ? AND rate_limited_at IS NOT NULL AND uid_validity = ? AND uid > 0
+		  AND item_id IS NULL AND comment_id IS NULL
+	`, time.Unix(0, 0).UTC(), channelID, int64(uidValidity))
+	if err != nil {
+		return 0, fmt.Errorf("reset rate-limited claims for channel %d: %w", channelID, err)
+	}
+	count, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("count reset rate-limited claims for channel %d: %w", channelID, err)
+	}
+	return int(count), nil
+}
+
 // ResetEmailWatermarkToUID rewinds the channel's poll watermark so the next
 // IMAP poll re-fetches from lastUID onward, and clears the poison-message
 // tracker so a fresh retry starts unblocked. A channel that has never polled
@@ -1318,25 +1342,61 @@ func (r *ChannelRepository) ListEmailReplies(ctx context.Context, channelID int,
 	return out, nil
 }
 
-// DiscardEmailReply marks a pending outbound reply as never-send. It reports
-// whether a pending row was discarded; delivered, already-discarded, and
-// missing rows report false so callers can distinguish idempotent success
-// from a conflict.
-func (r *ChannelRepository) DiscardEmailReply(ctx context.Context, channelID, commentID int) (bool, error) {
+// EmailReplyDiscardOutcome distinguishes what a discard found, so the
+// operator API can promise cancellation only when it actually took effect.
+type EmailReplyDiscardOutcome int
+
+const (
+	// EmailReplyDiscarded: the pending row was marked never-send.
+	EmailReplyDiscarded EmailReplyDiscardOutcome = iota
+	// EmailReplyNotDiscardable: the row is delivered, already discarded, or
+	// missing.
+	EmailReplyNotDiscardable
+	// EmailReplySending: a worker still holds the delivery lease, so the mail
+	// may already be crossing the SMTP boundary (WI-1573).
+	EmailReplySending
+)
+
+// DiscardEmailReply marks a pending outbound reply as never-send. A live
+// delivery lease reports EmailReplySending instead of pretending the mail
+// was canceled; delivered, already-discarded, and missing rows report
+// EmailReplyNotDiscardable.
+func (r *ChannelRepository) DiscardEmailReply(ctx context.Context, channelID, commentID int) (EmailReplyDiscardOutcome, error) {
 	res, err := r.db.ExecWriteContext(ctx, `
 		UPDATE email_reply_outbox
 		SET discarded_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
 		WHERE channel_id = ? AND comment_id = ?
 		  AND delivered_at IS NULL AND discarded_at IS NULL
+		  AND (lease_owner IS NULL OR next_attempt_at <= CURRENT_TIMESTAMP)
 	`, channelID, commentID)
 	if err != nil {
-		return false, fmt.Errorf("discard email_reply_outbox row %d: %w", commentID, err)
+		return EmailReplyNotDiscardable, fmt.Errorf("discard email_reply_outbox row %d: %w", commentID, err)
 	}
 	rows, err := res.RowsAffected()
 	if err != nil {
-		return false, fmt.Errorf("count discarded email_reply_outbox rows: %w", err)
+		return EmailReplyNotDiscardable, fmt.Errorf("count discarded email_reply_outbox rows: %w", err)
 	}
-	return rows > 0, nil
+	if rows > 0 {
+		return EmailReplyDiscarded, nil
+	}
+
+	// Classify the refusal: a live lease means the send may already be in
+	// progress; anything else is terminal or missing.
+	var delivered, discarded, lease sql.NullTime
+	err = r.db.QueryRowContext(ctx, `
+		SELECT delivered_at, discarded_at, next_attempt_at FROM email_reply_outbox
+		WHERE channel_id = ? AND comment_id = ?
+	`, channelID, commentID).Scan(&delivered, &discarded, &lease)
+	if errors.Is(err, sql.ErrNoRows) {
+		return EmailReplyNotDiscardable, nil
+	}
+	if err != nil {
+		return EmailReplyNotDiscardable, fmt.Errorf("load email_reply_outbox row %d: %w", commentID, err)
+	}
+	if !delivered.Valid && !discarded.Valid && lease.Valid && lease.Time.After(time.Now()) {
+		return EmailReplySending, nil
+	}
+	return EmailReplyNotDiscardable, nil
 }
 
 // CreateOAuthState records an in-flight OAuth state for a channel-level

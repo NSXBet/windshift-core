@@ -198,6 +198,18 @@
     if (liveToken === token) usage = u;
   }
 
+  // A missing run (deleted/vanished) or revoked permission is permanent, so
+  // tailing stops. Everything else is transient and retried.
+  function isTerminalTailError(error) {
+    const status = error?.status;
+    return status === 401 || status === 403 || status === 404 || status === 410;
+  }
+
+  function tailBackoffDelay(attempt) {
+    const delay = Math.min(EVENTS_POLL_MS * 2 ** Math.min(attempt - 1, 3), 12_000);
+    return new Promise((resolve) => setTimeout(resolve, delay));
+  }
+
   async function selectRun(runId) {
     selectedRunId = runId;
     lines = [];
@@ -206,9 +218,10 @@
     const token = Symbol('agent-log');
     liveToken = token;
     let afterId = 0;
+    let transientFailures = 0;
     loadUsage(runId, token); // best-effort initial totals
     while (liveToken === token) {
-      let run;
+      let run = null;
       try {
         const events = await agentRuns.listEventsAfter(runId, afterId, 200);
         if (liveToken !== token) return;
@@ -221,8 +234,14 @@
         run = await agentRuns.get(runId);
         if (liveToken !== token) return;
         runs = runs.map((r) => (r.id === run.id ? { ...r, ...run } : r));
-      } catch {
-        return; // run vanished or request failed; stop tailing quietly
+        transientFailures = 0;
+      } catch (error) {
+        if (liveToken !== token) return;
+        if (isTerminalTailError(error)) return;
+        // Keep afterId so a retry neither duplicates nor skips events.
+        transientFailures += 1;
+        await tailBackoffDelay(transientFailures);
+        continue;
       }
       if (TERMINAL.includes(run.status)) {
         const tail = await agentRuns.listEventsAfter(runId, afterId, 200).catch(() => []);
@@ -256,8 +275,10 @@
   }
 
   onMount(() => {
-    loadRuns();
-    runsTimer = setInterval(loadRuns, RUNS_POLL_MS);
+    loadRuns().catch(() => {});
+    runsTimer = setInterval(() => {
+      loadRuns().catch(() => {});
+    }, RUNS_POLL_MS);
   });
   onDestroy(() => {
     liveToken = null;

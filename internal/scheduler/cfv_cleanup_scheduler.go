@@ -719,6 +719,18 @@ func EnqueueOptionRemoval(db database.Database, fieldID int, fieldType string, r
 	if len(removedIDs) == 0 {
 		return nil
 	}
+	return database.WithTx(db, func(tx database.Tx) error {
+		return EnqueueOptionRemovalTx(tx, fieldID, fieldType, removedIDs)
+	})
+}
+
+// EnqueueOptionRemovalTx is EnqueueOptionRemoval inside the caller's
+// transaction, so a repair that rewrites an option set commits its scrubbing
+// job atomically (WI-1529).
+func EnqueueOptionRemovalTx(tx database.Tx, fieldID int, fieldType string, removedIDs []int) error {
+	if len(removedIDs) == 0 {
+		return nil
+	}
 	payload, err := json.Marshal(optionRemovalPayload{
 		FieldID:    fieldID,
 		FieldType:  fieldType,
@@ -728,7 +740,7 @@ func EnqueueOptionRemoval(db database.Database, fieldID int, fieldType string, r
 		return fmt.Errorf("marshal option_removal payload: %w", err)
 	}
 	now := time.Now()
-	_, err = db.ExecWrite(
+	_, err = tx.ExecContext(context.Background(),
 		`INSERT INTO pending_custom_field_cleanups (field_id, job_type, payload, status, created_at)
 		 VALUES (?, 'option_removal', ?, 'pending', ?)`,
 		fieldID, string(payload), now,

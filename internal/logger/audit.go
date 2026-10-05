@@ -384,6 +384,10 @@ const (
 	ActionCommentDelete     = "comment.delete"
 	ActionAttachmentDelete  = "attachment.delete"
 
+	// External request participants (WI-1136).
+	ActionItemParticipantAdd    = "item.participant_add"
+	ActionItemParticipantRemove = "item.participant_remove"
+
 	// Item type management
 	ActionItemTypeCreate = "item_type.create"
 	ActionItemTypeUpdate = "item_type.update"
@@ -636,10 +640,15 @@ const (
 	ActionTimeCustomerDelete = "time_customer.delete"
 
 	// Portal customer (contact) management
-	ActionPortalCustomerCreate    = "portal_customer.create"
-	ActionPortalCustomerUpdate    = "portal_customer.update"
-	ActionPortalCustomerDelete    = "portal_customer.delete"
-	ActionPortalCustomerUpdateOrg = "portal_customer.update_organisation" //nolint:misspell // British spelling
+	ActionPortalCustomerCreate      = "portal_customer.create"
+	ActionPortalCustomerUpdate      = "portal_customer.update"
+	ActionPortalCustomerDelete      = "portal_customer.delete"
+	ActionPortalCustomerUpdateOrg   = "portal_customer.update_organisation" //nolint:misspell // British spelling
+	ActionPortalCustomerErase       = "portal_customer.erase"
+	ActionPortalCustomerDataExport  = "portal_customer.data_export"
+	ActionPortalCustomerDeactivate  = "portal_customer.deactivate"
+	ActionPortalCustomerActivate    = "portal_customer.activate"
+	ActionPortalCustomerBulkCleanup = "portal_customer.bulk_cleanup"
 
 	// Time project permission management
 	ActionTimeProjectAddManager    = "time_project.add_manager"
@@ -667,6 +676,11 @@ const (
 	ActionPageLabelCreate = "page_label.create"
 	ActionPageLabelUpdate = "page_label.update"
 	ActionPageLabelDelete = "page_label.delete"
+
+	// Canned response management (WI-1138, workspace-level reply snippets)
+	ActionCannedResponseCreate = "canned_response.create"
+	ActionCannedResponseUpdate = "canned_response.update"
+	ActionCannedResponseDelete = "canned_response.delete"
 
 	// Knowledge page lifecycle and ACL management.
 	ActionPageCreate           = "page.create"
@@ -866,6 +880,7 @@ const (
 	ResourcePortalCustomer       = "portal_customer"
 	ResourceLabel                = "label"
 	ResourceItemTemplate         = "item_template"
+	ResourceCannedResponse       = "canned_response"
 	ResourcePage                 = "page"
 	ResourcePageLabel            = "page_label"
 	ResourceAsset                = "asset"

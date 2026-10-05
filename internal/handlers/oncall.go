@@ -1070,7 +1070,7 @@ func (h *OnCallHandler) AcknowledgeIncident(w http.ResponseWriter, r *http.Reque
 	}
 
 	if err := h.incidentService.Acknowledge(incident.ID, user.ID); err != nil {
-		if errors.Is(err, services.ErrIncidentResolved) {
+		if errors.Is(err, services.ErrIncidentResolved) || errors.Is(err, services.ErrIncidentConflict) {
 			respondConflict(w, r, err.Error())
 			return
 		}
@@ -1097,7 +1097,7 @@ func (h *OnCallHandler) UnacknowledgeIncident(w http.ResponseWriter, r *http.Req
 	}
 
 	if err := h.incidentService.Unacknowledge(incident.ID); err != nil {
-		if errors.Is(err, services.ErrIncidentResolved) {
+		if errors.Is(err, services.ErrIncidentResolved) || errors.Is(err, services.ErrIncidentConflict) || errors.Is(err, services.ErrIncidentNotAcknowledged) {
 			respondConflict(w, r, err.Error())
 			return
 		}

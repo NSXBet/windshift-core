@@ -194,8 +194,8 @@ var systemFieldSortColumns = map[string]string{
 	"frac_index":     "i.frac_index",
 	// SLA urgency: nearest running deadline first; paused cycles carry no
 	// deadline and sort last. Exact business-time remaining is display-only.
-	"sla_deadline": "(SELECT sla_c.next_deadline_at FROM item_sla_cycles sla_c WHERE sla_c.item_id = i.id AND sla_c.status = 'ongoing' ORDER BY sla_c.next_deadline_at LIMIT 1)",
-	"sla_urgency":  "(SELECT CASE WHEN sla_c.pause_started_at IS NOT NULL THEN 1 ELSE 0 END FROM item_sla_cycles sla_c WHERE sla_c.item_id = i.id AND sla_c.status = 'ongoing' LIMIT 1)",
+	"sla_deadline": "(SELECT sla_c.next_deadline_at FROM item_sla_cycles sla_c WHERE sla_c.item_id = i.id AND sla_c.status = 'ongoing' AND sla_c.next_deadline_at IS NOT NULL ORDER BY sla_c.next_deadline_at LIMIT 1)",
+	"sla_urgency":  "(SELECT MAX(CASE WHEN sla_c.pause_started_at IS NOT NULL THEN 1 ELSE 0 END) FROM item_sla_cycles sla_c WHERE sla_c.item_id = i.id AND sla_c.status = 'ongoing')",
 }
 
 // unsortableCustomFieldTypes lists custom field types that cannot be meaningfully sorted.
@@ -548,10 +548,10 @@ func (r *ItemRepository) buildItemListPagePlan(
 		// workspace ID must also be present in the caller's accessible set.
 		// Collection/QL/filter requests never enter this branch.
 		workspaceArgs := []any{workspaceID}
-		plan.countQuery = "SELECT COUNT(*) FROM items WHERE workspace_id = ?"
+		plan.countQuery = "SELECT COUNT(*) FROM items WHERE workspace_id = ? AND merged_into_item_id IS NULL"
 		plan.countArgs = workspaceArgs
 		plan.pageFromClause = "FROM items i "
-		plan.pageWhereClause = "WHERE i.workspace_id = ?"
+		plan.pageWhereClause = "WHERE i.workspace_id = ? AND i.merged_into_item_id IS NULL"
 		plan.pageArgs = workspaceArgs
 		plan.workspaceCountID = workspaceID
 	}
@@ -622,7 +622,9 @@ func itemSearchFilters(query string) ItemFilters {
 
 // buildWhereClause constructs the WHERE clause and arguments for item queries
 func (r *ItemRepository) buildWhereClause(params ItemListParams) (whereClause string, args []any) {
-	whereClause = "WHERE 1=1"
+	// Merged duplicates are redirects to their canonical ticket: they must not
+	// appear in lists, counts, or stats (WI-1528).
+	whereClause = "WHERE 1=1 AND i.merged_into_item_id IS NULL"
 
 	if len(params.WorkspaceIDs) > 0 {
 		placeholders := make([]string, len(params.WorkspaceIDs))
@@ -806,6 +808,51 @@ func (r *ItemRepository) buildWhereClause(params ItemListParams) (whereClause st
 	return whereClause, args
 }
 
+// QueueCountQuery is one compiled QL fragment to count in a batched call.
+type QueueCountQuery struct {
+	Key     string
+	Filters ItemFilters
+}
+
+// CountQLQueries runs one COUNT per query in a single statement, reusing the
+// same filter and QL plan as the item list. Results are keyed by Key. The
+// workspace ids apply to every query, so a queue count never crosses the
+// caller's accessible workspaces.
+func (r *ItemRepository) CountQLQueries(ctx context.Context, workspaceIDs []int, queries []QueueCountQuery) (map[string]int64, error) {
+	if len(queries) == 0 {
+		return map[string]int64{}, nil
+	}
+	from := ItemListFilterFromClause()
+	var builder strings.Builder
+	args := make([]any, 0, len(queries)*2)
+	for i, query := range queries {
+		where, whereArgs := r.buildWhereClause(ItemListParams{WorkspaceIDs: workspaceIDs, Filters: query.Filters})
+		if i > 0 {
+			builder.WriteString(" UNION ALL ")
+		}
+		fmt.Fprintf(&builder, "SELECT %d AS idx, COUNT(*) AS n %s %s", i, from, where)
+		args = append(args, whereArgs...)
+	}
+	rows, err := r.db.QueryContext(ctx, builder.String(), args...)
+	if err != nil {
+		return nil, fmt.Errorf("count queue queries: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	result := make(map[string]int64, len(queries))
+	for rows.Next() {
+		var idx int
+		var count int64
+		if err := rows.Scan(&idx, &count); err != nil {
+			return nil, fmt.Errorf("scan queue count: %w", err)
+		}
+		if idx < 0 || idx >= len(queries) {
+			continue
+		}
+		result[queries[idx].Key] = count
+	}
+	return result, rows.Err()
+}
+
 // buildOrderByClause constructs the ORDER BY clause.
 // It supports system field identifiers (from systemFieldSortColumns) and custom field IDs
 // (which sort via JSON extraction from i.custom_field_values).
@@ -835,6 +882,11 @@ func (r *ItemRepository) buildOrderByClause(sortBy string, sortAsc bool) string 
 		)
 	}
 	if col, ok := systemFieldSortColumns[sortBy]; ok {
+		if sortBy == "sla_deadline" || sortBy == "sla_urgency" {
+			// Items with no matching cycle sort last regardless of direction,
+			// and the item id breaks ties so pages cannot reshuffle.
+			return fmt.Sprintf(" ORDER BY (%s IS NULL) ASC, %s %s, i.id ASC", col, col, direction)
+		}
 		return fmt.Sprintf(" ORDER BY %s %s, i.id ASC", col, direction)
 	}
 

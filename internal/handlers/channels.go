@@ -1313,10 +1313,11 @@ func (h *ChannelHandler) ProcessEmailsNow(w http.ResponseWriter, r *http.Request
 }
 
 // RequeueRateLimitedEmails rewinds the channel's IMAP watermark to the
-// earliest flood-declined message so the next poll retries it. Rate-limited
-// mail was left in the mailbox, so nothing is re-downloaded from the sender:
-// recovery only re-reads what is already there. After the tracking row's
-// claim goes stale the message is re-evaluated against the current cap.
+// earliest flood-declined message and invalidates its preclaim lease so the
+// next poll deterministically reprocesses it against the current cap instead
+// of waiting out the stale-claim window. Rate-limited mail was left in the
+// mailbox, so nothing is re-downloaded from the sender: recovery only re-reads
+// what is already there.
 // POST /channels/{id}/email/requeue-rate-limited
 func (h *ChannelHandler) RequeueRateLimitedEmails(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
@@ -1362,21 +1363,42 @@ func (h *ChannelHandler) RequeueRateLimitedEmails(w http.ResponseWriter, r *http
 		return
 	}
 
+	requeuedCount, err := h.channelRepo.RequeueRateLimitedClaims(ctx, id, uidValidity)
+	if err != nil {
+		respondInternalError(w, r, err)
+		return
+	}
+
 	slog.Info("requeued rate-limited email messages",
 		"channel_id", id,
 		"from_uid", earliestUID,
+		"count", requeuedCount,
 	)
 	respondJSONOK(w, map[string]any{
-		"requeued":   true,
-		"channel_id": id,
-		"from_uid":   earliestUID,
-		"message":    "Rate-limited messages requeued for reprocessing",
+		"requeued":       true,
+		"channel_id":     id,
+		"from_uid":       earliestUID,
+		"requeued_count": requeuedCount,
+		"message":        "Rate-limited messages requeued for reprocessing",
 	})
 }
 
 // requireInboundEmailChannel is the shared channel lookup + shape check for
 // the per-channel email endpoints.
 func (h *ChannelHandler) requireInboundEmailChannel(ctx context.Context, w http.ResponseWriter, r *http.Request, id int) bool {
+	return h.requireChannelOfTypes(ctx, w, r, id, "inbound email channel", "email")
+}
+
+// requireReplyOutboxChannel accepts inbound email channels and portal
+// channels: portal-originated tickets' customer replies live in the origin
+// (portal) channel's outbox (WI-1546), so operators manage them there.
+func (h *ChannelHandler) requireReplyOutboxChannel(ctx context.Context, w http.ResponseWriter, r *http.Request, id int) bool {
+	return h.requireChannelOfTypes(ctx, w, r, id, "inbound email or portal channel", "email", "portal")
+}
+
+// requireChannelOfTypes is the shared channel lookup + shape check for the
+// family of guards above.
+func (h *ChannelHandler) requireChannelOfTypes(ctx context.Context, w http.ResponseWriter, r *http.Request, id int, description string, types ...string) bool {
 	channel, err := h.service.GetByID(ctx, id)
 	if err != nil {
 		respondInternalError(w, r, err)
@@ -1386,11 +1408,17 @@ func (h *ChannelHandler) requireInboundEmailChannel(ctx context.Context, w http.
 		respondNotFound(w, r, "channel")
 		return false
 	}
-	if channel.Type != "email" || channel.Direction != "inbound" {
-		respondValidationError(w, r, "Channel is not an inbound email channel")
+	if channel.Direction != "inbound" {
+		respondValidationError(w, r, fmt.Sprintf("Channel is not an %s", description))
 		return false
 	}
-	return true
+	for _, t := range types {
+		if channel.Type == t {
+			return true
+		}
+	}
+	respondValidationError(w, r, fmt.Sprintf("Channel is not an %s", description))
+	return false
 }
 
 // ListEmailReplies returns the channel's outbound customer-reply queue:
@@ -1408,7 +1436,7 @@ func (h *ChannelHandler) ListEmailReplies(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	if !h.requireInboundEmailChannel(ctx, w, r, id) {
+	if !h.requireReplyOutboxChannel(ctx, w, r, id) {
 		return
 	}
 
@@ -1549,7 +1577,7 @@ func (h *ChannelHandler) RetryEmailReply(w http.ResponseWriter, r *http.Request)
 	if _, ok := h.requireChannelManageAccess(ctx, w, r, id); !ok {
 		return
 	}
-	if !h.requireInboundEmailChannel(ctx, w, r, id) {
+	if !h.requireReplyOutboxChannel(ctx, w, r, id) {
 		return
 	}
 	if h.emailReplies == nil {
@@ -1571,6 +1599,13 @@ func (h *ChannelHandler) RetryEmailReply(w http.ResponseWriter, r *http.Request)
 			StatusCode: http.StatusConflict,
 			Code:       "EMAIL_REPLY_NOT_RETRYABLE",
 			Message:    "Reply is already delivered or discarded",
+		})
+		return
+	case errors.Is(err, services.ErrEmailReplyInFlight):
+		respondError(w, r, &restapi.APIError{
+			StatusCode: http.StatusConflict,
+			Code:       "EMAIL_REPLY_IN_FLIGHT",
+			Message:    "Reply is being delivered right now; retry once the queue shows its final state",
 		})
 		return
 	case errors.Is(err, services.ErrSMTPNotConfigured):
@@ -1610,16 +1645,24 @@ func (h *ChannelHandler) DiscardEmailReply(w http.ResponseWriter, r *http.Reques
 	if _, ok := h.requireChannelManageAccess(ctx, w, r, id); !ok {
 		return
 	}
-	if !h.requireInboundEmailChannel(ctx, w, r, id) {
+	if !h.requireReplyOutboxChannel(ctx, w, r, id) {
 		return
 	}
 
-	discarded, err := h.channelRepo.DiscardEmailReply(ctx, id, commentID)
+	outcome, err := h.channelRepo.DiscardEmailReply(ctx, id, commentID)
 	if err != nil {
 		respondInternalError(w, r, err)
 		return
 	}
-	if !discarded {
+	if outcome == repository.EmailReplySending {
+		respondError(w, r, &restapi.APIError{
+			StatusCode: http.StatusConflict,
+			Code:       "EMAIL_REPLY_SENDING",
+			Message:    "Reply is being delivered right now and can no longer be canceled",
+		})
+		return
+	}
+	if outcome != repository.EmailReplyDiscarded {
 		respondError(w, r, &restapi.APIError{
 			StatusCode: http.StatusConflict,
 			Code:       "EMAIL_REPLY_NOT_DISCARDABLE",

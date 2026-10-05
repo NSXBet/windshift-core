@@ -227,6 +227,21 @@ export default {
     rateLimitHelp:
       'Maximum new tickets one sender can create per rolling hour. Empty = default (100), 0 = unlimited. Replies to existing tickets are never limited.',
     rateLimitInvalid: 'Rate limit must be 0 (unlimited) or a positive number',
+    connectedPortalSection: 'Customer Portal',
+    connectedPortal: 'Connected portal',
+    connectedPortalNotConnected: 'Not connected',
+    connectedPortalUnknown: 'Portal #{id} (currently not manageable by you)',
+    connectedPortalHelp:
+      'Customers who email this address can see and continue their tickets in the selected portal, subject to that portal\'s access policy. Replies from the portal stay on the same ticket.',
+    portalConnectedMailboxes: 'Connected Intake Mailboxes',
+    portalConnectedMailboxesEmpty: 'No intake mailboxes are connected to this portal.',
+    portalConnectedMailboxesHelp:
+      'Email channels linked to this portal. Customers who email those addresses see their tickets here. Configure the link on each email channel.',
+    portalMailboxEnabled: 'Enabled',
+    portalMailboxDisabled: 'Disabled',
+    autoAppendOpenTickets: 'Continue open tickets by email',
+    autoAppendOpenTicketsHelp:
+      "When someone with an open ticket in this workspace emails in fresh (without replying), append their message to that ticket instead of creating a duplicate. Only applies when they created the ticket or replied before.",
     markAsRead: 'Mark as read after processing',
     markAsReadHelp: "Mark emails as read once they've been converted to items",
     deleteAfterProcess: 'Delete after processing',
@@ -302,6 +317,7 @@ export default {
     testEmailFailed: 'Test email failed',
 
     // Processing Log
+    customerReplies: 'Customer replies',
     processingLog: 'Processing Log',
     emailLog: {
       syncStatus: 'Sync Status',
@@ -652,6 +668,10 @@ export default {
     failedToLoadFields: 'Failed to load form fields',
     failedToSubmit: 'Failed to submit request',
     selectOption: 'Select an option...',
+    shareWithOrganisation: 'Share with my organisation',
+    shareWithOrganisationHint:
+      'Your organisation’s other contacts will be able to see and reply to this request.',
+    sharedWithOrganisationNote: 'This request will be visible to your organisation’s contacts.',
   },
 
   requestTypeFields: {

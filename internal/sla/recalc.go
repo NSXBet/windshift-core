@@ -6,11 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"windshift/internal/database"
 	"windshift/internal/itemevents"
 	"windshift/internal/models"
+	"windshift/internal/repository"
 )
 
 // DefaultRecalcPageSize is the number of items reconciled per transaction.
@@ -124,7 +126,7 @@ func (e *Engine) reconcileMetric(ctx context.Context, tx database.Tx, config *co
 	}
 	switch {
 	case cycle.Paused && !pause:
-		if err := e.resumeCycle(ctx, tx, config, metric, workspaceID, cycle, effective); err != nil {
+		if err := e.resumeCycle(ctx, tx, config, metric, workspaceID, cycle, target, effective); err != nil {
 			return err
 		}
 	case !cycle.Paused && pause:
@@ -201,8 +203,8 @@ func (e *Engine) recalcMetricPageTx(ctx context.Context, tx database.Tx, metricI
 		return "", false, err
 	}
 
-	for _, id := range ids {
-		if err := e.recalcItemTx(ctx, tx, id); err != nil {
+	if len(ids) > 0 {
+		if err := e.recalcItemsForMetricTx(ctx, tx, metric, ids); err != nil {
 			return "", false, err
 		}
 	}
@@ -212,6 +214,127 @@ func (e *Engine) recalcMetricPageTx(ctx context.Context, tx database.Tx, metricI
 		return "", true, nil
 	}
 	return strconv.Itoa(ids[len(ids)-1]), false, nil
+}
+
+// recalcItemsForMetricTx reconciles one metric across a page of items in
+// batches: snapshots, cycle locks, and goal resolution each cost one query
+// for the whole page, and only the job's metric is evaluated instead of
+// every workspace metric per item (WI-1592).
+func (e *Engine) recalcItemsForMetricTx(ctx context.Context, tx database.Tx, metric *models.SLAMetric, itemIDs []int) error {
+	generations, err := e.repo.GenerationsForWorkspacesTx(ctx, tx, []int{metric.WorkspaceID})
+	if err != nil {
+		return err
+	}
+	generation, ok := generations[metric.WorkspaceID]
+	if !ok {
+		return nil
+	}
+	config, err := e.configuration(ctx, metric.WorkspaceID, generation)
+	if err != nil {
+		return err
+	}
+	compiled := config.metricsByID[metric.ID]
+	if compiled == nil {
+		return nil
+	}
+
+	snapshots, err := loadItemSnapshotsTx(ctx, tx, itemIDs)
+	if err != nil {
+		return err
+	}
+
+	ongoingList, err := e.repo.LockOngoingCycles(ctx, tx, itemIDs)
+	if err != nil {
+		return err
+	}
+	ongoing := map[cycleKey]*models.ItemSLACycle{}
+	for i := range ongoingList {
+		cycle := &ongoingList[i]
+		if cycle.MetricID != metric.ID {
+			continue
+		}
+		ongoing[cycleKey{cycle.ItemID, cycle.MetricID}] = cycle
+	}
+
+	effectiveAt := e.clock.Now()
+	resolved := map[int]goalTarget{}
+	if len(compiled.goals) > 0 {
+		resolved, err = e.resolveGoals(ctx, tx, config, compiled, itemIDs, effectiveAt)
+		if err != nil {
+			return err
+		}
+	}
+
+	for _, id := range itemIDs {
+		snapshot, ok := snapshots[id]
+		if !ok {
+			continue
+		}
+		if err := e.reconcileMetric(ctx, tx, config, compiled, metric.WorkspaceID, id, snapshot, ongoing[cycleKey{id, metric.ID}], resolved[id], effectiveAt); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (e *Engine) recalcCalendarPageTx(ctx context.Context, tx database.Tx, metricID, calendarID int, cursor int64, pageSize int) (nextCursor int64, complete bool, err error) {
+	metric, err := e.repo.GetMetric(ctx, metricID)
+	if err != nil {
+		return 0, false, err
+	}
+	ids, err := e.repo.OngoingCycleIDsForCalendarTx(ctx, tx, metricID, calendarID, cursor, pageSize)
+	if err != nil {
+		return 0, false, err
+	}
+	if len(ids) == 0 {
+		return 0, true, nil
+	}
+	generations, err := e.repo.GenerationsForWorkspacesTx(ctx, tx, []int{metric.WorkspaceID})
+	if err != nil {
+		return 0, false, err
+	}
+	generation, ok := generations[metric.WorkspaceID]
+	if !ok {
+		return 0, true, nil
+	}
+	config, err := e.configuration(ctx, metric.WorkspaceID, generation)
+	if err != nil {
+		return 0, false, err
+	}
+	compiledMetric := config.metricsByID[metric.ID]
+	if compiledMetric == nil {
+		return 0, true, nil
+	}
+	effectiveAt := e.clock.Now()
+	for _, id := range ids {
+		cycle, err := e.repo.GetCycleForUpdate(ctx, tx, id)
+		if errors.Is(err, repository.ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			return 0, false, err
+		}
+		if cycle.Status != models.SLACycleOngoing || cycle.Paused || cycle.CalendarID == nil || *cycle.CalendarID != calendarID {
+			continue
+		}
+		resolved, err := e.resolveGoals(ctx, tx, config, compiledMetric, []int{cycle.ItemID}, effectiveAt)
+		if err != nil {
+			return 0, false, err
+		}
+		if err := e.advanceCycle(config, cycle, effectiveAt); err != nil {
+			return 0, false, err
+		}
+		if err := e.reGoalCycle(ctx, tx, config, compiledMetric, metric.WorkspaceID, cycle, resolved[cycle.ItemID], effectiveAt); err != nil {
+			return 0, false, err
+		}
+		if err := e.repo.UpdateCycle(ctx, tx, cycle); err != nil {
+			return 0, false, err
+		}
+		if err := e.syncCycleJobs(ctx, tx, config, compiledMetric, cycle, effectiveAt); err != nil {
+			return 0, false, err
+		}
+	}
+	return ids[len(ids)-1], false, nil
 }
 
 func loadItemSnapshotTx(ctx context.Context, tx database.Tx, itemID int) (itemevents.ItemSnapshot, error) {
@@ -235,4 +358,45 @@ func loadItemSnapshotTx(ctx context.Context, tx database.Tx, itemID int) (itemev
 		snapshot.PriorityID = &value
 	}
 	return snapshot, nil
+}
+
+// loadItemSnapshotsTx loads current snapshots for a batch of items in one
+// query.
+func loadItemSnapshotsTx(ctx context.Context, tx database.Tx, itemIDs []int) (map[int]itemevents.ItemSnapshot, error) {
+	out := make(map[int]itemevents.ItemSnapshot, len(itemIDs))
+	if len(itemIDs) == 0 {
+		return out, nil
+	}
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(itemIDs)), ",")
+	args := make([]any, 0, len(itemIDs))
+	for _, id := range itemIDs {
+		args = append(args, id)
+	}
+	rows, err := tx.QueryContext(ctx,
+		`SELECT id, workspace_id, status_id, assignee_id, priority_id FROM items WHERE id IN (`+placeholders+`)`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("load item snapshots: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var snapshot itemevents.ItemSnapshot
+		var statusID, assigneeID, priorityID sql.NullInt64
+		if err := rows.Scan(&snapshot.ID, &snapshot.WorkspaceID, &statusID, &assigneeID, &priorityID); err != nil {
+			return nil, fmt.Errorf("scan item snapshot: %w", err)
+		}
+		if statusID.Valid {
+			value := int(statusID.Int64)
+			snapshot.StatusID = &value
+		}
+		if assigneeID.Valid {
+			value := int(assigneeID.Int64)
+			snapshot.AssigneeID = &value
+		}
+		if priorityID.Valid {
+			value := int(priorityID.Int64)
+			snapshot.PriorityID = &value
+		}
+		out[snapshot.ID] = snapshot
+	}
+	return out, rows.Err()
 }

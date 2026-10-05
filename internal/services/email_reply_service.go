@@ -1,11 +1,14 @@
 package services
 
 import (
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -25,14 +28,19 @@ type EmailReplyService struct {
 	idResolver *IDResolverService
 	outboxMu   sync.Mutex
 	canonical  bool
+	// leaseOwner identifies this process's delivery claims so a manual retry
+	// can tell a live claim from retry backoff (WI-1572).
+	leaseOwner string
 }
 
 // NewEmailReplyService creates a new EmailReplyService.
 func NewEmailReplyService(db database.Database, smtpSender ThreadedEmailSender) *EmailReplyService {
+	hostname, _ := os.Hostname()
 	return &EmailReplyService{
 		db:         db,
 		smtpSender: smtpSender,
 		idResolver: NewIDResolverService(db),
+		leaseOwner: fmt.Sprintf("%s-%d", hostname, os.Getpid()),
 	}
 }
 
@@ -78,15 +86,25 @@ func (s *EmailReplyService) handleCommentCreated(params HandleCommentParams, del
 		return nil
 	}
 
-	// Verify channel is email type
+	// Any existing channel works as long as the conversation is threadable:
+	// email-originated tickets thread from the customer's real messages,
+	// portal/form tickets thread from their synthetic anchor.
 	var channelType string
-	err = s.db.QueryRow("SELECT type FROM channels WHERE id = ? AND type = 'email'", *item.ChannelID).Scan(&channelType)
+	err = s.db.QueryRow("SELECT type FROM channels WHERE id = ?", *item.ChannelID).Scan(&channelType)
 	if err != nil {
-		// Not an email channel or doesn't exist — skip
+		// Channel gone — nothing to thread from, skip.
 		return nil
 	}
 
-	// Look up portal customer email
+	// Portal/form-originated tickets thread from the anchor minted at
+	// submission; the ensure covers pre-upgrade tickets (created before the
+	// anchor existed) and repairs a failed best-effort mint. It is a no-op for
+	// email channels and for items that already have their anchor.
+	maybeRecordPortalThreadAnchor(s.db, int64(params.ItemID), item.ChannelID, item.CreatorPortalCustomerID, item.Title)
+
+	// Recipients: the creator plus every external request participant
+	// (WI-1136). Each gets its own outbox row so replies attribute per
+	// recipient, and the intake participant guard accepts them as repliers.
 	var customerEmail, customerName string
 	err = s.db.QueryRow("SELECT email, name FROM portal_customers WHERE id = ?", *item.CreatorPortalCustomerID).Scan(&customerEmail, &customerName)
 	if err != nil || customerEmail == "" {
@@ -96,6 +114,17 @@ func (s *EmailReplyService) handleCommentCreated(params HandleCommentParams, del
 		)
 		return nil
 	}
+	recipients := []emailRecipient{{Email: customerEmail, Name: customerName}}
+	participants, err := repository.NewItemParticipantRepository(s.db).ListByItem(params.ItemID)
+	if err != nil {
+		return fmt.Errorf("load item participants for email reply: %w", err)
+	}
+	for _, participant := range participants {
+		if participant.CustomerEmail == "" || strings.EqualFold(participant.CustomerEmail, customerEmail) {
+			continue
+		}
+		recipients = append(recipients, emailRecipient{Email: participant.CustomerEmail, Name: participant.CustomerName})
+	}
 
 	// Build threading headers from email_message_tracking
 	type trackingRecord struct {
@@ -104,9 +133,9 @@ func (s *EmailReplyService) handleCommentCreated(params HandleCommentParams, del
 	}
 	rows, err := s.db.Query(`
 		SELECT message_id, subject FROM email_message_tracking
-		WHERE item_id = ? AND channel_id = ?
+		WHERE item_id = ?
 		ORDER BY processed_at ASC
-	`, params.ItemID, *item.ChannelID)
+	`, params.ItemID)
 	if err != nil {
 		return fmt.Errorf("failed to query email tracking: %w", err)
 	}
@@ -133,7 +162,8 @@ func (s *EmailReplyService) handleCommentCreated(params HandleCommentParams, del
 		return nil
 	}
 
-	// References: all Message-IDs chronologically
+	// References: all Message-IDs chronologically (item-scoped — the thread
+	// follows the conversation across channels).
 	var references []string
 	for _, rec := range records {
 		if rec.MessageID != "" {
@@ -156,9 +186,6 @@ func (s *EmailReplyService) handleCommentCreated(params HandleCommentParams, del
 
 	// Get SMTP domain for Message-ID generation
 	smtpDomain := s.getSMTPDomain()
-
-	// Generate Message-ID for this outbound email
-	messageID := fmt.Sprintf("<ws-comment-%d@%s>", params.CommentID, smtpDomain)
 
 	// Get author name for email template
 	authorName := s.idResolver.ResolveUserName(params.AuthorID)
@@ -192,34 +219,60 @@ func (s *EmailReplyService) handleCommentCreated(params HandleCommentParams, del
 	if err != nil {
 		return fmt.Errorf("encode email references: %w", err)
 	}
-	_, err = s.db.ExecWrite(`
-		INSERT INTO email_reply_outbox (
-			comment_id, channel_id, item_id, to_email, to_name, subject,
-			html_body, text_body, message_id, in_reply_to, references_json,
-			from_email, from_name, next_attempt_at, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-		ON CONFLICT(comment_id) DO NOTHING
-	`, params.CommentID, *item.ChannelID, params.ItemID, customerEmail, customerName,
-		subject, htmlBody, textBody, messageID, inReplyTo, string(referencesJSON),
-		s.getSMTPFromEmail(), authorName)
-	if err != nil {
-		return fmt.Errorf("enqueue threaded email reply: %w", err)
+	outboxIDs := make([]int, 0, len(recipients))
+	for _, recipient := range recipients {
+		messageID := recipientMessageID(params.CommentID, recipient.Email, smtpDomain)
+		var outboxID int
+		err = s.db.QueryRow(`
+			INSERT INTO email_reply_outbox (
+				comment_id, channel_id, item_id, to_email, to_name, subject,
+				html_body, text_body, message_id, in_reply_to, references_json,
+				from_email, from_name, next_attempt_at, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+			ON CONFLICT(comment_id, to_email) DO NOTHING
+			RETURNING id
+		`, params.CommentID, *item.ChannelID, params.ItemID, recipient.Email, recipient.Name,
+			subject, htmlBody, textBody, messageID, inReplyTo, string(referencesJSON),
+			s.getSMTPFromEmail(), authorName).Scan(&outboxID)
+		if errors.Is(err, sql.ErrNoRows) {
+			continue // already enqueued for this recipient
+		}
+		if err != nil {
+			return fmt.Errorf("enqueue threaded email reply: %w", err)
+		}
+		outboxIDs = append(outboxIDs, outboxID)
 	}
 
 	// Sending immediately keeps the current low-latency behavior. The durable
-	// row remains pending on failure and is retried by NotificationScheduler.
+	// rows remain pending on failure and are retried by NotificationScheduler.
 	if !deliverImmediately || !s.smtpSender.IsSMTPConfigured() {
 		return nil
 	}
 	s.outboxMu.Lock()
 	defer s.outboxMu.Unlock()
-	if _, err := s.deliverPendingReply(params.CommentID); err != nil {
-		return fmt.Errorf("threaded email queued for retry: %w", err)
+	for _, outboxID := range outboxIDs {
+		if _, err := s.deliverPendingReply(outboxID); err != nil {
+			return fmt.Errorf("threaded email queued for retry: %w", err)
+		}
 	}
 	return nil
 }
 
+// emailRecipient is one outbound reply target.
+type emailRecipient struct {
+	Email string
+	Name  string
+}
+
+// recipientMessageID derives a deterministic, per-recipient Message-ID so each
+// outbox row and tracking entry is distinct and idempotent across retries.
+func recipientMessageID(commentID int, email, domain string) string {
+	sum := sha256.Sum256([]byte(strings.ToLower(strings.TrimSpace(email))))
+	return fmt.Sprintf("<ws-comment-%d-%s@%s>", commentID, hex.EncodeToString(sum[:6]), domain)
+}
+
 type emailReplyOutboxRow struct {
+	ID             int
 	CommentID      int
 	ChannelID      int
 	ItemID         int
@@ -236,6 +289,161 @@ type emailReplyOutboxRow struct {
 	AttemptCount   int
 }
 
+// SendAutomationNotice implements CustomerNotifier: it emails the portal
+// customer who created the item through the same threaded transport as reply
+// notifications. Automation notices send directly rather than through the
+// comment-bound reply outbox; action run history is the durable record.
+// Skips (no customer, no thread, SMTP unset) are reported, not errors.
+func (s *EmailReplyService) SendAutomationNotice(itemID, actorID int, subject, message string) (delivered bool, skipReason string, err error) {
+	item, skipReason, err := s.loadNoticeItem(itemID)
+	if err != nil || item == nil {
+		return false, skipReason, err
+	}
+	if item.CreatorPortalCustomerID == nil {
+		return false, "no_customer", nil
+	}
+	customerEmail, customerName, ok := s.noticeCustomer(*item.CreatorPortalCustomerID)
+	if !ok {
+		return false, "no_customer", nil
+	}
+	return s.sendItemNotice(item, customerEmail, customerName, subject, message, actorID)
+}
+
+// noticeCustomer resolves a portal customer's email and name for a notice.
+// ok is false when the row is missing; that is an expected skip, not an error.
+func (s *EmailReplyService) noticeCustomer(customerID int) (email, name string, ok bool) {
+	if err := s.db.QueryRow("SELECT email, name FROM portal_customers WHERE id = ?", customerID).Scan(&email, &name); err != nil {
+		return "", "", false
+	}
+	return email, name, true
+}
+
+// SendParticipantAddedNotice emails a newly added external request participant
+// through the item's threaded transport (WI-1136). Participants receive
+// customer-facing content only. Expected skips (no SMTP, no channel, no
+// thread, no email) are reported, not errors.
+func (s *EmailReplyService) SendParticipantAddedNotice(itemID, customerID, actorID int) (delivered bool, skipReason string, err error) {
+	item, skipReason, err := s.loadNoticeItem(itemID)
+	if err != nil || item == nil {
+		return false, skipReason, err
+	}
+	customerEmail, customerName, ok := s.noticeCustomer(customerID)
+	if !ok {
+		return false, "no_customer", nil
+	}
+	message := fmt.Sprintf("You have been added as a participant to %s.", item.Title)
+	return s.sendItemNotice(item, customerEmail, customerName, "", message, actorID)
+}
+
+// loadNoticeItem loads an item for a customer-facing notice and ensures its
+// portal thread anchor exists. Returns (nil, reason, nil) for expected skips.
+func (s *EmailReplyService) loadNoticeItem(itemID int) (*models.Item, string, error) {
+	if !s.smtpSender.IsSMTPConfigured() {
+		return nil, "smtp_not_configured", nil
+	}
+	item, err := repository.NewItemRepository(s.db).FindByIDWithDetails(itemID)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return nil, "item_missing", nil
+		}
+		return nil, "", fmt.Errorf("load item for customer notice: %w", err)
+	}
+	if item.ChannelID == nil {
+		return nil, "no_channel", nil
+	}
+	// Same anchor ensure as the reply path: notices must thread for
+	// portal-originated tickets (and survive pre-upgrade tickets) too.
+	maybeRecordPortalThreadAnchor(s.db, int64(itemID), item.ChannelID, item.CreatorPortalCustomerID, item.Title)
+	return item, "", nil
+}
+
+// sendItemNotice renders and sends one threaded customer-facing notice to a
+// specific recipient on the item's conversation.
+func (s *EmailReplyService) sendItemNotice(item *models.Item, toEmail, toName, subject, message string, actorID int) (delivered bool, skipReason string, err error) {
+	if toEmail == "" {
+		return false, "no_email", nil
+	}
+
+	// Thread against the item's recorded Message-IDs (item-scoped); without
+	// a thread there is nothing to reply into, so the notice would start an
+	// orphaned thread.
+	var inReplyTo string
+	var references []string
+	var originalSubject sql.NullString
+	rows, err := s.db.Query(`
+		SELECT message_id, subject FROM email_message_tracking
+		WHERE item_id = ?
+		ORDER BY processed_at ASC
+	`, item.ID)
+	if err != nil {
+		return false, "", fmt.Errorf("query email tracking for customer notice: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var messageID string
+		if scanErr := rows.Scan(&messageID, &originalSubject); scanErr != nil {
+			continue
+		}
+		references = append(references, messageID)
+		inReplyTo = messageID
+	}
+	if err := rows.Err(); err != nil {
+		return false, "", fmt.Errorf("iterate email tracking for customer notice: %w", err)
+	}
+	if len(references) == 0 {
+		return false, "no_thread", nil
+	}
+
+	emailSubject := item.Title
+	if originalSubject.Valid && originalSubject.String != "" {
+		emailSubject = originalSubject.String
+	}
+	if subject != "" {
+		emailSubject = subject
+	}
+	if !strings.HasPrefix(strings.ToLower(emailSubject), "re:") {
+		emailSubject = "Re: " + emailSubject
+	}
+
+	authorName := s.idResolver.ResolveUserName(actorID)
+	if authorName == "" {
+		authorName = "Support Team"
+	}
+	itemKey := fmt.Sprintf("%s-%d", item.WorkspaceKey, item.WorkspaceItemNumber)
+	_, htmlBody, textBody, err := s.smtpSender.RenderEmail(emailutil.TemplatePortalReply, struct {
+		AuthorName      string
+		ItemKey         string
+		ItemTitle       string
+		Content         string
+		OriginalSubject string
+	}{
+		AuthorName:      authorName,
+		ItemKey:         itemKey,
+		ItemTitle:       item.Title,
+		Content:         message,
+		OriginalSubject: emailSubject,
+	})
+	if err != nil {
+		return false, "", fmt.Errorf("render customer notice email: %w", err)
+	}
+
+	smtpDomain := s.getSMTPDomain()
+	messageID := fmt.Sprintf("<ws-notice-%d-%d@%s>", item.ID, time.Now().UnixNano(), smtpDomain)
+	if err := s.smtpSender.SendThreadedEmail(smtp.ThreadedEmailParams{
+		ToEmail:    toEmail,
+		ToName:     toName,
+		Subject:    emailSubject,
+		HTMLBody:   htmlBody,
+		TextBody:   textBody,
+		MessageID:  messageID,
+		InReplyTo:  inReplyTo,
+		References: references,
+	}); err != nil {
+		return false, "", fmt.Errorf("send customer notice: %w", err)
+	}
+	return true, "", nil
+}
+
 // ProcessPendingReplies retries a bounded batch from the durable reply outbox.
 // It is called by NotificationScheduler on the existing SMTP cadence.
 func (s *EmailReplyService) ProcessPendingReplies(limit int) (int, error) {
@@ -250,7 +458,7 @@ func (s *EmailReplyService) ProcessPendingReplies(limit int) (int, error) {
 	defer s.outboxMu.Unlock()
 
 	rows, err := s.db.Query(`
-		SELECT comment_id
+		SELECT id
 		FROM email_reply_outbox
 		WHERE delivered_at IS NULL AND discarded_at IS NULL AND next_attempt_at <= CURRENT_TIMESTAMP
 		ORDER BY created_at ASC
@@ -259,14 +467,14 @@ func (s *EmailReplyService) ProcessPendingReplies(limit int) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("query email reply outbox: %w", err)
 	}
-	var commentIDs []int
+	var outboxIDs []int
 	for rows.Next() {
-		var commentID int
-		if err := rows.Scan(&commentID); err != nil {
+		var outboxID int
+		if err := rows.Scan(&outboxID); err != nil {
 			_ = rows.Close()
 			return 0, fmt.Errorf("scan email reply outbox: %w", err)
 		}
-		commentIDs = append(commentIDs, commentID)
+		outboxIDs = append(outboxIDs, outboxID)
 	}
 	if err := rows.Err(); err != nil {
 		_ = rows.Close()
@@ -278,8 +486,8 @@ func (s *EmailReplyService) ProcessPendingReplies(limit int) (int, error) {
 
 	delivered := 0
 	var lastErr error
-	for _, commentID := range commentIDs {
-		sent, err := s.deliverPendingReply(commentID)
+	for _, outboxID := range outboxIDs {
+		sent, err := s.deliverPendingReply(outboxID)
 		if err != nil {
 			lastErr = err
 			continue
@@ -296,7 +504,7 @@ func (s *EmailReplyService) ProcessPendingReplies(limit int) (int, error) {
 	return delivered, lastErr
 }
 
-func (s *EmailReplyService) deliverPendingReply(commentID int) (bool, error) {
+func (s *EmailReplyService) deliverPendingReply(outboxID int) (bool, error) {
 	var row emailReplyOutboxRow
 	// Atomically lease the row before crossing the SMTP boundary. The process
 	// mutex prevents duplicates within one server; this conditional UPDATE also
@@ -305,14 +513,14 @@ func (s *EmailReplyService) deliverPendingReply(commentID int) (bool, error) {
 	leaseUntil := time.Now().Add(5 * time.Minute)
 	err := s.db.QueryRow(`
 		UPDATE email_reply_outbox
-		SET next_attempt_at = ?, updated_at = CURRENT_TIMESTAMP
-		WHERE comment_id = ? AND delivered_at IS NULL AND discarded_at IS NULL
+		SET next_attempt_at = ?, lease_owner = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE id = ? AND delivered_at IS NULL AND discarded_at IS NULL
 		  AND next_attempt_at <= CURRENT_TIMESTAMP
-		RETURNING comment_id, channel_id, item_id, to_email, to_name, subject,
+		RETURNING id, comment_id, channel_id, item_id, to_email, to_name, subject,
 		       html_body, text_body, message_id, in_reply_to, references_json,
 		       from_email, from_name, attempt_count
-	`, leaseUntil, commentID).Scan(
-		&row.CommentID, &row.ChannelID, &row.ItemID, &row.ToEmail, &row.ToName,
+	`, leaseUntil, s.leaseOwner, outboxID).Scan(
+		&row.ID, &row.CommentID, &row.ChannelID, &row.ItemID, &row.ToEmail, &row.ToName,
 		&row.Subject, &row.HTMLBody, &row.TextBody, &row.MessageID, &row.InReplyTo,
 		&row.ReferencesJSON, &row.FromEmail, &row.FromName, &row.AttemptCount,
 	)
@@ -325,7 +533,7 @@ func (s *EmailReplyService) deliverPendingReply(commentID int) (bool, error) {
 
 	var references []string
 	if err := json.Unmarshal([]byte(row.ReferencesJSON), &references); err != nil {
-		s.recordReplyFailure(row.CommentID, row.AttemptCount, err)
+		s.recordReplyFailure(row.ID, row.AttemptCount, err)
 		return false, fmt.Errorf("decode pending email references: %w", err)
 	}
 	err = s.smtpSender.SendThreadedEmail(smtp.ThreadedEmailParams{
@@ -339,15 +547,16 @@ func (s *EmailReplyService) deliverPendingReply(commentID int) (bool, error) {
 		References: references,
 	})
 	if err != nil {
-		s.recordReplyFailure(row.CommentID, row.AttemptCount, err)
+		s.recordReplyFailure(row.ID, row.AttemptCount, err)
 		return false, fmt.Errorf("send threaded email: %w", err)
 	}
 
 	if _, err := s.db.ExecWrite(`
 		UPDATE email_reply_outbox
-		SET delivered_at = CURRENT_TIMESTAMP, last_error = NULL, updated_at = CURRENT_TIMESTAMP
-		WHERE comment_id = ? AND delivered_at IS NULL
-	`, row.CommentID); err != nil {
+		SET delivered_at = CURRENT_TIMESTAMP, last_error = NULL, lease_owner = NULL,
+		    updated_at = CURRENT_TIMESTAMP
+		WHERE id = ? AND delivered_at IS NULL
+	`, row.ID); err != nil {
 		return false, fmt.Errorf("mark threaded email delivered: %w", err)
 	}
 
@@ -374,36 +583,48 @@ func (s *EmailReplyService) deliverPendingReply(commentID int) (bool, error) {
 	return true, nil
 }
 
-func (s *EmailReplyService) recordReplyFailure(commentID, previousAttempts int, sendErr error) {
+func (s *EmailReplyService) recordReplyFailure(outboxID, previousAttempts int, sendErr error) {
 	shift := min(previousAttempts, 6)
 	nextAttempt := time.Now().Add(time.Minute * time.Duration(1<<shift))
 	if _, err := s.db.ExecWrite(`
 		UPDATE email_reply_outbox
 		SET attempt_count = attempt_count + 1, next_attempt_at = ?,
-		    last_error = ?, updated_at = CURRENT_TIMESTAMP
-		WHERE comment_id = ? AND delivered_at IS NULL
-	`, nextAttempt, sendErr.Error(), commentID); err != nil {
-		slog.Error("failed to record email reply delivery failure", "comment_id", commentID, "error", err)
+		    last_error = ?, lease_owner = NULL, updated_at = CURRENT_TIMESTAMP
+		WHERE id = ? AND delivered_at IS NULL
+	`, nextAttempt, sendErr.Error(), outboxID); err != nil {
+		slog.Error("failed to record email reply delivery failure", "outbox_id", outboxID, "error", err)
 	}
+}
+
+// getSMTPDomain extracts the domain from the SMTP from email.
+func (s *EmailReplyService) getSMTPDomain() string {
+	return smtpDomain(s.db)
+}
+
+// getSMTPFromEmail gets the configured SMTP from email address.
+func (s *EmailReplyService) getSMTPFromEmail() string {
+	return smtpFromEmail(s.db)
 }
 
 // fallbackSMTPFromEmail is used when no default outbound SMTP channel is
 // configured or its config can't be read.
 const fallbackSMTPFromEmail = "noreply@windshift.local"
 
-// getSMTPDomain extracts the domain from the SMTP from email.
-func (s *EmailReplyService) getSMTPDomain() string {
-	fromEmail := s.getSMTPFromEmail()
+// smtpDomain extracts the domain from the default outbound SMTP from email.
+// Shared by the reply service and the portal thread-anchor minter.
+func smtpDomain(db database.Database) string {
+	fromEmail := smtpFromEmail(db)
 	if idx := strings.LastIndex(fromEmail, "@"); idx >= 0 {
 		return fromEmail[idx+1:]
 	}
 	return "windshift.local"
 }
 
-// getSMTPFromEmail gets the configured SMTP from email address.
-func (s *EmailReplyService) getSMTPFromEmail() string {
+// smtpFromEmail reads the configured from email of the default outbound SMTP
+// channel, falling back when none is configured or its config can't be read.
+func smtpFromEmail(db database.Database) string {
 	var configJSON string
-	err := s.db.QueryRow(`
+	err := db.QueryRow(`
 		SELECT COALESCE(config, '{}') FROM channels
 		WHERE type = 'smtp' AND direction = 'outbound'
 		  AND status = 'enabled' AND is_default = true
@@ -427,6 +648,10 @@ func (s *EmailReplyService) getSMTPFromEmail() string {
 // the missing-row signal.
 var ErrEmailReplyNotRetryable = errors.New("email reply is not retryable")
 
+// ErrEmailReplyInFlight marks an outbox row whose delivery lease another
+// worker still holds; the operator retry must not steal it (WI-1572).
+var ErrEmailReplyInFlight = errors.New("email reply is being delivered by another worker")
+
 // RetryPendingReply attempts immediate delivery of one pending outbound
 // reply on behalf of an operator. The row's backoff lease is cleared first so
 // a stuck schedule (or an earlier failure's next_attempt_at) cannot block the
@@ -437,21 +662,60 @@ func (s *EmailReplyService) RetryPendingReply(channelID, commentID int) (deliver
 	s.outboxMu.Lock()
 	defer s.outboxMu.Unlock()
 
-	var state struct {
+	// One comment can have one outbox row per recipient (creator +
+	// participants, WI-1136). Retry every retryable row and never steal a
+	// live delivery lease.
+	type outboxState struct {
+		id        int
 		delivered sql.NullTime
 		discarded sql.NullTime
+		lease     sql.NullString
+		next      time.Time
 	}
-	err = s.db.QueryRow(`
-		SELECT delivered_at, discarded_at FROM email_reply_outbox
+	rows, err := s.db.Query(`
+		SELECT id, delivered_at, discarded_at, lease_owner, next_attempt_at
+		FROM email_reply_outbox
 		WHERE channel_id = ? AND comment_id = ?
-	`, channelID, commentID).Scan(&state.delivered, &state.discarded)
-	if errors.Is(err, sql.ErrNoRows) {
-		return false, repository.ErrNotFound
-	}
+	`, channelID, commentID)
 	if err != nil {
 		return false, fmt.Errorf("load email reply for retry: %w", err)
 	}
-	if state.delivered.Valid || state.discarded.Valid {
+	var states []outboxState
+	for rows.Next() {
+		var state outboxState
+		if scanErr := rows.Scan(&state.id, &state.delivered, &state.discarded, &state.lease, &state.next); scanErr != nil {
+			_ = rows.Close()
+			return false, fmt.Errorf("scan email reply for retry: %w", scanErr)
+		}
+		states = append(states, state)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return false, fmt.Errorf("iterate email replies for retry: %w", err)
+	}
+	_ = rows.Close()
+
+	if len(states) == 0 {
+		return false, repository.ErrNotFound
+	}
+
+	now := time.Now()
+	inFlight := false
+	retryable := make([]int, 0, len(states))
+	for _, state := range states {
+		if state.delivered.Valid || state.discarded.Valid {
+			continue
+		}
+		if state.lease.Valid && state.next.After(now) {
+			inFlight = true
+			continue
+		}
+		retryable = append(retryable, state.id)
+	}
+	if len(retryable) == 0 {
+		if inFlight {
+			return false, ErrEmailReplyInFlight
+		}
 		return false, ErrEmailReplyNotRetryable
 	}
 
@@ -459,15 +723,28 @@ func (s *EmailReplyService) RetryPendingReply(channelID, commentID int) (deliver
 		return false, ErrSMTPNotConfigured
 	}
 
-	// Clear the backoff lease so deliverPendingReply's next_attempt_at guard
-	// lets this explicit retry through right now.
-	if _, err := s.db.ExecWrite(`
-		UPDATE email_reply_outbox
-		SET next_attempt_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-		WHERE channel_id = ? AND comment_id = ?
-	`, channelID, commentID); err != nil {
-		return false, fmt.Errorf("reset email reply backoff for retry: %w", err)
+	// Retry scheduling never steals a live claim: the reset only applies
+	// while no worker holds the delivery lease. A future next_attempt_at
+	// with a NULL owner is retry backoff and retries right now; a future
+	// next_attempt_at with an owner is another instance's in-flight send.
+	for _, id := range retryable {
+		if _, err := s.db.ExecWrite(`
+			UPDATE email_reply_outbox
+			SET next_attempt_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+			WHERE id = ? AND (lease_owner IS NULL OR next_attempt_at <= CURRENT_TIMESTAMP)
+		`, id); err != nil {
+			return false, fmt.Errorf("reset email reply backoff for retry: %w", err)
+		}
 	}
 
-	return s.deliverPendingReply(commentID)
+	for _, id := range retryable {
+		sent, err := s.deliverPendingReply(id)
+		if err != nil {
+			return delivered, err
+		}
+		if sent {
+			delivered = true
+		}
+	}
+	return delivered, nil
 }

@@ -49,6 +49,7 @@ type PortalHandler struct {
 	approvalService      *services.ApprovalService
 	draftRepo            *repository.PortalDraftRepository
 	attachmentPath       string
+	attachments          *services.ItemAttachmentService
 	eventCoordinator     *services.EventCoordinator
 	publication          *services.KnowledgePublicationService
 	kbSignals            *services.KBSignalService
@@ -90,6 +91,12 @@ func (h *PortalHandler) portalKBPageLinkResolver(config models.ChannelConfig) fu
 // the approval routes return 503.
 func (h *PortalHandler) SetApprovalService(s *services.ApprovalService) {
 	h.approvalService = s
+}
+
+// SetCommentService wires the application comment service so portal replies
+// notify staff and dispatch webhooks through the standard pipeline.
+func (h *PortalHandler) SetCommentService(cs *services.CommentService) {
+	h.portalService.SetCommentService(cs)
 }
 
 // SetEventCoordinator wires the shared item-created side-effect pipeline.
@@ -337,6 +344,10 @@ func applyRequestTypeVisibility(rt *models.RequestType, groups, orgs sql.NullStr
 
 // NewPortalHandler creates a new portal handler
 func NewPortalHandler(db database.Database, sessionManager *auth.SessionManager, portalSessionManager *auth.PortalSessionManager, ipExtractor *utils.IPExtractor, attachmentPath string) *PortalHandler {
+	var attachments *services.ItemAttachmentService
+	if attachmentPath != "" {
+		attachments = services.NewItemAttachmentService(db, attachmentPath, nil)
+	}
 	return &PortalHandler{
 		db:                   db,
 		sessionManager:       sessionManager,
@@ -346,6 +357,7 @@ func NewPortalHandler(db database.Database, sessionManager *auth.SessionManager,
 		portalAuthRepo:       repository.NewPortalAuthRepository(db),
 		draftRepo:            repository.NewPortalDraftRepository(db),
 		attachmentPath:       attachmentPath,
+		attachments:          attachments,
 	}
 }
 
@@ -717,6 +729,10 @@ func (h *PortalHandler) SubmitToPortal(w http.ResponseWriter, r *http.Request) {
 		Title         string         `json:"title"`
 		Description   string         `json:"description"`
 		CustomFields  map[string]any `json:"custom_fields"`
+		// ShareWithOrganisation is the creator's opt-in to org sharing
+		// (WI-1139). Applied only when the org is in requester_choice mode;
+		// automatic ignores it and disabled never shares.
+		ShareWithOrganisation bool `json:"share_with_organisation"`
 	}
 
 	if err := newJSONDecoder(w, r).Decode(&submission); err != nil {
@@ -826,6 +842,18 @@ func (h *PortalHandler) SubmitToPortal(w http.ResponseWriter, r *http.Request) {
 	} else if authenticatedUserID != nil {
 		eventMetadata = itemevents.User(*authenticatedUserID, "portal")
 	}
+	// Org sharing (WI-1139): the creator's opt-in is applied only in
+	// requester_choice mode. The item flag is written once and never updated.
+	portalOrgShared := false
+	if portalCustomerID != nil && submission.ShareWithOrganisation {
+		sharing, err := h.portalService.PortalCustomerOrgRequestSharing(ctx, *portalCustomerID)
+		if err != nil {
+			respondInternalError(w, r, err)
+			return
+		}
+		portalOrgShared = sharing.RequestSharing == models.OrgRequestSharingRequesterChoice
+	}
+
 	itemID, err := services.CreateItem(h.db, services.ItemCreationParams{
 		WorkspaceID:             targetWorkspaceID,
 		Title:                   submission.Title,
@@ -837,6 +865,7 @@ func (h *PortalHandler) SubmitToPortal(w http.ResponseWriter, r *http.Request) {
 		CreatorPortalCustomerID: portalCustomerID, // nil for internal users, set for portal customers
 		ChannelID:               &channel.ID,
 		RequestTypeID:           submission.RequestTypeID,
+		PortalOrgShared:         portalOrgShared,
 		CustomFieldValuesJSON:   string(customFieldsJSON),
 		VirtualFieldDataJSON:    string(virtualFieldsJSON),
 		EventMetadata:           eventMetadata,

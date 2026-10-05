@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"windshift/internal/models"
@@ -205,6 +206,10 @@ type PortalRequestRow struct {
 	CommentCount            int
 	StatusCategoryColor     *string
 	StatusIsCompleted       bool
+	// MergedIntoItemID is the canonical ticket when this request was folded
+	// into another. The portal redirects to it instead of showing a stale
+	// duplicate thread (WI-1528).
+	MergedIntoItemID *int
 }
 
 const portalRequestSelect = `
@@ -220,9 +225,11 @@ const portalRequestSelect = `
 		rt.color AS request_type_color,
 		(SELECT COUNT(*) FROM comments WHERE item_id = i.id AND (is_private = false OR is_private IS NULL)) AS comment_count,
 		sc.color AS status_category_color,
-		COALESCE(sc.is_completed, false) AS status_is_completed
+		COALESCE(sc.is_completed, false) AS status_is_completed,
+		i.merged_into_item_id
 	FROM items i
 	JOIN workspaces w ON i.workspace_id = w.id
+	LEFT JOIN portal_customers pc ON i.creator_portal_customer_id = pc.id
 	LEFT JOIN request_types rt ON i.request_type_id = rt.id
 	LEFT JOIN statuses s ON i.status_id = s.id
 	LEFT JOIN status_categories sc ON s.category_id = sc.id
@@ -233,7 +240,7 @@ func scanPortalRequestRow(scanner interface {
 	Scan(dest ...any) error
 }) (PortalRequestRow, error) {
 	var row PortalRequestRow
-	var channelID, requestTypeID, creatorID, creatorPortalCustomerID sql.NullInt64
+	var channelID, requestTypeID, creatorID, creatorPortalCustomerID, mergedIntoItemID sql.NullInt64
 	var requestTypeName, requestTypeIcon, requestTypeColor, statusCategoryColor sql.NullString
 	err := scanner.Scan(
 		&row.ID, &row.WorkspaceID, &row.WorkspaceItemNumber, &row.Title, &row.Description,
@@ -243,6 +250,7 @@ func scanPortalRequestRow(scanner interface {
 		&requestTypeName, &requestTypeIcon, &requestTypeColor,
 		&row.CommentCount,
 		&statusCategoryColor, &row.StatusIsCompleted,
+		&mergedIntoItemID,
 	)
 	if err != nil {
 		return row, err
@@ -251,6 +259,7 @@ func scanPortalRequestRow(scanner interface {
 	assignNullableInt(&row.RequestTypeID, requestTypeID)
 	assignNullableInt(&row.CreatorID, creatorID)
 	assignNullableInt(&row.CreatorPortalCustomerID, creatorPortalCustomerID)
+	assignNullableInt(&row.MergedIntoItemID, mergedIntoItemID)
 	assignNullableStringPtr(&row.RequestTypeName, requestTypeName)
 	assignNullableStringPtr(&row.RequestTypeIcon, requestTypeIcon)
 	assignNullableStringPtr(&row.RequestTypeColor, requestTypeColor)
@@ -258,24 +267,120 @@ func scanPortalRequestRow(scanner interface {
 	return row, nil
 }
 
+// portalMergedDuplicateVisible keeps a merged duplicate in a requester's list
+// only when it is a cross-requester merge: the source's files and original
+// request stay with its own requester (WI-1566), so hiding it would remove the
+// customer's own ticket. A same-requester merge moves the thread to the
+// canonical, so the duplicate is hidden as a redirect. "Same requester" is the
+// portal-customer identity, matching ItemLifecycleService.sameRequester, with
+// COALESCE so a NULL (internal) creator compares deterministically.
+const portalMergedDuplicateVisible = `(i.merged_into_item_id IS NULL OR EXISTS (
+		SELECT 1 FROM items canonical
+		WHERE canonical.id = i.merged_into_item_id
+		  AND COALESCE(canonical.creator_portal_customer_id, 0) <> COALESCE(i.creator_portal_customer_id, 0)
+	))`
+
+// PortalRequestVisibility describes which items a portal exposes to its
+// requesters: the portal's own channel, any enabled intake email channel
+// linked to it via email_connected_portal_id, and — as defense-in-depth —
+// only items in workspaces the portal serves (empty = no restriction, for
+// legacy portals).
+type PortalRequestVisibility struct {
+	PortalChannelID       int
+	LinkedEmailChannelIDs []int
+	ServedWorkspaceIDs    []int
+}
+
+// PortalOrgShare describes the organisation-sharing that applies to one portal
+// viewer. The service resolves it from the organisation's settings and the
+// viewer's contact levels (settings live in JSON, so they are parsed in Go),
+// leaving the repository to express only the resulting per-item condition. The
+// zero value disables organisation sharing.
+type PortalOrgShare struct {
+	// OrganisationID is the viewer's organisation when sharing applies to them.
+	OrganisationID int
+	// Mode is models.OrgRequestSharingAutomatic or
+	// models.OrgRequestSharingRequesterChoice. Empty means no org sharing.
+	Mode string
+}
+
 // ListChannelRequestsByCreator returns the newest 500 requests an internal
-// user submitted through the given portal channel.
-func (r *ItemRepository) ListChannelRequestsByCreator(creatorID, channelID int) ([]PortalRequestRow, error) {
-	return r.listChannelRequests("i.creator_id = ?", creatorID, channelID)
+// user submitted through the given portal (own channel plus linked intake
+// channels).
+func (r *ItemRepository) ListChannelRequestsByCreator(creatorID int, visibility PortalRequestVisibility) ([]PortalRequestRow, error) {
+	return r.listChannelRequests("i.creator_id = ?", []any{creatorID}, visibility)
 }
 
 // ListChannelRequestsByPortalCustomer returns the newest 500 requests a portal
-// customer submitted through the given portal channel.
-func (r *ItemRepository) ListChannelRequestsByPortalCustomer(customerID, channelID int) ([]PortalRequestRow, error) {
-	return r.listChannelRequests("i.creator_portal_customer_id = ?", customerID, channelID)
+// customer submitted through the given portal (own channel plus linked intake
+// channels), plus any requests where the customer is an external participant
+// (WI-1136), plus organisation-shared requests when orgShare applies (WI-1139).
+func (r *ItemRepository) ListChannelRequestsByPortalCustomer(customerID int, orgShare PortalOrgShare, visibility PortalRequestVisibility) ([]PortalRequestRow, error) {
+	ownerClause := `(i.creator_portal_customer_id = ? OR EXISTS (
+		SELECT 1 FROM item_participants p
+		WHERE p.item_id = i.id AND p.portal_customer_id = ?
+	))`
+	ownerArgs := []any{customerID, customerID}
+	switch {
+	case orgShare.OrganisationID == 0:
+		// Org sharing does not apply to this viewer.
+	case orgShare.Mode == models.OrgRequestSharingAutomatic:
+		ownerClause = "(" + ownerClause + " OR pc.customer_organisation_id = ?)"
+		ownerArgs = append(ownerArgs, orgShare.OrganisationID)
+	case orgShare.Mode == models.OrgRequestSharingRequesterChoice:
+		ownerClause = "(" + ownerClause + " OR (pc.customer_organisation_id = ? AND i.portal_org_shared = true))"
+		ownerArgs = append(ownerArgs, orgShare.OrganisationID)
+	}
+	return r.listChannelRequests(ownerClause, ownerArgs, visibility)
 }
 
-func (r *ItemRepository) listChannelRequests(ownerClause string, ownerID, channelID int) ([]PortalRequestRow, error) {
+// PortalRequestOrgShare returns the creator's organisation and whether the item
+// carries the organisation-share flag, for the portal detail gate. Returns
+// ErrNotFound when the item does not exist.
+func (r *ItemRepository) PortalRequestOrgShare(itemID int) (creatorOrgID *int, shared bool, err error) {
+	var orgID sql.NullInt64
+	var sharedFlag sql.NullBool
+	err = r.db.QueryRow(`
+		SELECT pc.customer_organisation_id, i.portal_org_shared
+		FROM items i
+		LEFT JOIN portal_customers pc ON i.creator_portal_customer_id = pc.id
+		WHERE i.id = ?
+	`, itemID).Scan(&orgID, &sharedFlag)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, false, ErrNotFound
+	}
+	if err != nil {
+		return nil, false, fmt.Errorf("get portal request organisation share: %w", err)
+	}
+	if orgID.Valid {
+		id := int(orgID.Int64)
+		creatorOrgID = &id
+	}
+	return creatorOrgID, sharedFlag.Valid && sharedFlag.Bool, nil
+}
+
+func (r *ItemRepository) listChannelRequests(ownerClause string, ownerArgs []any, visibility PortalRequestVisibility) ([]PortalRequestRow, error) {
+	args := append([]any{}, ownerArgs...)
+	channelFilter := "i.channel_id = ?"
+	args = append(args, visibility.PortalChannelID)
+	for _, id := range visibility.LinkedEmailChannelIDs {
+		channelFilter += " OR i.channel_id = ?"
+		args = append(args, id)
+	}
+	where := ownerClause + " AND " + portalMergedDuplicateVisible + " AND (" + channelFilter + ")"
+	if len(visibility.ServedWorkspaceIDs) > 0 {
+		placeholders := strings.Repeat("?,", len(visibility.ServedWorkspaceIDs))
+		placeholders = placeholders[:len(placeholders)-1]
+		where += " AND i.workspace_id IN (" + placeholders + ")"
+		for _, id := range visibility.ServedWorkspaceIDs {
+			args = append(args, id)
+		}
+	}
 	rows, err := r.db.Query(portalRequestSelect+`
-		WHERE `+ownerClause+` AND i.channel_id = ?
+		WHERE `+where+`
 		ORDER BY i.created_at DESC
 		LIMIT 500
-	`, ownerID, channelID)
+	`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list channel requests: %w", err)
 	}
@@ -305,23 +410,25 @@ func (r *ItemRepository) GetPortalRequest(itemID int) (*PortalRequestRow, error)
 	return &row, nil
 }
 
-// GetPortalCreatorEmail returns the email of the portal customer who created
-// the item through the given channel. Returns ErrNotFound when the item does
-// not exist, was not created by a portal customer, or belongs to a different
-// channel.
-func (r *ItemRepository) GetPortalCreatorEmail(itemID, channelID int) (string, error) {
+// GetPortalCustomerEmailForItem returns the email of the portal customer who
+// created the item, regardless of which channel it originated on. Returns
+// ErrNotFound when the item does not exist or was not created by a portal
+// customer. Channel-agnostic on purpose: email replies quoting an item's
+// Message-IDs must resolve the creator even when they arrive on a different
+// intake channel than the one that owns the ticket (WI-1546).
+func (r *ItemRepository) GetPortalCustomerEmailForItem(itemID int) (string, error) {
 	var email sql.NullString
 	err := r.db.QueryRow(`
 		SELECT pc.email
 		FROM items i
 		JOIN portal_customers pc ON pc.id = i.creator_portal_customer_id
-		WHERE i.id = ? AND i.channel_id = ?
-	`, itemID, channelID).Scan(&email)
+		WHERE i.id = ?
+	`, itemID).Scan(&email)
 	if errors.Is(err, sql.ErrNoRows) || (err == nil && !email.Valid) {
 		return "", ErrNotFound
 	}
 	if err != nil {
-		return "", fmt.Errorf("get portal creator email: %w", err)
+		return "", fmt.Errorf("get portal customer email for item: %w", err)
 	}
 	return email.String, nil
 }
@@ -359,7 +466,7 @@ func (r *ItemRepository) ListPortalCustomerSubmissions(customerID int) ([]Portal
 		JOIN workspaces w ON i.workspace_id = w.id
 		LEFT JOIN statuses s ON i.status_id = s.id
 		LEFT JOIN status_categories sc ON s.category_id = sc.id
-		WHERE i.creator_portal_customer_id = ?
+		WHERE i.creator_portal_customer_id = ? AND `+portalMergedDuplicateVisible+`
 		ORDER BY i.created_at DESC
 	`, customerID)
 	if err != nil {
@@ -426,7 +533,7 @@ func (r *ItemRepository) ListOrganisationTickets(orgID int, workspaceIDs []int) 
 		JOIN workspaces w ON i.workspace_id = w.id
 		LEFT JOIN statuses s ON i.status_id = s.id
 		LEFT JOIN status_categories sc ON s.category_id = sc.id
-		WHERE pc.customer_organisation_id = ?
+		WHERE pc.customer_organisation_id = ? AND ` + portalMergedDuplicateVisible + `
 ` + workspaceClause + `		ORDER BY i.created_at DESC`
 
 	rows, err := r.db.Query(query, args...)
@@ -447,6 +554,66 @@ func (r *ItemRepository) ListOrganisationTickets(orgID int, workspaceIDs []int) 
 			return nil, fmt.Errorf("scan organisation ticket: %w", err)
 		}
 		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+// RequesterOpenTicketRow is one duplicate-candidate entry: an open ticket
+// created by the same portal customer as another item.
+type RequesterOpenTicketRow struct {
+	ID                  int
+	WorkspaceID         int
+	WorkspaceKey        string
+	WorkspaceItemNumber int
+	Title               string
+	StatusName          string
+	UpdatedAt           time.Time
+}
+
+// RequesterCustomerID returns the portal customer who created the item, or
+// nil when the item has no portal-customer creator.
+func (r *ItemRepository) RequesterCustomerID(itemID int) (*int, error) {
+	var customerID *int
+	err := r.db.QueryRow(`SELECT creator_portal_customer_id FROM items WHERE id = ?`, itemID).Scan(&customerID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get requester customer id: %w", err)
+	}
+	return customerID, nil
+}
+
+// RequesterOpenTickets lists the requester's other open tickets (status not
+// in a completed category), newest activity first, across all workspaces —
+// callers filter rows to workspaces the agent can view.
+func (r *ItemRepository) RequesterOpenTickets(requesterCustomerID, excludeItemID, limit int) ([]RequesterOpenTicketRow, error) {
+	rows, err := r.db.Query(`
+		SELECT i.id, i.workspace_id, w.key, i.workspace_item_number, i.title,
+		       COALESCE(s.name, ''), i.updated_at
+		FROM items i
+		JOIN workspaces w ON i.workspace_id = w.id
+		LEFT JOIN statuses s ON i.status_id = s.id
+		LEFT JOIN status_categories sc ON s.category_id = sc.id
+		WHERE i.creator_portal_customer_id = ?
+		  AND i.merged_into_item_id IS NULL
+		  AND i.id != ?
+		  AND (sc.is_completed = false OR sc.is_completed IS NULL)
+		ORDER BY i.updated_at DESC
+		LIMIT ?
+	`, requesterCustomerID, excludeItemID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list requester open tickets: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	out := []RequesterOpenTicketRow{}
+	for rows.Next() {
+		var row RequesterOpenTicketRow
+		if err := rows.Scan(&row.ID, &row.WorkspaceID, &row.WorkspaceKey, &row.WorkspaceItemNumber, &row.Title, &row.StatusName, &row.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("scan requester open ticket: %w", err)
+		}
+		out = append(out, row)
 	}
 	return out, rows.Err()
 }

@@ -5,6 +5,7 @@
   import SlaRecalculationTab from './SlaRecalculationTab.svelte';
   import SlaTeamBindingsTab from './SlaTeamBindingsTab.svelte';
   import SlaComplianceReportTab from './SlaComplianceReportTab.svelte';
+  import TabStrip from '../../components/TabStrip.svelte';
   import { BarChart3, BellRing, Calendar, Gauge, Handshake, RefreshCw } from '@lucide/svelte';
   import { t } from '../../stores/i18n.svelte.js';
 
@@ -62,23 +63,15 @@
 
 <div class="space-y-4" data-testid="service-levels">
   {#if tabs.length > 1}
-    <div class="flex gap-1 border-b" style="border-color: var(--ds-border)" role="tablist">
-      {#each tabs as tab (tab.id)}
-        {@const TabIcon = tab.icon}
-        <button
-          type="button"
-          role="tab"
-          aria-selected={active === tab.id}
-          class="px-3 py-2 text-sm font-medium flex items-center gap-2"
-          class:active={active === tab.id}
-          data-testid="service-levels-tab-{tab.id}"
-          onclick={() => (active = tab.id)}
-        >
-          <TabIcon class="w-4 h-4" />
-          {t(tab.labelKey)}
-        </button>
-      {/each}
-    </div>
+    <TabStrip
+      tabs={tabs.map((tab) => ({
+        id: tab.id,
+        label: t(tab.labelKey),
+        icon: tab.icon,
+        testid: `service-levels-tab-${tab.id}`,
+      }))}
+      bind:activeTab={active}
+    />
   {/if}
 
   {#each tabs as tab (tab.id)}

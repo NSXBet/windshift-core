@@ -94,6 +94,10 @@ export const sla = {
 
   // --- Item state ---
   getItemSLA: (itemId) => fetchAPI(`/items/${itemId}/sla`),
+  // Batch read for list/board badges: one request amortizes the workspace
+  // metric and reference loads across every visible row.
+  getItemSLABatch: (workspaceId, itemIds) =>
+    fetchAPI(`${workspaceBase(workspaceId)}/items?ids=${itemIds.join(',')}`),
 
   // Validate a goal QL by parsing it through the item query endpoint.
   validateGoalQuery: async (workspaceId, ql) => {

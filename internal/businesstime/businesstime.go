@@ -99,11 +99,16 @@ func Compile(raw RawCalendar) (*Calendar, error) {
 		holidayList: append([]Holiday(nil), raw.Holidays...),
 	}
 
+	seenWeekday := make(map[int]string, len(raw.WeeklyIntervals))
 	for day, intervals := range raw.WeeklyIntervals {
 		index, ok := weekdayIndex(day)
 		if !ok {
 			return nil, fmt.Errorf("unknown weekday %q", day)
 		}
+		if previous, ok := seenWeekday[index]; ok {
+			return nil, fmt.Errorf("duplicate weekday %q (already defined as %q)", day, previous)
+		}
+		seenWeekday[index] = day
 		for _, interval := range intervals {
 			start, err := parseClock(interval.Start)
 			if err != nil {
@@ -121,6 +126,7 @@ func Compile(raw RawCalendar) (*Calendar, error) {
 		sort.Slice(calendar.weekly[index], func(a, b int) bool {
 			return calendar.weekly[index][a].start < calendar.weekly[index][b].start
 		})
+		calendar.weekly[index] = mergeIntervals(calendar.weekly[index])
 	}
 	for index := range calendar.weekly {
 		calendar.weeklyDuration += weekdaySeconds(calendar.weekly[index])
@@ -257,7 +263,7 @@ func (c *Calendar) AddCalendarTime(from time.Time, duration time.Duration) (time
 		}
 		// Always move off the current local day, even when it had no working
 		// time, so an empty calendar still terminates at the horizon.
-		next := dayAtMidnight(day.In(c.location)).AddDate(0, 0, 1)
+		next := startOfNextDay(day.In(c.location))
 		if !next.After(cursor) {
 			if advanced {
 				continue
@@ -282,7 +288,7 @@ func (c *Calendar) ElapsedCalendarTime(from, to time.Time) time.Duration {
 	// interior before walking the trailing days. Only the edges cost per-day
 	// work, so a multi-month range is bounded by a constant.
 	cursor := localFrom
-	firstDayEnd := dayAtMidnight(cursor).AddDate(0, 0, 1)
+	firstDayEnd := startOfNextDay(cursor)
 	total := time.Duration(0)
 	if firstDayEnd.Before(localTo) {
 		total += c.businessOnDay(cursor, firstDayEnd)
@@ -294,14 +300,14 @@ func (c *Calendar) ElapsedCalendarTime(from, to time.Time) time.Duration {
 	if days > 0 {
 		fullWeeks := days / 7
 		if fullWeeks > 0 {
-			interiorEnd := cursor.AddDate(0, 0, fullWeeks*7)
+			interiorEnd := addCalendarDays(cursor, fullWeeks*7)
 			total += time.Duration(fullWeeks) * c.weeklyDuration
 			total -= c.holidaySeconds(cursor, interiorEnd)
 			total += c.dstAdjustment(cursor, interiorEnd)
 			cursor = interiorEnd
 		}
 		for cursor.Before(lastDayStart) {
-			next := cursor.AddDate(0, 0, 1)
+			next := startOfNextDay(cursor)
 			total += c.businessOnDay(cursor, next)
 			cursor = next
 		}
@@ -334,7 +340,7 @@ func (c *Calendar) NextOpening(from time.Time) (time.Time, bool) {
 				}
 			}
 		}
-		cursor = cursor.AddDate(0, 0, 1)
+		cursor = startOfNextDay(cursor)
 	}
 	return time.Time{}, false
 }
@@ -364,61 +370,100 @@ func (c *Calendar) businessOnDay(windowStart, windowEnd time.Time) time.Duration
 }
 
 // holidaySeconds subtracts the real working time of the holidays whose nominal
-// time was included in the whole-week arithmetic of [start, end).
+// time was included in the whole-week arithmetic of [start, end). A day listed
+// as both a concrete and a recurring holiday is subtracted once. A recurring
+// date that does not exist in a year (for example February 29) is skipped.
 func (c *Calendar) holidaySeconds(start, end time.Time) time.Duration {
 	startDay := civilDayNumber(dayAtMidnight(start.In(c.location)))
 	endDay := civilDayNumber(dayAtMidnight(end.In(c.location)))
 	var total time.Duration
+	seen := make(map[int]struct{})
 	addHoliday := func(midnight time.Time) {
 		day := civilDayNumber(midnight)
-		if day >= startDay && day < endDay {
-			// Subtract the nominal weekday time included in weeklyDuration.
-			total += weekdaySeconds(c.weekly[int(midnight.Weekday())])
+		if day < startDay || day >= endDay {
+			return
 		}
+		if _, ok := seen[day]; ok {
+			return
+		}
+		seen[day] = struct{}{}
+		// Subtract the nominal weekday time included in weeklyDuration.
+		total += weekdaySeconds(c.weekly[int(midnight.Weekday())])
 	}
 	for day := range c.holidays {
 		startDayTime := time.Unix(int64(day)*86400, 0).UTC()
-		addHoliday(time.Date(startDayTime.Year(), startDayTime.Month(), startDayTime.Day(), 0, 0, 0, 0, c.location))
+		if midnight, ok := civilDayStart(startDayTime.Year(), startDayTime.Month(), startDayTime.Day(), c.location); ok {
+			addHoliday(midnight)
+		}
 	}
 	startYear := start.In(c.location).Year()
 	endYear := end.In(c.location).Year()
 	for monthDay := range c.recurring {
 		for year := startYear; year <= endYear; year++ {
-			addHoliday(time.Date(year, time.Month(monthDay[0]), monthDay[1], 0, 0, 0, 0, c.location))
+			midnight, ok := civilDayStart(year, time.Month(monthDay[0]), monthDay[1], c.location)
+			if !ok {
+				continue
+			}
+			addHoliday(midnight)
 		}
 	}
 	return total
 }
 
 // dstAdjustment corrects the nominal whole-week arithmetic for clock
-// transitions in [start, end). A working interval that spans a transition
-// contains one hour less real time on a spring-forward and one hour more on a
-// fall-back. Transitions are found by sampling every seven days and binary
-// searching; modern zones have at most two transitions a year.
+// transitions in [start, end). For each transition it replaces the nominal
+// duration of the transition day's weekday with the real duration of that
+// day's working intervals, so an interval endpoint that falls inside a DST gap
+// is corrected per interval. Transitions are found by sampling every seven
+// days and binary searching; modern zones have at most two transitions a year.
+// The final sample is clamped to end so a transition in the trailing partial
+// week is not missed.
 func (c *Calendar) dstAdjustment(start, end time.Time) time.Duration {
 	const step = 7 * 24 * time.Hour
+	loc := c.location
 	var total time.Duration
-	cursor := start
-	_, previousOffset := cursor.In(c.location).Zone()
-	for next := cursor.Add(step); next.Before(end); next = next.Add(step) {
-		_, offset := next.In(c.location).Zone()
-		if offset != previousOffset {
-			lo, hi := cursor, next
-			for hi.Sub(lo) > time.Second {
-				mid := lo.Add(hi.Sub(lo) / 2)
-				if _, midOffset := mid.In(c.location).Zone(); midOffset == previousOffset {
-					lo = mid
-				} else {
-					hi = mid
-				}
-			}
-			delta := time.Duration(offset-previousOffset) * time.Second
-			if c.WithinCalendarHours(hi.Add(-time.Second)) && c.WithinCalendarHours(hi) {
-				total -= delta
+	apply := func(instant time.Time) {
+		day := dayAtMidnight(instant.In(loc))
+		if c.isHoliday(day) {
+			return
+		}
+		nominal := weekdaySeconds(c.weekly[int(day.Weekday())])
+		total += c.businessOnDay(day, startOfNextDay(day)) - nominal
+	}
+	findTransition := func(lo, hi time.Time, previousOffset int) time.Time {
+		for hi.Sub(lo) > time.Second {
+			mid := lo.Add(hi.Sub(lo) / 2)
+			if _, midOffset := mid.In(loc).Zone(); midOffset == previousOffset {
+				lo = mid
+			} else {
+				hi = mid
 			}
 		}
+		return hi
+	}
+
+	_, startOffset := start.In(loc).Zone()
+	// A transition exactly at start lands on the first interior day, which the
+	// weekly sampling below cannot observe because the offset is already new.
+	if _, beforeOffset := start.Add(-time.Second).In(loc).Zone(); beforeOffset != startOffset {
+		apply(start)
+	}
+	cursor := start
+	previousOffset := startOffset
+	for cursor.Before(end) {
+		next := cursor.Add(step)
+		if next.After(end) {
+			next = end
+		}
+		_, offset := next.In(loc).Zone()
+		if offset != previousOffset {
+			hi := findTransition(cursor, next, previousOffset)
+			if hi.Before(end) {
+				apply(hi)
+			}
+			previousOffset = offset
+		}
 		cursor = next
-		previousOffset = offset
 	}
 	return total
 }
@@ -435,13 +480,63 @@ func (c *Calendar) isHoliday(local time.Time) bool {
 }
 
 // intervalInstants resolves a wall-clock interval on a given day to absolute
-// instants. time.Date advances a nonexistent start and resolves an ambiguous
-// one to its earlier occurrence.
+// instants. A nonexistent endpoint (inside a DST gap) advances to the first
+// valid instant after the gap; an ambiguous endpoint uses the earlier
+// occurrence. An end of 24:00 is the start of the next local day.
 func (c *Calendar) intervalInstants(day time.Time, interval minuteInterval) (start, end time.Time) {
 	year, month, date := day.In(c.location).Date()
-	start = time.Date(year, month, date, interval.start/60, interval.start%60, 0, 0, c.location)
-	end = time.Date(year, month, date, interval.end/60, interval.end%60, 0, 0, c.location)
+	start = resolveWallClock(year, month, date, interval.start, c.location)
+	if interval.end >= 24*60 {
+		end = startOfNextDay(start)
+	} else {
+		end = resolveWallClock(year, month, date, interval.end, c.location)
+	}
 	return start, end
+}
+
+// resolveWallClock returns the instant for a wall-clock time on the given
+// date. The standard library resolves a nonexistent time to an unspecified
+// side of the gap; this normalizes it to the first valid instant after the
+// gap so interval endpoints inside a gap are consistent. An ambiguous time
+// resolves to the earlier occurrence.
+func resolveWallClock(year int, month time.Month, day, minutes int, loc *time.Location) time.Time {
+	hour, minute := minutes/60, minutes%60
+	candidate := time.Date(year, month, day, hour, minute, 0, 0, loc)
+	local := candidate.In(loc)
+	if local.Year() == year && local.Month() == month && local.Day() == day && local.Hour() == hour && local.Minute() == minute {
+		return candidate
+	}
+	// Nonexistent: advance from the first valid instant of the date until the
+	// wall clock reaches the requested time (a gap is at most a few hours).
+	cursor := dayStart(year, month, day, loc)
+	for i := 0; i < 24*60; i++ {
+		local := cursor.In(loc)
+		if local.Year() == year && local.Month() == month && local.Day() == day && local.Hour()*60+local.Minute() >= minutes {
+			return cursor
+		}
+		cursor = cursor.Add(time.Minute)
+	}
+	return candidate
+}
+
+// mergeIntervals coalesces sorted intervals that overlap or touch, so a
+// schedule listing 09:00-12:00 and 10:00-13:00 counts three hours, not five.
+func mergeIntervals(intervals []minuteInterval) []minuteInterval {
+	if len(intervals) < 2 {
+		return intervals
+	}
+	merged := make([]minuteInterval, 0, len(intervals))
+	for _, interval := range intervals {
+		if len(merged) == 0 || interval.start > merged[len(merged)-1].end {
+			merged = append(merged, interval)
+			continue
+		}
+		last := &merged[len(merged)-1]
+		if interval.end > last.end {
+			last.end = interval.end
+		}
+	}
+	return merged
 }
 
 func weekdaySeconds(intervals []minuteInterval) time.Duration {
@@ -492,10 +587,50 @@ func parseMonthDay(holiday Holiday) (month, day int, err error) {
 	return int(parsed.Month()), parsed.Day(), nil
 }
 
-// dayAtMidnight returns local midnight for the day containing t.
+// dayAtMidnight returns the first instant of the local day containing t.
 func dayAtMidnight(t time.Time) time.Time {
 	year, month, day := t.Date()
-	return time.Date(year, month, day, 0, 0, 0, 0, t.Location())
+	return dayStart(year, month, day, t.Location())
+}
+
+// dayStart returns the first instant of the given local date. Zones that skip
+// midnight on a DST transition make time.Date(...,0,0,0,0) render the previous
+// day, so step forward until the local date matches.
+func dayStart(year int, month time.Month, day int, loc *time.Location) time.Time {
+	start := time.Date(year, month, day, 0, 0, 0, 0, loc)
+	for i := 0; i < 4; i++ {
+		y, m, d := start.In(loc).Date()
+		if y == year && m == month && d == day {
+			break
+		}
+		start = start.Add(time.Hour)
+	}
+	return start
+}
+
+// civilDayStart returns the first instant of a civil date and whether that
+// date exists. February 29 in a non-leap year does not exist.
+func civilDayStart(year int, month time.Month, day int, loc *time.Location) (time.Time, bool) {
+	noon := time.Date(year, month, day, 12, 0, 0, 0, loc)
+	y, m, d := noon.In(loc).Date()
+	if y != year || m != month || d != day {
+		return time.Time{}, false
+	}
+	return dayStart(year, month, day, loc), true
+}
+
+// addCalendarDays returns the first instant of the local day that is days
+// civil days after t's date.
+func addCalendarDays(t time.Time, days int) time.Time {
+	year, month, day := t.Date()
+	noon := time.Date(year, month, day, 12, 0, 0, 0, t.Location()).AddDate(0, 0, days)
+	y, m, d := noon.Date()
+	return dayStart(y, m, d, t.Location())
+}
+
+// startOfNextDay returns the first instant of the local day after t's date.
+func startOfNextDay(t time.Time) time.Time {
+	return addCalendarDays(t, 1)
 }
 
 // civilDayNumber is a DST-independent day counter. It lets date differences

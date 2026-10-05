@@ -99,7 +99,7 @@ CREATE TABLE IF NOT EXISTS sla_goal_targets (
 	position INTEGER NOT NULL DEFAULT 0,
 	priority_id INTEGER REFERENCES priorities(id) ON DELETE RESTRICT,
 	is_fallback BOOLEAN NOT NULL DEFAULT FALSE,
-	target_ms INTEGER NOT NULL,
+	target_ms BIGINT NOT NULL,
 	calendar_id INTEGER NOT NULL,
 	source_id TEXT,
 	source_payload TEXT,
@@ -122,16 +122,16 @@ CREATE TABLE IF NOT EXISTS item_sla_cycles (
 	started_at TIMESTAMPTZ NOT NULL,
 	stopped_at TIMESTAMPTZ,
 	breach_time TIMESTAMPTZ,
-	goal_duration_ms INTEGER NOT NULL,
-	elapsed_ms INTEGER NOT NULL DEFAULT 0,
-	remaining_ms INTEGER NOT NULL,
+	goal_duration_ms BIGINT NOT NULL,
+	elapsed_ms BIGINT NOT NULL DEFAULT 0,
+	remaining_ms BIGINT NOT NULL,
 	paused BOOLEAN NOT NULL DEFAULT FALSE,
 	within_calendar_hours BOOLEAN NOT NULL DEFAULT FALSE,
 	breached BOOLEAN NOT NULL DEFAULT FALSE,
 	pause_started_at TIMESTAMPTZ,
 	next_deadline_at TIMESTAMPTZ,
 	last_calculated_at TIMESTAMPTZ NOT NULL,
-	remaining_at_pause_ms INTEGER,
+	remaining_at_pause_ms BIGINT,
 	breached_at TIMESTAMPTZ,
 	origin TEXT NOT NULL DEFAULT 'native',
 	abandon_reason TEXT,
@@ -154,6 +154,9 @@ CREATE INDEX IF NOT EXISTS idx_item_sla_cycles_item_ongoing
 CREATE INDEX IF NOT EXISTS idx_item_sla_cycles_metric_deadline
 	ON item_sla_cycles(metric_id, next_deadline_at) WHERE status = 'ongoing';
 CREATE INDEX IF NOT EXISTS idx_item_sla_cycles_item ON item_sla_cycles(item_id);
+CREATE INDEX IF NOT EXISTS idx_item_sla_cycles_metric ON item_sla_cycles(metric_id);
+CREATE INDEX IF NOT EXISTS idx_item_sla_cycles_goal ON item_sla_cycles(goal_id);
+CREATE INDEX IF NOT EXISTS idx_item_sla_cycles_calendar ON item_sla_cycles(calendar_id);
 
 CREATE TABLE IF NOT EXISTS item_sla_cycle_thresholds (
 	cycle_id BIGINT NOT NULL,
@@ -187,3 +190,6 @@ CREATE TABLE IF NOT EXISTS sla_jobs (
 CREATE UNIQUE INDEX IF NOT EXISTS uq_sla_jobs_subject
 	ON sla_jobs(kind, threshold_key, COALESCE(cycle_id, 0), COALESCE(item_id, 0), COALESCE(metric_id, 0));
 CREATE INDEX IF NOT EXISTS idx_sla_jobs_due ON sla_jobs(due_at) WHERE state = 'pending';
+CREATE INDEX IF NOT EXISTS idx_sla_jobs_cycle ON sla_jobs(cycle_id);
+CREATE INDEX IF NOT EXISTS idx_sla_jobs_item ON sla_jobs(item_id);
+CREATE INDEX IF NOT EXISTS idx_sla_jobs_metric ON sla_jobs(metric_id);

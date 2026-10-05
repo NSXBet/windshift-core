@@ -292,13 +292,20 @@ type labelApplication interface {
 	Update(services.AuditActor, int, services.LabelUpdate) (*models.Label, error)
 	Delete(services.AuditActor, int) error
 	ListForItem(int) ([]models.Label, error)
-	SetForItem(int, []int) ([]models.Label, error)
-	AddToItem(int, int) ([]models.Label, error)
-	RemoveFromItem(int, int) error
+	SetForItem(services.AuditActor, int, []int) ([]models.Label, error)
+	AddToItem(services.AuditActor, int, int) ([]models.Label, error)
+	RemoveFromItem(services.AuditActor, int, int) error
+}
+
+type participantApplication interface {
+	List(itemID int) ([]models.ItemParticipant, error)
+	Add(ctx context.Context, actorID, itemID int, input services.ParticipantInput) ([]models.ItemParticipant, bool, error)
+	Remove(ctx context.Context, actorID, itemID, customerID int) ([]models.ItemParticipant, error)
 }
 
 type itemReader interface {
 	FindByID(int) (*models.Item, error)
+	FindByIDsInWorkspace(ctx context.Context, workspaceID int, ids []int) ([]*models.Item, error)
 }
 
 type resourceAccess interface {
@@ -381,6 +388,15 @@ type pageLabelApplication interface {
 	RemoveFromPage(int, int) error
 }
 
+type cannedResponseApplication interface {
+	List(workspaceID int, includeArchived bool) ([]models.CannedResponse, error)
+	Get(workspaceID, id int) (*models.CannedResponse, error)
+	Create(workspaceID int, input services.CannedResponseInput, actors ...services.AuditActor) (*models.CannedResponse, error)
+	Update(workspaceID, id int, update services.CannedResponseUpdate, actors ...services.AuditActor) (*models.CannedResponse, error)
+	Delete(workspaceID, id int, actors ...services.AuditActor) (*models.CannedResponse, error)
+	RenderPreview(workspaceID, id, itemID int, actors ...services.AuditActor) (string, error)
+}
+
 type worklogApplication interface {
 	Create(int, services.WorklogMutationInput) (*services.WorklogMutationResult, error)
 	Update(int, int, services.WorklogMutationInput) (*services.WorklogMutationResult, error)
@@ -389,7 +405,7 @@ type worklogApplication interface {
 	ListMine(repository.WorklogListFilter) ([]models.Worklog, int, error)
 	List(repository.WorklogDetailFilter) ([]models.Worklog, error)
 	ListPage(repository.WorklogDetailFilter) ([]models.Worklog, int, error)
-	Aggregate(repository.WorklogDetailFilter, string) (*services.WorklogAggregate, error)
+	Aggregate(ctx context.Context, filter repository.WorklogDetailFilter, timezone string) (*services.WorklogAggregate, error)
 }
 
 type timeAccess interface {
@@ -556,6 +572,7 @@ type Deps struct {
 	Workspaces                   workspaceApplication
 	ItemTemplates                itemTemplateApplication
 	Labels                       labelApplication
+	Participants                 participantApplication
 	Items                        itemReader
 	Access                       resourceAccess
 	Preferences                  preferencesApplication
@@ -566,6 +583,7 @@ type Deps struct {
 	PageDiagrams                 pageDiagramApplication
 	PageAccess                   pageAccess
 	PageLabels                   pageLabelApplication
+	CannedResponses              cannedResponseApplication
 	PagePublication              *services.KnowledgePublicationService
 	Worklogs                     worklogApplication
 	TimeAccess                   timeAccess
@@ -655,6 +673,9 @@ func RegisterRoutes(deps Deps) error {
 	if deps.Labels == nil {
 		return errors.New("v2: Labels is required")
 	}
+	if deps.Participants == nil {
+		return errors.New("v2: Participants is required")
+	}
 	if deps.Items == nil {
 		return errors.New("v2: Items is required")
 	}
@@ -684,6 +705,9 @@ func RegisterRoutes(deps Deps) error {
 	}
 	if deps.PageLabels == nil {
 		return errors.New("v2: PageLabels is required")
+	}
+	if deps.CannedResponses == nil {
+		return errors.New("v2: CannedResponses is required")
 	}
 	if deps.PagePublication == nil {
 		return errors.New("v2: PagePublication is required")
@@ -825,11 +849,13 @@ func buildRoutes(deps Deps) []route {
 	registerHierarchyLevelRoutes(&builder, deps)
 	registerScopedCatalogRoutes(&builder, deps.Catalog, deps.Workspaces, deps.ItemTemplates)
 	registerLabelRoutes(&builder, deps)
+	registerItemParticipantRoutes(&builder, deps)
 	registerPreferenceRoutes(&builder, deps.Preferences)
 	registerRecurrenceRoutes(&builder, deps)
 	registerItemDiagramRoutes(&builder, deps)
 	registerPageDiagramRoutes(&builder, deps)
 	registerPageLabelRoutes(&builder, deps)
+	registerCannedResponseRoutes(&builder, deps)
 	registerWorklogRoutes(&builder, deps)
 	registerTimeRoutes(&builder, deps)
 	registerAdminRoutes(&builder, deps)
@@ -847,6 +873,8 @@ func buildRoutes(deps Deps) []route {
 	registerTestManagementRoutes(&builder, deps.TestManagement)
 	registerAssetRoutes(&builder, deps.Assets)
 	registerItemRoutes(&builder, deps.ItemApplication, deps.ItemDetail, deps.ItemLifecycle, deps.Access, deps.StoryPointRollup, deps.DBRequestTimeout)
+	registerQueueRoutes(&builder, deps.ItemApplication)
+	registerSupportMetricsRoutes(&builder, deps)
 	registerSLARoutes(&builder, deps)
 	registerSLACalendarRoutes(&builder, deps)
 	registerSLAWarningThresholdRoutes(&builder, deps)
@@ -969,6 +997,9 @@ func applyParameterCorrections(route *Route) {
 		upsertParameter(route, ParameterMetadata{Name: "job_id", In: "path", Required: true, Description: "The import job identifier.", Schema: map[string]any{"type": "string"}})
 	case "GET /workspaces/{workspace_id}/tickets/export":
 		upsertParameter(route, ParameterMetadata{Name: "workspace_id", In: "path", Required: true, Description: "The workspace identifier.", Schema: map[string]any{"type": "integer", "minimum": 1}})
+	case "GET /workspaces/{workspace_id}/items/sla":
+		upsertParameter(route, ParameterMetadata{Name: "workspace_id", In: "path", Required: true, Description: "The workspace identifier.", Schema: map[string]any{"type": "integer", "minimum": 1}})
+		upsertParameter(route, ParameterMetadata{Name: "ids", In: "query", Required: true, Description: "Comma-separated item identifiers to read. At most 200 ids per request; ids outside the workspace are ignored.", Schema: map[string]any{"type": "string", "minLength": 1}})
 	case "POST /workspaces/{workspace_id}/actions/validate":
 		upsertParameter(route, ParameterMetadata{Name: "workspace_id", In: "path", Required: true, Description: "The workspace identifier.", Schema: map[string]any{"type": "integer", "minimum": 1}})
 	case "GET /items/changes":
