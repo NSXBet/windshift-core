@@ -334,7 +334,7 @@
 												{/if}
 											</div>
 										{/snippet}
-										<span onmouseenter={() => loadRunTelemetry(group.agent_run_id)}>
+										<span role="presentation" onmouseenter={() => loadRunTelemetry(group.agent_run_id)}>
 											<Bot class="w-3.5 h-3.5" style="color: var(--ds-text-subtle);" data-testid="item-history-agent-marker" />
 										</span>
 									</Tooltip>
