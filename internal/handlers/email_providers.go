@@ -674,6 +674,15 @@ func (h *EmailProviderHandler) EmailOAuthCallback(w http.ResponseWriter, r *http
 		respondInternalError(w, r, err)
 		return
 	}
+	// Bind the callback to the account that started the flow, matching the
+	// channel-inline callback so a forwarded authorization URL cannot attach the
+	// victim's mailbox credentials to another identity.
+	currentUser := utils.GetCurrentUser(r)
+	if currentUser == nil || currentUser.ID != userID {
+		slog.Warn("email OAuth state/account mismatch", slog.String("component", "email_providers"), slog.Int("channel_id", channelID))
+		http.Redirect(w, r, "/admin/channels?oauth_error=authorization_failed", http.StatusFound)
+		return
+	}
 	if err = h.requireManagedInboundEmailChannel(ctx, userID, channelID); err != nil {
 		handleEmailOAuthAuthorizationFailure(w, r, err)
 		return

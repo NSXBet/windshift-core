@@ -2071,6 +2071,16 @@ func (h *ChannelHandler) ChannelEmailOAuthCallback(w http.ResponseWriter, r *htt
 	defer func() {
 		h.restoreEmailChannelAfterOAuth(context.Background(), channelID, restoreEnabled, state, savedConfigJSON)
 	}()
+	// Bind the callback to the account that started the flow. The state carries
+	// the initiating user; the browser completing the redirect must be signed in
+	// as that same user, otherwise a forwarded authorization URL could attach the
+	// victim's mailbox credentials to another identity.
+	currentUser := utils.GetCurrentUser(r)
+	if currentUser == nil || currentUser.ID != stateUserID {
+		slog.Warn("email channel OAuth state/account mismatch", "channel_id", channelID)
+		http.Redirect(w, r, "/admin/channels?oauth_error=authorization_failed", http.StatusFound)
+		return
+	}
 	canManage, err := h.canCompleteEmailOAuth(ctx, stateUserID, channelID)
 	if err != nil {
 		respondInternalError(w, r, err)

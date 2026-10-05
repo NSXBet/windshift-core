@@ -41,7 +41,10 @@ func RegisterChannelRoutes(deps *Deps) {
 
 	// Channel email OAuth endpoints
 	api.HandleH("POST /channels/{id}/inline-oauth/start", admin(http.HandlerFunc(deps.Channels.Channel.StartChannelEmailOAuth)))
-	api.Handle("GET /channels/inline-oauth/callback", deps.Channels.Channel.ChannelEmailOAuthCallback) // No auth - OAuth redirect
+	// OptionalAuth so the callback can bind the completing browser to the
+	// account that started the flow; the handler rejects unauthenticated or
+	// mismatched callers.
+	api.HandleH("GET /channels/inline-oauth/callback", deps.AuthMiddleware.OptionalAuth(http.HandlerFunc(deps.Channels.Channel.ChannelEmailOAuthCallback)))
 
 	// Request Type endpoints (channel-scoped). Write paths nest under /channels/{channel_id}/
 	// so the channelMgmt middleware can gate them and the handler/SQL constrains by channel_id.
