@@ -125,14 +125,34 @@ func (h *JiraImportHandler) validateJiraWorkspaceMappings(req StartImportRequest
 	}
 
 	targetKeys := make(map[string]string, len(req.ProjectKeys))
+	targetWorkspaceIDs := make(map[int]string, len(req.ProjectKeys))
 	for _, requestedKey := range req.ProjectKeys {
 		jiraKey := normalizeJiraProjectKey(requestedKey)
 		mapping, ok := mappingsByJiraKey[jiraKey]
 		if !ok {
 			return fmt.Errorf("jira project %s is missing a workspace mapping", jiraKey)
 		}
-		if !mapping.CreateNew || mapping.WindshiftID != nil {
-			return fmt.Errorf("jira project %s must create a new workspace; existing workspaces cannot be reused", jiraKey)
+
+		if !mapping.CreateNew {
+			if mapping.WindshiftID == nil {
+				return fmt.Errorf("jira project %s must choose a target workspace", jiraKey)
+			}
+			target, err := h.imports.WorkspaceImportTarget(*mapping.WindshiftID)
+			if errors.Is(err, repository.ErrNotFound) || (err == nil && target == nil) {
+				return fmt.Errorf("jira project %s references a workspace that cannot be imported into", jiraKey)
+			}
+			if err != nil {
+				return fmt.Errorf("load workspace target for %s: %w", jiraKey, err)
+			}
+			if otherJiraKey, duplicate := targetWorkspaceIDs[target.ID]; duplicate {
+				return fmt.Errorf("jira projects %s and %s cannot import into the same workspace", otherJiraKey, jiraKey)
+			}
+			targetWorkspaceIDs[target.ID] = jiraKey
+			continue
+		}
+
+		if mapping.WindshiftID != nil {
+			return fmt.Errorf("jira project %s cannot both create a new workspace and reuse an existing one", jiraKey)
 		}
 		if strings.TrimSpace(mapping.NewWorkspaceName) == "" {
 			return fmt.Errorf("jira project %s requires a workspace name", jiraKey)
@@ -159,6 +179,48 @@ func (h *JiraImportHandler) validateJiraWorkspaceMappings(req StartImportRequest
 	return nil
 }
 
+// validateJiraEntityMappings rejects stale reuse targets so a deleted status,
+// item type, or custom field cannot silently degrade into a new entity.
+func (h *JiraImportHandler) validateJiraEntityMappings(req StartImportRequest) error {
+	for _, mapping := range req.Mappings.Statuses {
+		if mapping.CreateNew || mapping.WindshiftID == nil {
+			continue
+		}
+		exists, err := h.imports.StatusExists(*mapping.WindshiftID)
+		if err != nil {
+			return fmt.Errorf("load mapped status for %s: %w", mapping.JiraName, err)
+		}
+		if !exists {
+			return fmt.Errorf("jira status %s references a status that does not exist", mapping.JiraName)
+		}
+	}
+	for _, mapping := range req.Mappings.IssueTypes {
+		if mapping.CreateNew || mapping.WindshiftID == nil {
+			continue
+		}
+		exists, err := h.imports.ItemTypeExists(*mapping.WindshiftID)
+		if err != nil {
+			return fmt.Errorf("load mapped item type for %s: %w", mapping.JiraName, err)
+		}
+		if !exists {
+			return fmt.Errorf("jira issue type %s references an item type that does not exist", mapping.JiraName)
+		}
+	}
+	for _, mapping := range req.Mappings.CustomFields {
+		if mapping.Action != "map" || mapping.WindshiftID == nil {
+			continue
+		}
+		exists, err := h.imports.CustomFieldExists(*mapping.WindshiftID)
+		if err != nil {
+			return fmt.Errorf("load mapped custom field for %s: %w", mapping.JiraName, err)
+		}
+		if !exists {
+			return fmt.Errorf("jira field %s references a custom field that does not exist", mapping.JiraName)
+		}
+	}
+	return nil
+}
+
 // StartImport handles POST /api/admin/jira-import/start
 // Starts a background import job and returns immediately with the job ID
 func (h *JiraImportHandler) StartImport(w http.ResponseWriter, r *http.Request) {
@@ -173,6 +235,10 @@ func (h *JiraImportHandler) StartImport(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if err := h.validateJiraWorkspaceMappings(req); err != nil {
+		respondValidationError(w, r, err.Error())
+		return
+	}
+	if err := h.validateJiraEntityMappings(req); err != nil {
 		respondValidationError(w, r, err.Error())
 		return
 	}

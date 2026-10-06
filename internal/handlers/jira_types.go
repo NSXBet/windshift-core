@@ -66,6 +66,7 @@ type JiraAnalysisResult struct {
 	Versions                  []JiraVersionInfo                      `json:"versions"`
 	AssetSchemas              []JiraAssetSchemaInfo                  `json:"asset_schemas,omitempty"`
 	ServiceManagementProjects []JiraServiceManagementProjectAnalysis `json:"service_management_projects,omitempty"`
+	MappingTargets            jiraimport.MappingTargets              `json:"mapping_targets"`
 	Xray                      JiraXrayAnalysis                       `json:"xray"`
 	TotalIssues               int                                    `json:"total_issues"`
 	TotalAssets               int                                    `json:"total_assets"`

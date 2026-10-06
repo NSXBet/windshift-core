@@ -32,8 +32,11 @@ export default {
     },
     mapping: {
       workspaces: 'Рабочие пространства', workspacesDesc: 'Каждый проект Jira станет рабочим пространством Windshift',
+      createNewWorkspace: 'Создать новое рабочее пространство',
       issueTypes: 'Типы задач', issueTypesDesc: 'Типы задач будут созданы в Windshift как типы элементов',
+      createNewItemType: 'Создать новый тип элемента',
       statuses: 'Статусы', statusesDesc: 'Статусы будут созданы и сгруппированы по категориям',
+      createNewStatus: 'Создать новый статус',
       customFields: 'Настраиваемые поля', customFieldsDesc: 'Поля, которые можно сопоставить, будут созданы в Windshift',
       versions: 'Версии / этапы', versionsDesc: 'Версии Jira будут импортированы как этапы рабочего пространства.',
       subtask: 'Подзадача', create: 'Создать', skip: 'Пропустить',

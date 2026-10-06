@@ -162,6 +162,18 @@ export const jiraImport = {
   get mappings() {
     return mappingsState;
   },
+  // Existing Windshift entities the operator may map onto. Empty lists mean
+  // only "create new" is available.
+  get mappingTargets() {
+    return (
+      analysisState.result?.mapping_targets || {
+        workspaces: [],
+        item_types: [],
+        statuses: [],
+        custom_fields: [],
+      }
+    );
+  },
   get import() {
     return importState;
   },
@@ -567,10 +579,13 @@ export const jiraImport = {
       case 'mapping':
         return (
           analysisState.result !== null &&
-          mappingsState.workspaces.every(
-            (mapping) =>
-              !mapping.workspaceKeyCollisionFound || mapping.keyAliasAcknowledged === true
-          )
+          mappingsState.workspaces.every((mapping) => {
+            if (!mapping.createNew) return mapping.windshiftId != null;
+            return (
+              Boolean(mapping.newWorkspaceName?.trim() && mapping.newWorkspaceKey?.trim()) &&
+              (!mapping.workspaceKeyCollisionFound || mapping.keyAliasAcknowledged === true)
+            );
+          })
         );
       case 'preview':
         return true;

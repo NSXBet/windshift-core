@@ -24,8 +24,8 @@ func NewItemTypeRepository(db database.Database) *ItemTypeRepository {
 }
 
 const (
-	itemTypeColumns   = "id, COALESCE(builtin_key, ''), name, description, is_default, icon, color, hierarchy_level, sort_order, created_at, updated_at"
-	itemTypeColumnsIT = "it.id, COALESCE(it.builtin_key, ''), it.name, it.description, it.is_default, it.icon, it.color, it.hierarchy_level, it.sort_order, it.created_at, it.updated_at"
+	itemTypeColumns   = "id, COALESCE(builtin_key, ''), name, COALESCE(description, ''), is_default, COALESCE(icon, ''), COALESCE(color, ''), hierarchy_level, sort_order, created_at, updated_at"
+	itemTypeColumnsIT = "it.id, COALESCE(it.builtin_key, ''), it.name, COALESCE(it.description, ''), it.is_default, COALESCE(it.icon, ''), COALESCE(it.color, ''), it.hierarchy_level, it.sort_order, it.created_at, it.updated_at"
 )
 
 // scanItemType reads a full item_types row (in itemTypeColumns order) into it.

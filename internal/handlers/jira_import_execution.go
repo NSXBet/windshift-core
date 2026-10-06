@@ -2103,11 +2103,35 @@ func (h *JiraImportHandler) ensureJiraTimeProject(jobID string, workspaceID int,
 	return h.imports.EnsureTimeProject(jobID, workspaceID, projectKey, projectName)
 }
 
-// ensureWorkspace creates a dedicated workspace for an imported Jira project.
-// createdByUserID grants the import initiator workspace admin access; pass 0 if unknown.
+// ensureWorkspace resolves the target workspace for an imported Jira project.
+// It either reuses an existing workspace (recording reuse provenance so cleanup
+// never deletes it) or creates a dedicated workspace. createdByUserID grants
+// the import initiator workspace admin access on creation; pass 0 if unknown.
 func (h *JiraImportHandler) ensureWorkspace(ctx context.Context, jobID string, mapping *WorkspaceMapping, createdByUserID int) (int, error) {
-	if !mapping.CreateNew || mapping.WindshiftID != nil {
-		return 0, fmt.Errorf("jira project %s must create a new workspace; existing workspaces cannot be reused", mapping.JiraKey)
+	if !mapping.CreateNew {
+		if mapping.WindshiftID == nil {
+			return 0, fmt.Errorf("jira project %s must choose a target workspace", mapping.JiraKey)
+		}
+		target, err := h.imports.WorkspaceImportTarget(*mapping.WindshiftID)
+		if err != nil {
+			return 0, fmt.Errorf("load reused workspace for %s: %w", mapping.JiraKey, err)
+		}
+		if target == nil {
+			return 0, fmt.Errorf("jira project %s references a workspace that cannot be imported into", mapping.JiraKey)
+		}
+		// Downstream setup (time project, boards) reads the name/key.
+		mapping.NewWorkspaceName = target.Name
+		mapping.NewWorkspaceKey = target.Key
+		if err := h.recordMapping(jobID, "workspace", mapping.JiraKey, mapping.JiraKey, target.ID, map[string]any{
+			"action":      "reuse_existing",
+			"was_created": false,
+		}); err != nil {
+			return 0, fmt.Errorf("record Jira workspace mapping: %w", err)
+		}
+		return target.ID, nil
+	}
+	if mapping.WindshiftID != nil {
+		return 0, fmt.Errorf("jira project %s cannot both create a new workspace and reuse an existing one", mapping.JiraKey)
 	}
 
 	workspaceSvc := services.NewWorkspaceService(h.db)
