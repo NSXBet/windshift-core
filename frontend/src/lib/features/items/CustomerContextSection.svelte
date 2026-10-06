@@ -66,9 +66,11 @@
     data-testid="customer-context-toggle"
     onclick={toggle}
   >
-    <span class="flex items-center gap-2 text-sm font-semibold" style="color: var(--ds-text);">
-      <Building2 class="w-4 h-4 flex-shrink-0" style="color: var(--ds-text-subtle);" />
-      {t('items.customerContext')}
+    <span class="flex items-center gap-2">
+      <Building2 class="w-3.5 h-3.5 flex-shrink-0" style="color: var(--ds-text-subtle);" />
+      <Text variant="subtle" size="xs" weight="semibold" class="uppercase tracking-wider">
+        {t('items.customerContext')}
+      </Text>
     </span>
     <ChevronRight
       class="w-4 h-4 flex-shrink-0 transition-transform {expanded ? 'rotate-90' : ''}"
@@ -155,35 +157,35 @@
           </div>
         {/if}
 
-        <div data-testid="customer-context-assets">
-          <span class="flex items-center gap-2">
-            <Package class="w-4 h-4 flex-shrink-0" style="color: var(--ds-text-subtle);" />
+        <div class="flex items-start gap-2" data-testid="customer-context-assets">
+          <Package class="w-4 h-4 mt-0.5 flex-shrink-0" style="color: var(--ds-text-subtle);" />
+          <div class="min-w-0 flex-1">
             <Text variant="subtle" size="xs" weight="semibold" class="uppercase tracking-wider">
               {t('items.customerContextAssets')}
             </Text>
-          </span>
-          {#if assets.length === 0}
-            <div class="mt-1">
-              <Text variant="subtle" size="sm">{t('items.customerContextAssetsEmpty')}</Text>
-            </div>
-          {:else}
-            <div class="mt-2 space-y-1">
-              {#each assets as asset (asset.link_id)}
-                <div
-                  class="px-2 py-1.5 rounded border"
-                  style="border-color: var(--ds-border); background: var(--ds-surface-raised);"
-                  data-testid={`customer-context-asset-${asset.id}`}
-                >
-                  <div class="text-sm truncate" style="color: var(--ds-text);">{asset.title}</div>
-                  {#if asset.type_name || asset.set_name}
-                    <div class="text-xs truncate" style="color: var(--ds-text-subtle);">
-                      {asset.type_name || asset.set_name}
-                    </div>
-                  {/if}
-                </div>
-              {/each}
-            </div>
-          {/if}
+            {#if assets.length === 0}
+              <div class="mt-1">
+                <Text variant="subtle" size="sm">{t('items.customerContextAssetsEmpty')}</Text>
+              </div>
+            {:else}
+              <div class="mt-2 space-y-1">
+                {#each assets as asset (asset.link_id)}
+                  <div
+                    class="px-2 py-1.5 rounded border"
+                    style="border-color: var(--ds-border); background: var(--ds-surface-raised);"
+                    data-testid={`customer-context-asset-${asset.id}`}
+                  >
+                    <div class="text-sm truncate" style="color: var(--ds-text);">{asset.title}</div>
+                    {#if asset.type_name || asset.set_name}
+                      <div class="text-xs truncate" style="color: var(--ds-text-subtle);">
+                        {asset.type_name || asset.set_name}
+                      </div>
+                    {/if}
+                  </div>
+                {/each}
+              </div>
+            {/if}
+          </div>
         </div>
       </div>
     {/if}

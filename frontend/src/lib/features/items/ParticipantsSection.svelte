@@ -90,9 +90,11 @@
 
 <div class="pt-4 mt-4 border-t" style="border-color: var(--ds-border);">
   <div class="flex items-center justify-between gap-2 group">
-    <div class="flex items-center gap-2 text-sm font-semibold" style="color: var(--ds-text);">
-      <Users class="w-4 h-4" style="color: var(--ds-text-subtle);" />
-      {t('items.participants')}
+    <div class="flex items-center gap-2">
+      <Users class="w-3.5 h-3.5 flex-shrink-0" style="color: var(--ds-text-subtle);" />
+      <Text variant="subtle" size="xs" weight="semibold" class="uppercase tracking-wider">
+        {t('items.participants')}
+      </Text>
     </div>
     {#if canEdit && !loading}
       <button
