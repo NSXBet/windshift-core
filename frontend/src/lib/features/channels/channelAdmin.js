@@ -20,6 +20,39 @@ export function parseChannelConfig(config) {
   return config;
 }
 
+/**
+ * Email channels whose tickets surface in a portal. Intakes targeting the
+ * portal own the link since WI-1644; the legacy email_connected_portal_id is
+ * kept as a fallback so links that predate the migration still render.
+ */
+export async function loadPortalConnectedMailboxes(portalId) {
+  const emailChannels = await api.channels.getAll({
+    type: 'email',
+    direction: 'inbound',
+    include_disabled: true,
+  });
+  const channels = Array.isArray(emailChannels) ? emailChannels : [];
+  const linked = [];
+  for (const channel of channels) {
+    if (parseChannelConfig(channel.config)?.email_connected_portal_id === portalId) {
+      linked.push(channel);
+      continue;
+    }
+    let intakes = [];
+    try {
+      intakes = (await api.channelIntakes.list(channel.id)) ?? [];
+    } catch {
+      intakes = [];
+    }
+    if (
+      intakes.some((intake) => intake.target_type === 'portal' && intake.target_id === portalId)
+    ) {
+      linked.push(channel);
+    }
+  }
+  return linked;
+}
+
 export function channelBasicFormData(channel) {
   return {
     name: channel?.name || '',

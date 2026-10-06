@@ -4,10 +4,11 @@ import { itemLiveUpdates } from '../stores/itemLiveUpdates.svelte.js';
 const DEBOUNCE_MS = 250;
 
 /**
- * Subscribes to an item's event stream and batches targeted reloads. Every
- * healthy connection (including the first) performs one full reconcile so a
- * mutation between the initial snapshot and the subscription is not missed.
- * Polling remains the fallback while disconnected or after a refresh failure.
+ * Subscribes to an item's event stream and batches targeted reloads. Callers
+ * open the stream before their initial snapshot, so the first healthy
+ * connection is already covered; only a reconnect (or an error before the
+ * first connect) reconciles. Polling remains the fallback while disconnected
+ * or after a refresh failure.
  *
  * @param {() => (number|string|null|undefined)} getItemId
  * @param {{ onReconcile?: Function, onItem?: Function, onChildren?: Function, onComment?: Function, onLinks?: Function, onZammad?: Function, onDeleted?: Function }} handlers
@@ -122,13 +123,21 @@ export function normalizeItemEventStreamID(itemId) {
  * recovery after a gap. Exported as a pure helper for regression tests.
  */
 export function createConnectionReconcileTracker() {
+  let connectedOnce = false;
+  let disconnected = false;
+
   return {
-    // Reconcile on the first healthy connection too: a mutation can land
-    // between the initial snapshot and the subscription, and the stream only
-    // replays changes that happen after it is established.
+    // The caller subscribes before taking its initial snapshot, so the first
+    // healthy connection has no gap to reconcile. A reconnect or an error
+    // before the first connect means changes may have been missed.
     markConnected() {
-      return true;
+      const shouldReconcile = connectedOnce || disconnected;
+      connectedOnce = true;
+      disconnected = false;
+      return shouldReconcile;
     },
-    markDisconnected() {},
+    markDisconnected() {
+      disconnected = true;
+    },
   };
 }

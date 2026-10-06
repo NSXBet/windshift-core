@@ -247,6 +247,29 @@
     navigate(`/m/new?parent=${itemId}`);
   }
 
+  // Live updates (WI-484). Mobile reloads via refresh() (item record,
+  // transitions, children, watch) for every granular kind — the same work the
+  // poll did — and dispatches the comment event the embedded Comments listens
+  // for. The stream opens before the initial snapshot so a first-connect
+  // reconcile is unnecessary; reconnect/stale still run refresh().
+  useItemEventStream(() => itemId, {
+    // Full reconcile also refreshes the embedded Comments (separate component),
+    // so a comment that arrived before the stream connected isn't missed.
+    onReconcile: () => {
+      refresh();
+      window.dispatchEvent(new CustomEvent('item-comments-changed', { detail: { itemId } }));
+      window.dispatchEvent(new CustomEvent('item-scm-links-changed', { detail: { itemId } }));
+    },
+    onItem: () => refresh(),
+    onChildren: () => refresh(),
+    onLinks: () => {
+      refresh();
+      window.dispatchEvent(new CustomEvent('item-scm-links-changed', { detail: { itemId } }));
+    },
+    onDeleted: () => handleDeleted(),
+    onComment: () => window.dispatchEvent(new CustomEvent('item-comments-changed', { detail: { itemId } })),
+  });
+
   // Reload whenever the item id changes — the component is not remounted when
   // navigating item → item (e.g. tapping a sub-item), so onMount wouldn't fire.
   $effect(() => {
@@ -322,28 +345,6 @@
   // the stream drops or is unsupported.
   useWorkItemPoller(() => refresh(), { enabled: () => !itemLiveUpdates.isLive(itemId) });
   $effect(() => agentRunBus.subscribe(() => refresh()));
-
-  // Live updates (WI-484). Mobile reloads via refresh() (item record,
-  // transitions, children, watch) for every granular kind — the same work the
-  // poll did — and dispatches the comment event the embedded Comments listens
-  // for. connect/reconnect/stale also run refresh() to reconcile.
-  useItemEventStream(() => itemId, {
-    // Full reconcile also refreshes the embedded Comments (separate component),
-    // so a comment that arrived before the stream connected isn't missed.
-    onReconcile: () => {
-      refresh();
-      window.dispatchEvent(new CustomEvent('item-comments-changed', { detail: { itemId } }));
-      window.dispatchEvent(new CustomEvent('item-scm-links-changed', { detail: { itemId } }));
-    },
-    onItem: () => refresh(),
-    onChildren: () => refresh(),
-    onLinks: () => {
-      refresh();
-      window.dispatchEvent(new CustomEvent('item-scm-links-changed', { detail: { itemId } }));
-    },
-    onDeleted: () => handleDeleted(),
-    onComment: () => window.dispatchEvent(new CustomEvent('item-comments-changed', { detail: { itemId } })),
-  });
 
   // The viewed item was deleted elsewhere: toast and leave the now-stale detail.
   function handleDeleted() {

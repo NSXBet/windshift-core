@@ -17,6 +17,7 @@ import (
 	"windshift/internal/markdown"
 	"windshift/internal/models"
 	"windshift/internal/repository"
+	"windshift/internal/sla"
 	"windshift/internal/validation"
 )
 
@@ -74,6 +75,9 @@ type ItemApplicationService struct {
 	matrix     *TransitionMatrixService
 	bulk       *ItemUpdateService
 	mentions   *MentionService
+	// clock is the SLA evaluation clock. Reporting must share it so an
+	// ongoing-breach snapshot matches the engine's "now"; nil means wall time.
+	clock sla.Clock
 }
 
 func NewItemApplicationService(
@@ -102,6 +106,20 @@ func NewItemApplicationService(
 func (s *ItemApplicationService) WithCache(cache *ItemCacheService) *ItemApplicationService {
 	s.cache = cache
 	return s
+}
+
+// WithClock makes SLA-derived reporting use the engine's clock.
+func (s *ItemApplicationService) WithClock(clock sla.Clock) *ItemApplicationService {
+	s.clock = clock
+	return s
+}
+
+// now returns the SLA clock instant, falling back to wall time.
+func (s *ItemApplicationService) now() time.Time {
+	if s.clock != nil {
+		return s.clock.Now()
+	}
+	return time.Now()
 }
 
 func (s *ItemApplicationService) WithWorkflow(conditions *ConditionService, events *EventCoordinator, issueSync ItemIssueSync) *ItemApplicationService {

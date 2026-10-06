@@ -169,10 +169,20 @@
             </div>
           </div>
           <div class="flex items-center gap-1 flex-shrink-0">
-            <Button variant="ghost" size="small" onclick={() => startEdit(intake)}>
+            <Button
+              variant="ghost"
+              size="small"
+              dataTestid="channel-intake-edit-{intake.id}"
+              onclick={() => startEdit(intake)}
+            >
               <IconPencil size={14} />
             </Button>
-            <Button variant="ghost" size="small" onclick={() => remove(intake)}>
+            <Button
+              variant="ghost"
+              size="small"
+              dataTestid="channel-intake-delete-{intake.id}"
+              onclick={() => remove(intake)}
+            >
               <IconTrash size={14} />
             </Button>
           </div>

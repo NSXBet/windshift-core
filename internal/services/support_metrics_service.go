@@ -673,8 +673,9 @@ func (s *ItemApplicationService) supportSLATotals(ctx context.Context, where str
 			OR (c.status = 'ongoing' AND c.started_at < ?)`
 	// Ongoing breach state is as of now, not the report's end: a deadline later
 	// today must not read as breached, and historical bounds must not hide a
-	// cycle that is overdue right now.
-	now := time.Now()
+	// cycle that is overdue right now. Use the SLA engine's clock so reporting
+	// agrees with the cycles it evaluates.
+	now := s.now()
 	// Placeholder order follows the SQL text: the now-bound in the SELECT
 	// clause comes first, then the scope args, then the window bounds.
 	args := append([]any{now}, whereArgs...)

@@ -11,7 +11,12 @@
   import ChannelAdminSettings from './ChannelAdminSettings.svelte';
   import ChannelPortalConfig from './ChannelPortalConfig.svelte';
   import ChannelManagersTab from '../../settings/ChannelManagersTab.svelte';
-  import { channelBasicFormData, parseChannelConfig, saveChannelSettings } from './channelAdmin.js';
+  import {
+    channelBasicFormData,
+    loadPortalConnectedMailboxes,
+    parseChannelConfig,
+    saveChannelSettings,
+  } from './channelAdmin.js';
 
   let channel = $state(null);
   let loading = $state(true);
@@ -86,21 +91,13 @@
     }
   }
 
-  // Email channels linked to this portal, derived from each channel's
-  // email_connected_portal_id config. Best-effort: a load failure leaves the
-  // previous (or empty) list rather than blocking the settings page.
+  // Email channels linked to this portal. Best-effort: a load failure leaves
+  // the previous (or empty) list rather than blocking the settings page.
   async function loadConnectedMailboxes(portalId, requestSequence) {
     try {
-      const emailChannels = await api.channels.getAll({
-        type: 'email',
-        direction: 'inbound',
-        include_disabled: true,
-      });
+      const linked = await loadPortalConnectedMailboxes(portalId);
       if (requestSequence !== loadSequence) return;
-      connectedMailboxes = emailChannels.filter((ch) => {
-        const chConfig = parseChannelConfig(ch.config) || {};
-        return chConfig.email_connected_portal_id === portalId;
-      });
+      connectedMailboxes = linked;
     } catch (err) {
       console.error('Failed to load connected mailboxes:', err);
       if (requestSequence === loadSequence) connectedMailboxes = [];

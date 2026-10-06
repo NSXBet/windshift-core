@@ -1881,7 +1881,8 @@ func (s *Server) initialize() error {
 	).WithReads(s.activityTracker, approvalService).
 		WithCache(itemHandler.ItemCacheService()).
 		WithWorkflow(conditionService, eventCoordinator, issueSyncService).
-		WithMutationEffects(mentionService)
+		WithMutationEffects(mentionService).
+		WithClock(slaClock)
 	itemDetailApplication := services.NewItemDetailApplicationService(s.db, itemApplication, itemLinkService, permService).
 		WithContextReaders(screenHandler, requestTypeHandler, actionApplication).
 		WithStoryPointRollups(repository.NewItemRepository(s.db))

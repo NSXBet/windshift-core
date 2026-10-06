@@ -19,6 +19,7 @@
   import ChannelSMTPConfig from '../features/channels/ChannelSMTPConfig.svelte';
   import ChannelFormConfig from '../features/channels/ChannelFormConfig.svelte';
   import FormBuilder from '../features/channels/FormBuilder.svelte';
+  import { loadPortalConnectedMailboxes } from '../features/channels/channelAdmin.js';
   import { formatAuthenticatedDateTime } from '../utils/authenticatedDateFormatter.js';
 	import TextareaField from '../components/TextareaField.svelte';
 	import SelectField from '../components/SelectField.svelte';
@@ -318,15 +319,10 @@
     }
   }
 
-  // Email channels whose senders' tickets surface in this portal, derived
-  // from each channel's email_connected_portal_id config.
+  // Email channels whose senders' tickets surface in this portal.
   async function loadConnectedMailboxes() {
     try {
-      const emailChannels = await api.channels.getAll({ type: 'email', direction: 'inbound', include_disabled: true });
-      connectedMailboxes = emailChannels.filter((ch) => {
-        const chConfig = parseChannelConfig(ch.config) || {};
-        return chConfig.email_connected_portal_id === channel.id;
-      });
+      connectedMailboxes = await loadPortalConnectedMailboxes(channel.id);
     } catch (error) {
       console.error('Failed to load connected mailboxes:', error);
       connectedMailboxes = [];
