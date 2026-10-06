@@ -538,24 +538,24 @@
 <StaticViewBackground
   backgroundStyle={styles.backgroundStyle}
   contextVars={styles.contextVars}
+  fullWidth
+  rootClass="h-full"
+  contentClass="flex h-full flex-col"
   testid="support-queue-view"
 >
-  <div class="mb-6">
-    <ViewHeader
-      viewName={t('supportQueue.title')}
-      itemCount={activeQueueCount}
-      shownCount={loadingItems ? null : filteredItems.length}
-    />
-  </div>
-
-  {#if loadingQueues}
-    <div class="flex items-center gap-2 py-8" data-testid="support-queue-loading">
-      <Spinner class="w-4 h-4" />
-      <span style="color: var(--ctx-text-subtle, var(--ds-text-subtle));">{t('supportQueue.loading')}</span>
+  <!-- Chrome stays at viewport width; only the table canvas scrolls, so wide
+       column sets pan under a toolbar that is always reachable (like the board). -->
+  <div class="flex-shrink-0 px-6 pt-3">
+    <div class="mb-6">
+      <ViewHeader
+        viewName={t('supportQueue.title')}
+        itemCount={activeQueueCount}
+        shownCount={loadingItems ? null : filteredItems.length}
+      />
     </div>
-  {:else}
-    <div class="flex flex-wrap items-center justify-between gap-4 mb-4">
-      <div class="flex flex-wrap items-center gap-2" role="tablist" data-testid="support-queue-tabs">
+
+    {#if !loadingQueues}
+      <div class="flex flex-wrap items-center gap-2 mb-3" role="tablist" data-testid="support-queue-tabs">
         {#each queues as entry (queueRef(entry))}
           <div
             class="flex items-center rounded-md border transition-colors"
@@ -607,7 +607,7 @@
         {/if}
       </div>
 
-      <div class="flex items-center gap-2">
+      <div class="flex items-center justify-between gap-4 mb-4">
         <SearchInput
           bind:value={searchQuery}
           placeholder={t('common.search')}
@@ -620,7 +620,6 @@
           onchange={handleColumnChange}
         />
       </div>
-    </div>
 
     {#if selectedIds.size > 0}
       <div
@@ -670,98 +669,111 @@
           {t('supportQueue.bulkClear')}
         </Button>
       </div>
-    {/if}
-
-    {#if loadingItems}
-      <div class="flex items-center gap-2 py-8">
-        <Spinner class="w-4 h-4" />
-      </div>
-    {:else if filteredItems.length === 0}
-      <div data-testid="support-queue-empty">
-        <EmptyState title={t('supportQueue.empty')} description={t('supportQueue.emptyDescription')} />
-      </div>
-    {:else}
-      <div class="rounded-xl border shadow-sm overflow-x-auto" style="{styles.tableStyle(12)} border-color: var(--ctx-border, var(--ds-border));" data-testid="support-queue-table">
-        <TableHeaderBar
-          columns={gridTemplateColumns}
-          minWidth={gridMinWidth}
-          style={styles.tableHeaderStyle}
-        >
-          <div></div>
-          {#each listColumns as column (column.field_identifier)}
-            <div data-testid={`support-queue-header-${column.field_identifier}`}>{columnLabel(column)}</div>
-          {/each}
-          <div>{t('common.actions')}</div>
-        </TableHeaderBar>
-
-        <div>
-          {#each filteredItems as item (item.id)}
-            <div
-              class="px-4 py-3 list-row transition-colors"
-              style="border-top: 1px solid var(--ds-border);"
-              data-item-row
-              data-item-id={item.id}
-              data-testid={`support-queue-row-${item.id}`}
-            >
-              <LazyRender>
-                {#snippet children()}
-                  <div
-                    class="grid gap-4 items-center"
-                    style="grid-template-columns: {gridTemplateColumns}; min-width: {gridMinWidth};"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selectedIds.has(item.id)}
-                      aria-label={t('supportQueue.selectAll')}
-                      data-testid={`support-queue-item-checkbox-${item.id}`}
-                      onchange={() => toggleItem(item.id)}
-                    />
-                    {#each listColumns as column (column.field_identifier)}
-                      <div class="min-w-0 overflow-hidden">
-                        <ListCellRenderer
-                          {item}
-                          {column}
-                          {workspace}
-                          canEdit={canEdit && item.workspace_id === Number(workspaceId)}
-                          {statuses}
-                          {statusCategories}
-                          {priorities}
-                          {milestones}
-                          {iterations}
-                          {users}
-                          {projects}
-                          {itemTypes}
-                          {customFieldDefinitions}
-                          onitemUpdated={handleItemUpdated}
-                          onupdateError={handleUpdateError}
-                        />
-                      </div>
-                    {/each}
-
-                    <!-- Actions -->
-                    <div>
-                      <DropdownMenu
-                        triggerText=""
-                        triggerIcon={MoreHorizontal}
-                        triggerClass="p-2 rounded action-btn transition-colors"
-                        items={buildItemActions(item)}
-                      />
-                    </div>
-                  </div>
-                {/snippet}
-              </LazyRender>
-            </div>
-          {/each}
-        </div>
-      </div>
-
-      {#if itemsTruncated}
-        <p class="mt-2 text-xs" style="color: var(--ctx-text-subtle, var(--ds-text-subtle));">
-          {t('supportQueue.showingFirst', { n: items.length })}
-        </p>
       {/if}
     {/if}
-  {/if}
+  </div>
+
+  <div
+    class="min-h-0 min-w-0 max-w-full flex-1 w-full overflow-auto overscroll-contain"
+    data-testid="support-queue-canvas"
+  >
+    <div class="px-6 pb-6 min-w-fit">
+      {#if loadingQueues}
+        <div class="flex items-center gap-2 py-8" data-testid="support-queue-loading">
+          <Spinner class="w-4 h-4" />
+          <span style="color: var(--ctx-text-subtle, var(--ds-text-subtle));">{t('supportQueue.loading')}</span>
+        </div>
+      {:else if loadingItems}
+        <div class="flex items-center gap-2 py-8">
+          <Spinner class="w-4 h-4" />
+        </div>
+      {:else if filteredItems.length === 0}
+        <div data-testid="support-queue-empty">
+          <EmptyState title={t('supportQueue.empty')} description={t('supportQueue.emptyDescription')} />
+        </div>
+      {:else}
+        <div class="rounded-xl border shadow-sm overflow-hidden" style="{styles.tableStyle(12)} border-color: var(--ctx-border, var(--ds-border));" data-testid="support-queue-table">
+          <TableHeaderBar
+            columns={gridTemplateColumns}
+            minWidth={gridMinWidth}
+            style={styles.tableHeaderStyle}
+          >
+            <div></div>
+            {#each listColumns as column (column.field_identifier)}
+              <div data-testid={`support-queue-header-${column.field_identifier}`}>{columnLabel(column)}</div>
+            {/each}
+            <div>{t('common.actions')}</div>
+          </TableHeaderBar>
+
+          <div>
+            {#each filteredItems as item (item.id)}
+              <div
+                class="px-4 py-3 list-row transition-colors"
+                style="border-top: 1px solid var(--ds-border);"
+                data-item-row
+                data-item-id={item.id}
+                data-testid={`support-queue-row-${item.id}`}
+              >
+                <LazyRender>
+                  {#snippet children()}
+                    <div
+                      class="grid gap-4 items-center"
+                      style="grid-template-columns: {gridTemplateColumns}; min-width: {gridMinWidth};"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(item.id)}
+                        aria-label={t('supportQueue.selectAll')}
+                        data-testid={`support-queue-item-checkbox-${item.id}`}
+                        onchange={() => toggleItem(item.id)}
+                      />
+                      {#each listColumns as column (column.field_identifier)}
+                        <div class="min-w-0 overflow-hidden">
+                          <ListCellRenderer
+                            {item}
+                            {column}
+                            {workspace}
+                            canEdit={canEdit && item.workspace_id === Number(workspaceId)}
+                            {statuses}
+                            {statusCategories}
+                            {priorities}
+                            {milestones}
+                            {iterations}
+                            {users}
+                            {projects}
+                            {itemTypes}
+                            {customFieldDefinitions}
+                            onitemUpdated={handleItemUpdated}
+                            onupdateError={handleUpdateError}
+                          />
+                        </div>
+                      {/each}
+
+                      <!-- Actions -->
+                      <div>
+                        <DropdownMenu
+                          triggerText=""
+                          triggerIcon={MoreHorizontal}
+                          triggerClass="p-2 rounded action-btn transition-colors"
+                          items={buildItemActions(item)}
+                        />
+                      </div>
+                    </div>
+                  {/snippet}
+                </LazyRender>
+              </div>
+            {/each}
+          </div>
+        </div>
+
+        {#if itemsTruncated}
+          <p class="mt-2 text-xs" style="color: var(--ctx-text-subtle, var(--ds-text-subtle));">
+            {t('supportQueue.showingFirst', { n: items.length })}
+          </p>
+        {/if}
+      {/if}
+    </div>
+  </div>
 </StaticViewBackground>
 
 <Modal
