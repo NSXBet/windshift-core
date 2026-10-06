@@ -305,18 +305,21 @@
 
   async function saveInstructions() {
     if (!canAdmin || !adminProfile || !instructionsChanged || savingInstructions) return;
+    // Capture the exact text being submitted; edits made while the request is
+    // pending must stay unsaved and keep the Save button enabled.
+    const submitted = instructionsDraft;
     savingInstructions = true;
     instructionsSaved = false;
     actionError = '';
     try {
       await agentBindings.updateAgentConfig(workspaceId, agentId, {
-        instructions: instructionsDraft,
+        instructions: submitted,
         skill_ids: adminProfile.skill_ids || [],
       });
       const nextVersion = markNewDraftVersion();
       adminProfile = {
         ...adminProfile,
-        instructions: instructionsDraft,
+        instructions: submitted,
         profile_version: nextVersion,
       };
       instructionsSaved = true;

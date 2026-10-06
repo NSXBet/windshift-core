@@ -160,11 +160,16 @@ async function loadAndViewRequest(requestId) {
 async function addComment() {
   const slug = context.getSlug();
   if (!newComment.trim() || !selectedRequest || !slug) return;
+  const requestId = selectedRequest.id;
+  const draft = newComment;
   try {
     addingComment = true;
-    const comment = await api.portal.addRequestComment(slug, selectedRequest.id, newComment);
+    const comment = await api.portal.addRequestComment(slug, requestId, draft);
+    // The user may have switched requests while the POST was in flight; apply
+    // the result only to the request it belongs to.
+    if (selectedRequest?.id !== requestId) return;
     comments = [...comments, comment];
-    newComment = '';
+    if (newComment === draft) newComment = '';
   } catch (err) {
     console.error('Failed to add comment:', err);
     errorToast('Failed to add comment. Please try again.');

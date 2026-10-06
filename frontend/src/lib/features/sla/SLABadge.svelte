@@ -5,34 +5,33 @@
   import { formatInstant } from '../../utils/dateFormatter.js';
   import { getItemSLA, getSLAThresholds } from './slaState.js';
 
-  let { itemId = null, workspaceId = null } = $props();
+  let { itemId = null, workspaceId = null, refreshToken = 0 } = $props();
 
   let states = $state([]);
   let thresholds = $state([]);
   let loaded = $state(false);
   let requestGeneration = 0;
 
-  async function load(id, workspace) {
+  async function load(id, workspace, token) {
     if (!id) return;
     const generation = ++requestGeneration;
     loaded = false;
     const [stateList, thresholdList] = await Promise.all([getItemSLA(id, workspace), getSLAThresholds(workspace)]);
-    if (generation !== requestGeneration) return;
+    if (generation !== requestGeneration || token !== refreshToken) return;
     states = stateList ?? [];
     thresholds = thresholdList ?? [];
     loaded = true;
   }
 
   $effect(() => {
-    const id = itemId;
-    const workspace = workspaceId;
-    void load(id, workspace);
+    // refreshToken is read so the board can force a reload on its own cadence.
+    void load(itemId, workspaceId, refreshToken);
     return () => {
       requestGeneration++;
     };
   });
 
-  useEventListener(() => window, 'refresh-work-items', () => void load(itemId, workspaceId));
+  useEventListener(() => window, 'refresh-work-items', () => void load(itemId, workspaceId, refreshToken));
 
   function formatDuration(ms) {
     if (ms == null) return '';

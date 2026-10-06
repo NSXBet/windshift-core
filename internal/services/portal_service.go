@@ -487,6 +487,29 @@ func (s *PortalService) PortalServesRequestWorkspace(ctx context.Context, itemID
 	return portalServesWorkspace(vis, detail.WorkspaceID), nil
 }
 
+// PortalServedWorkspaceIDs returns the workspace IDs the portal channel
+// serves. An empty slice means the restriction is disabled (legacy config).
+// Portal callers that check many items should resolve the scope once.
+func (s *PortalService) PortalServedWorkspaceIDs(ctx context.Context, portalChannelID int) ([]int, error) {
+	vis, err := s.portalRequestVisibility(ctx, portalChannelID)
+	if err != nil {
+		return nil, err
+	}
+	return vis.ServedWorkspaceIDs, nil
+}
+
+// PortalServesWorkspace reports whether the portal channel's served-workspace
+// scope admits workspaceID. It is the workspace-level counterpart to
+// PortalServesRequestWorkspace and lets approval reads apply the same
+// restriction without re-resolving the item.
+func (s *PortalService) PortalServesWorkspace(ctx context.Context, portalChannelID, workspaceID int) (bool, error) {
+	vis, err := s.portalRequestVisibility(ctx, portalChannelID)
+	if err != nil {
+		return false, err
+	}
+	return portalServesWorkspace(vis, workspaceID), nil
+}
+
 // VerifyRequestOwnership verifies that a user owns a request
 // Returns true if the user owns the request within the specified channel.
 // Since WI-1547 the check also admits items created through enabled intake

@@ -38,6 +38,7 @@
   import { backlogStore, workspaceDataStore, workspacesStore, workspacePermissions } from '../../stores/index.js';
   import { useWorkItemPoller } from '../../composables/useWorkItemPoller.svelte.js';
   import { useCollectionEventStream } from '../../composables/useCollectionEventStream.svelte.js';
+  import { invalidateSLAState } from '../sla/slaState.js';
   import { agentRuns } from '../../stores/agentRuns.svelte.js';
   import { getVisibleColor, hexToRgb } from '../../utils/colorUtils.js';
   import { showCreatedItemToast } from '../../utils/createdItemToast.js';
@@ -582,6 +583,41 @@
   // Adaptive polling for board items: use cheap deltas, falling back to full refresh only when needed.
   const poller = useWorkItemPoller(() => refreshCollectionDeltas(), {
     enabled: () => !collectionStream.connected,
+  });
+
+  // SLA badges ride a board-level cadence instead of the SSE stream. Coupling
+  // them to per-change events would scale with board activity and do work for
+  // users who are not showing SLA; a visibility-gated TTL tick is flat and
+  // covers the wall-clock threshold crossings SSE cannot (WI-1642).
+  let slaRefreshToken = $state(0);
+  const showsSLAField = $derived(
+    cardFields.some((field) => field.field_type === 'system' && field.field_identifier === 'sla')
+  );
+  $effect(() => {
+    if (!showsSLAField || typeof window === 'undefined') return;
+    const base = 30_000;
+    const jitter = base * 0.1;
+    let timer = null;
+    const tick = () => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+      invalidateSLAState();
+      slaRefreshToken += 1;
+    };
+    const schedule = () => {
+      timer = setTimeout(() => {
+        tick();
+        schedule();
+      }, base + (Math.random() * 2 - 1) * jitter);
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') tick();
+    };
+    schedule();
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      if (timer) clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   });
 
   // Instant refresh after an AI chat agent run — surfaces tool-call effects
@@ -1802,6 +1838,7 @@
                                 textStyle={styles.glassTextStyle}
                                 dndAction={registerBoardCard}
                                 canDrag={canDragCard}
+                                refreshToken={slaRefreshToken}
                                 onopen={openItem}
                               />
                             {/each}

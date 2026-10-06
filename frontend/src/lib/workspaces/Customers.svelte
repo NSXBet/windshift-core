@@ -156,6 +156,14 @@
     }
   }
 
+  // Replace the stored organisation so a later revisit re-hydrates the detail
+  // view from the values that were actually saved.
+  function handleOrganisationUpdated(orgId, settings) {
+    customerOrganisations = customerOrganisations.map((org) =>
+      org.id === orgId ? { ...org, settings } : org
+    );
+  }
+
   async function loadPortalCustomers() {
     try {
       portalCustomers = await api.portalCustomers.getAll();
@@ -435,6 +443,7 @@
         {hasMoreCustomers}
         onLoadMore={loadMoreCustomers}
         {buildCustomerActions}
+        onOrganisationUpdated={handleOrganisationUpdated}
       />
     {/if}
   </div>

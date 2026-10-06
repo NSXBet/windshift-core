@@ -37,6 +37,7 @@
     hasMoreCustomers = false,
     onLoadMore = () => {},
     buildCustomerActions = () => [],
+    onOrganisationUpdated = () => {},
   } = $props();
 
   let activeTab = $state('contacts');
@@ -117,6 +118,14 @@
         request_sharing_audience: sharingAudience,
         visible_role_ids: sharingAudience === 'roles' ? sharingRoleIDs : [],
       });
+      // Persist the saved values back into the organisation record so a revisit
+      // does not re-hydrate the form from stale settings.
+      onOrganisationUpdated(organisation.id, {
+        ...(organisation.settings || {}),
+        request_sharing: sharingMode,
+        request_sharing_audience: sharingAudience,
+        request_visible_role_ids: sharingAudience === 'roles' ? [...sharingRoleIDs] : [],
+      });
       sharingSaved = true;
       successToast(t('workspaces.customers.sharingSaved') || 'Request sharing updated');
     } catch (err) {
@@ -130,51 +139,64 @@
   let orgDocuments = $state([]);
   let orgDocsLoading = $state(false);
   let orgDocsLoaded = $state(false);
+  // Plain (non-reactive) guards so a late response for a previous organisation
+  // cannot populate the current one.
+  let orgDocsOrgID = null;
 
   // Tickets tab state
   let orgTickets = $state([]);
   let orgTicketsLoading = $state(false);
   let orgTicketsLoaded = $state(false);
+  let orgTicketsOrgID = null;
 
   $effect(() => {
-    if (activeTab === 'files' && organisation?.id) {
-      const orgId = organisation.id;
-      orgDocsLoading = true;
-      orgDocsLoaded = false;
-      logbook.listDocumentsByOrganisation(orgId)
-        .then((result) => {
-          orgDocuments = result?.data ?? result ?? [];
-          if (!Array.isArray(orgDocuments)) orgDocuments = [];
-        })
-        .catch((err) => {
-          console.error('Failed to load organisation documents:', err);
-          orgDocuments = [];
-        })
-        .finally(() => {
-          orgDocsLoading = false;
-          orgDocsLoaded = true;
-        });
-    }
+    if (activeTab !== 'files' || !organisation?.id) return;
+    const orgId = organisation.id;
+    orgDocsOrgID = orgId;
+    orgDocsLoading = true;
+    orgDocsLoaded = false;
+    logbook.listDocumentsByOrganisation(orgId)
+      .then((result) => {
+        if (orgDocsOrgID !== orgId) return;
+        const list = result?.data ?? result ?? [];
+        orgDocuments = Array.isArray(list) ? list : [];
+      })
+      .catch((err) => {
+        if (orgDocsOrgID !== orgId) return;
+        console.error('Failed to load organisation documents:', err);
+        orgDocuments = [];
+      })
+      .finally(() => {
+        if (orgDocsOrgID !== orgId) return;
+        orgDocsLoading = false;
+        orgDocsLoaded = true;
+      });
   });
 
   $effect(() => {
-    if (activeTab === 'tickets' && organisation?.id && !orgTicketsLoaded) {
-      const orgId = organisation.id;
-      orgTicketsLoading = true;
-      api.customerOrganisations.getTickets(orgId)
-        .then((result) => {
-          orgTickets = result?.data ?? result ?? [];
-          if (!Array.isArray(orgTickets)) orgTickets = [];
-        })
-        .catch((err) => {
-          console.error('Failed to load organisation tickets:', err);
-          orgTickets = [];
-        })
-        .finally(() => {
-          orgTicketsLoading = false;
-          orgTicketsLoaded = true;
-        });
-    }
+    if (activeTab !== 'tickets' || !organisation?.id) return;
+    const orgId = organisation.id;
+    if (orgId === orgTicketsOrgID) return;
+    orgTicketsOrgID = orgId;
+    orgTickets = [];
+    orgTicketsLoading = true;
+    orgTicketsLoaded = false;
+    api.customerOrganisations.getTickets(orgId)
+      .then((result) => {
+        if (orgTicketsOrgID !== orgId) return;
+        const list = result?.data ?? result ?? [];
+        orgTickets = Array.isArray(list) ? list : [];
+      })
+      .catch((err) => {
+        if (orgTicketsOrgID !== orgId) return;
+        console.error('Failed to load organisation tickets:', err);
+        orgTickets = [];
+      })
+      .finally(() => {
+        if (orgTicketsOrgID !== orgId) return;
+        orgTicketsLoading = false;
+        orgTicketsLoaded = true;
+      });
   });
 
   let ticketColumns = $derived([

@@ -33,6 +33,7 @@
     // item; the action re-runs when this flips (e.g. permissions finish loading).
     canDrag = true,
     dndAction = () => {},
+    refreshToken = 0,
     onopen = null,
   } = $props();
 
@@ -177,7 +178,7 @@
         <DependencySummary {item} links={dependencyLinks} />
         {#if showsSLA}
           <span class="inline-flex shrink-0" data-testid={`board-card-sla-${item.id}`}>
-            <SLABadge itemId={item.id} workspaceId={item.workspace_id} />
+            <SLABadge itemId={item.id} workspaceId={item.workspace_id} {refreshToken} />
           </span>
         {/if}
         <span class="flex-1"></span>

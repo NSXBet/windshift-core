@@ -252,6 +252,10 @@ type supportTrend struct {
 
 	createdSegment *segmentAccumulator
 	eventSegment   *segmentAccumulator
+
+	// openingBacklog is the scoped open count at From. Without it the running
+	// backlog starts at zero and resolutions of older tickets erase new work.
+	openingBacklog int64
 }
 
 // supportTrend streams created tickets and fact events, then reconstructs the
@@ -344,8 +348,43 @@ func (s *ItemApplicationService) supportTrend(ctx context.Context, where string,
 		return nil, err
 	}
 
+	openingCreated, err := s.countItemsBefore(ctx, where, whereArgs, q.From)
+	if err != nil {
+		return nil, err
+	}
+	openingResolved, err := s.countResolvedBefore(ctx, where, whereArgs, q.From)
+	if err != nil {
+		return nil, err
+	}
+	if openingCreated > openingResolved {
+		trend.openingBacklog = openingCreated - openingResolved
+	}
+
 	trend.finish(q)
 	return trend, nil
+}
+
+// countItemsBefore counts scoped items created before the window start.
+func (s *ItemApplicationService) countItemsBefore(ctx context.Context, where string, whereArgs []any, before time.Time) (int64, error) {
+	query := `SELECT COUNT(*) ` + repository.ItemListFilterFromClause() + where + ` AND i.created_at < ?`
+	args := append(append([]any{}, whereArgs...), before)
+	var count int64
+	if err := s.db.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count opening backlog: %w", err)
+	}
+	return count, nil
+}
+
+// countResolvedBefore counts scoped resolutions that happened before the
+// window start, so the opening backlog can subtract them.
+func (s *ItemApplicationService) countResolvedBefore(ctx context.Context, where string, whereArgs []any, before time.Time) (int64, error) {
+	query := `SELECT COUNT(*) ` + repository.ItemListFilterFromClause() + ` JOIN item_support_events e ON e.item_id = i.id ` + where + ` AND e.kind = ? AND e.occurred_at < ?`
+	args := append(append([]any{}, whereArgs...), models.SupportEventResolved, before)
+	var count int64
+	if err := s.db.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count opening resolutions: %w", err)
+	}
+	return count, nil
 }
 
 func (t *supportTrend) finish(q SupportMetricsQuery) {
@@ -353,7 +392,7 @@ func (t *supportTrend) finish(q SupportMetricsQuery) {
 	sort.Slice(t.resolvedTimes, func(i, j int) bool { return t.resolvedTimes[i].Before(t.resolvedTimes[j]) })
 
 	createdIdx, resolvedIdx := 0, 0
-	open := 0
+	open := int(t.openingBacklog)
 	for i := range t.buckets {
 		bucketStart, err := time.ParseInLocation(time.DateOnly, t.buckets[i].BucketStart, q.Location)
 		if err != nil {
@@ -515,6 +554,27 @@ func (s *ItemApplicationService) supportSegmentRows(ctx context.Context, trend *
 	collect(trend.createdSegment)
 	collect(trend.eventSegment)
 
+	// Backlog and SLA-only segments still deserve a row; add their keys before
+	// labels/merging so a segment with no in-window creations is not dropped.
+	ensureKey := func(id int64) {
+		key := supportSegmentKey(q.Segment, id)
+		if _, ok := merged[key]; ok {
+			return
+		}
+		target := &partial{}
+		if id != 0 {
+			target.id = id
+			target.hasValue = true
+		}
+		merged[key] = target
+	}
+	for id := range backlogBySegment {
+		ensureKey(id)
+	}
+	for id := range breachedBySegment {
+		ensureKey(id)
+	}
+
 	ids := make([]int64, 0, len(merged))
 	for _, value := range merged {
 		if value.hasValue {
@@ -567,6 +627,15 @@ func (s *ItemApplicationService) visibleOrganisationIDs(userID int, orgIDs []int
 	return svc.FilterVisible(userID, orgIDs)
 }
 
+// supportSegmentKey mirrors segmentAccumulator.apply's key format so backlog
+// and SLA counts join the same rows. ID 0 is the unset (NULL) segment.
+func supportSegmentKey(segment string, id int64) string {
+	if id == 0 {
+		return segment + ":"
+	}
+	return fmt.Sprintf("%s:%d", segment, id)
+}
+
 func parseID(value string) int64 {
 	var parsed int64
 	_, _ = fmt.Sscanf(value, "%d", &parsed)
@@ -584,9 +653,8 @@ func (s *ItemApplicationService) supportBacklogBySegment(ctx context.Context, se
 			return row, rows.Scan(&row.segment, &row.count)
 		},
 		func(row segmentCountRow) error {
-			if row.segment.Valid {
-				result[row.segment.Int64] = row.count
-			}
+			// NULL maps to key 0 so the unset segment keeps its count.
+			result[row.segment.Int64] = row.count
 			return nil
 		})
 	return result, err
@@ -603,10 +671,14 @@ func (s *ItemApplicationService) supportSLATotals(ctx context.Context, where str
 		JOIN (SELECT i.id ` + repository.ItemListFilterFromClause() + where + `) scoped ON scoped.id = c.item_id
 		WHERE (c.status = 'completed' AND c.stopped_at >= ? AND c.stopped_at < ?)
 			OR (c.status = 'ongoing' AND c.started_at < ?)`
+	// Ongoing breach state is as of now, not the report's end: a deadline later
+	// today must not read as breached, and historical bounds must not hide a
+	// cycle that is overdue right now.
+	now := time.Now()
 	// Placeholder order follows the SQL text: the now-bound in the SELECT
 	// clause comes first, then the scope args, then the window bounds.
-	args := append([]any{q.To}, whereArgs...)
-	args = append(args, q.From, q.To, q.To)
+	args := append([]any{now}, whereArgs...)
+	args = append(args, q.From, q.To, now)
 	var completed, breached, ongoingBreached int64
 	if err := s.db.QueryRowContext(ctx, query, args...).Scan(&completed, &breached, &ongoingBreached); err != nil {
 		return nil, fmt.Errorf("SLA totals: %w", err)
@@ -623,7 +695,7 @@ func (s *ItemApplicationService) supportBreachedBySegment(ctx context.Context, s
 		FROM item_sla_cycles c
 		JOIN (SELECT i.id, ` + segExpr + ` AS seg ` + repository.ItemListFilterFromClause() + `
 			LEFT JOIN portal_customers pc ON pc.id = i.creator_portal_customer_id ` + where + `) scoped ON scoped.id = c.item_id
-		WHERE c.status = 'completed' AND c.stopped_at >= ? AND c.stopped_at < ?
+		WHERE c.status = 'completed' AND c.breached_at IS NOT NULL AND c.stopped_at >= ? AND c.stopped_at < ?
 		GROUP BY scoped.seg`
 	args := append(append([]any{}, whereArgs...), q.From, q.To)
 	result := map[int64]int64{}
@@ -633,9 +705,8 @@ func (s *ItemApplicationService) supportBreachedBySegment(ctx context.Context, s
 			return row, rows.Scan(&row.segment, &row.count)
 		},
 		func(row segmentCountRow) error {
-			if row.segment.Valid {
-				result[row.segment.Int64] = row.count
-			}
+			// NULL maps to key 0 so the unset segment keeps its count.
+			result[row.segment.Int64] = row.count
 			return nil
 		})
 	return result, err

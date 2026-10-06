@@ -28,6 +28,10 @@
   let config = $state(null);
   // Enabled nav ids for the scope being configured.
   let enabled = $state([]);
+  // Last set the server acknowledged. Failures roll back to this, not to a
+  // snapshot that may already be older than a later toggle.
+  let persisted = [];
+  let toggleGeneration = 0;
   let inherited = $state(true);
   let saving = $state(false);
   let collectionName = $state('');
@@ -134,6 +138,7 @@
       // never round-trip into its payload.
       enabled = enabled.filter((id) => COLLECTION_VIEW_IDS.has(id));
     }
+    persisted = [...enabled];
     inherited = Boolean(data?.view_settings_inherited) || !data?.view_settings;
   }
 
@@ -157,13 +162,17 @@
   let writeChain = Promise.resolve();
 
   function toggleRow(row) {
-    const before = enabled.slice();
+    const generation = ++toggleGeneration;
     enabled = isEnabled(row.id) ? enabled.filter((x) => x !== row.id) : [...enabled, row.id];
     writeChain = writeChain.then(async () => {
       try {
         await persistCurrent();
       } catch (error) {
-        enabled = before;
+        // Roll back to the last saved set only when no newer toggle arrived;
+        // otherwise the later toggle's queued save owns the current state.
+        if (generation === toggleGeneration) {
+          enabled = [...persisted];
+        }
         errorToast(t('navConfig.saveError', { error: error?.message || error }));
       }
     });
@@ -171,6 +180,9 @@
 
   async function persistCurrent() {
     saving = true;
+    // Capture the exact set being written so a later toggle during the await
+    // does not get marked as persisted.
+    const sent = [...enabled];
     try {
       // Round-trip the stored configuration fields: a PUT rewrites them, so
       // an omitted columns array would wipe the board's saved columns.
@@ -187,7 +199,7 @@
         })),
         show_rightmost_column_last_50: Boolean(config?.show_rightmost_column_last_50),
         completed_item_retention_days: config?.completed_item_retention_days ?? null,
-        view_settings: { enabled_views: [...enabled] },
+        view_settings: { enabled_views: sent },
       };
       // The PUT response carries the saved config with its effective view
       // settings; adopt it without touching the local toggle state so rows
@@ -195,6 +207,7 @@
       config = config?.id
         ? await api.collections.updateBoardConfiguration(collectionId, config.id, payload, workspaceId)
         : await api.collections.createBoardConfiguration(collectionId, workspaceId, payload);
+      persisted = sent;
       inherited = Boolean(config?.view_settings_inherited) || !config?.view_settings;
       if (collectionId) {
         viewSettingsStore.invalidate(workspaceId, collectionId);

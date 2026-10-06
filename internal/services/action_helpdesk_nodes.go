@@ -70,6 +70,9 @@ func (e *InsertCannedResponseExecutor) Execute(node *models.ActionNode, ctx *mod
 	}
 
 	actor := ctx.EffectiveActorID
+	if err := e.api.AuthorizeWorkspaceMutation(actor, workspaceID, models.PermissionItemComment); err != nil {
+		return err
+	}
 	rendered, isPrivate, err := e.canned.RenderForItem(workspaceID, config.CannedResponseID, itemID, true, AuditActor{UserID: actor})
 	if err != nil {
 		return fmt.Errorf("insert_canned_response: %w", err)
@@ -134,8 +137,12 @@ func (e *NotifyCustomerExecutor) Execute(node *models.ActionNode, ctx *models.Ex
 		return fmt.Errorf("notify_customer executor missing deps (customer notifier / NodeAPI)")
 	}
 	itemID := currentActionItemID(ctx)
-	if itemID <= 0 {
+	workspaceID := currentActionWorkspaceID(ctx)
+	if itemID <= 0 || workspaceID <= 0 {
 		return fmt.Errorf("notify_customer requires an item context")
+	}
+	if err := e.api.AuthorizeWorkspaceMutation(ctx.EffectiveActorID, workspaceID, models.PermissionItemComment); err != nil {
+		return err
 	}
 
 	var config models.NotifyCustomerNodeConfig
