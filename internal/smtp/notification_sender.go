@@ -474,7 +474,7 @@ func buildMime(opts mimeOptions) string {
 			}
 		}
 		if len(clean) > 0 {
-			headers += fmt.Sprintf("References: %s\r\n", strings.Join(clean, " "))
+			headers += foldHeaderValue("References", strings.Join(clean, " "))
 		}
 	}
 
@@ -489,6 +489,32 @@ func buildMime(opts mimeOptions) string {
 	return headers + textPart + htmlPart + ending
 }
 
+// foldHeaderValue folds a space-separated header value at 78 columns per RFC
+// 5322, keeping every line inside the 998-octet SMTP hard limit. Long Message-ID
+// chains (References) would otherwise exceed the limit on long threads.
+func foldHeaderValue(name, value string) string {
+	const softLimit = 78
+	var b strings.Builder
+	b.WriteString(name)
+	b.WriteString(": ")
+	column := len(name) + 2
+	for i, field := range strings.Fields(value) {
+		if i > 0 {
+			if column+1+len(field) > softLimit {
+				b.WriteString("\r\n ")
+				column = 1
+			} else {
+				b.WriteString(" ")
+				column++
+			}
+		}
+		b.WriteString(field)
+		column += len(field)
+	}
+	b.WriteString("\r\n")
+	return b.String()
+}
+
 // formatMessageIDHeader tolerates historical tracking rows that stored the
 // go-imap ENVELOPE form without angle brackets and always emits RFC 5322's
 // bracketed form on the wire.
@@ -501,19 +527,15 @@ func formatMessageIDHeader(value string) string {
 	return "<" + value + ">"
 }
 
-// dispatch picks the configured transport and sends the assembled MIME
+// dispatchContext picks the configured transport and sends the assembled MIME
 // message. Shared by sendEmail and SendThreadedEmail so the encryption switch
 // lives in exactly one place. Plaintext SMTP is allowed only without
 // authentication; empty or unknown modes are errors rather than downgrades.
 //
-// dispatch is a method (rather than a free function) so it can decrypt the
-// at-rest SMTPPassword before passing it to AUTH PLAIN — every caller goes
-// through the encryption-aware sender, even the channel-test path that loads
-// raw config from the DB on its own.
-func (s *NotificationSMTPSender) dispatch(config *models.ChannelConfig, toEmail, message string) error {
-	return s.dispatchContext(context.Background(), config, toEmail, message)
-}
-
+// It is a method (rather than a free function) so it can decrypt the at-rest
+// SMTPPassword before passing it to AUTH PLAIN — every caller goes through the
+// encryption-aware sender, even the channel-test path that loads raw config
+// from the DB on its own.
 func (s *NotificationSMTPSender) dispatchContext(ctx context.Context, config *models.ChannelConfig, toEmail, message string) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -750,11 +772,17 @@ type ThreadedEmailParams struct {
 // (Message-ID, In-Reply-To, References) so reply-tracking email clients
 // keep the conversation grouped.
 func (s *NotificationSMTPSender) SendThreadedEmail(params ThreadedEmailParams) error {
+	return s.SendThreadedEmailContext(context.Background(), params)
+}
+
+// SendThreadedEmailContext is SendThreadedEmail with cancellation propagated
+// through SMTP dialing, handshake, commands, and DATA completion.
+func (s *NotificationSMTPSender) SendThreadedEmailContext(ctx context.Context, params ThreadedEmailParams) error {
 	config, err := s.getSMTPConfig()
 	if err != nil {
 		return fmt.Errorf("failed to get SMTP config: %w", err)
 	}
-	return s.dispatch(config, params.ToEmail, buildMime(mimeOptions{
+	return s.dispatchContext(ctx, config, params.ToEmail, buildMime(mimeOptions{
 		FromEmail:  config.SMTPFromEmail,
 		FromName:   config.SMTPFromName,
 		ToEmail:    params.ToEmail,

@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 
 	"windshift/internal/smtp"
@@ -38,5 +39,6 @@ type TransactionalEmailSender interface {
 type ThreadedEmailSender interface {
 	IsSMTPConfigured() bool
 	SendThreadedEmail(params smtp.ThreadedEmailParams) error
+	SendThreadedEmailContext(ctx context.Context, params smtp.ThreadedEmailParams) error
 	RenderEmail(templateName string, data any) (subject, htmlBody, textBody string, err error)
 }

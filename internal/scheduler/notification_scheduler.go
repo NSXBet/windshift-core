@@ -72,7 +72,7 @@ type SMTPSender interface {
 }
 
 type emailReplyOutbox interface {
-	ProcessPendingReplies(limit int) (int, error)
+	ProcessPendingReplies(ctx context.Context, limit int) (int, error)
 }
 
 // SetEmailReplyOutbox wires the durable threaded-reply queue after the
@@ -205,7 +205,7 @@ func (ns *NotificationScheduler) processPendingNotificationsContext(ctx context.
 	replyOutbox := ns.replyOutbox
 	ns.mu.RUnlock()
 	if replyOutbox != nil {
-		delivered, err := replyOutbox.ProcessPendingReplies(maxBatchSize)
+		delivered, err := replyOutbox.ProcessPendingReplies(ctx, maxBatchSize)
 		batchesProcessed += delivered
 		if err != nil {
 			slog.Error("Failed to process pending threaded email replies", slog.Any("error", err))

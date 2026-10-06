@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
@@ -251,7 +252,7 @@ func (s *EmailReplyService) handleCommentCreated(params HandleCommentParams, del
 	s.outboxMu.Lock()
 	defer s.outboxMu.Unlock()
 	for _, outboxID := range outboxIDs {
-		if _, err := s.deliverPendingReply(outboxID); err != nil {
+		if _, err := s.deliverPendingReply(context.Background(), outboxID); err != nil {
 			return fmt.Errorf("threaded email queued for retry: %w", err)
 		}
 	}
@@ -464,7 +465,7 @@ func (s *EmailReplyService) sendItemNotice(item *models.Item, toEmail, toName, s
 
 // ProcessPendingReplies retries a bounded batch from the durable reply outbox.
 // It is called by NotificationScheduler on the existing SMTP cadence.
-func (s *EmailReplyService) ProcessPendingReplies(limit int) (int, error) {
+func (s *EmailReplyService) ProcessPendingReplies(ctx context.Context, limit int) (int, error) {
 	if limit <= 0 {
 		limit = 50
 	}
@@ -505,7 +506,11 @@ func (s *EmailReplyService) ProcessPendingReplies(limit int) (int, error) {
 	delivered := 0
 	var lastErr error
 	for _, outboxID := range outboxIDs {
-		sent, err := s.deliverPendingReply(outboxID)
+		if err := ctx.Err(); err != nil {
+			lastErr = err
+			break
+		}
+		sent, err := s.deliverPendingReply(ctx, outboxID)
 		if err != nil {
 			lastErr = err
 			continue
@@ -522,7 +527,7 @@ func (s *EmailReplyService) ProcessPendingReplies(limit int) (int, error) {
 	return delivered, lastErr
 }
 
-func (s *EmailReplyService) deliverPendingReply(outboxID int) (bool, error) {
+func (s *EmailReplyService) deliverPendingReply(ctx context.Context, outboxID int) (bool, error) {
 	var row emailReplyOutboxRow
 	// Atomically lease the row before crossing the SMTP boundary. The process
 	// mutex prevents duplicates within one server; this conditional UPDATE also
@@ -554,7 +559,7 @@ func (s *EmailReplyService) deliverPendingReply(outboxID int) (bool, error) {
 		s.recordReplyFailure(row.ID, row.AttemptCount, err)
 		return false, fmt.Errorf("decode pending email references: %w", err)
 	}
-	err = s.smtpSender.SendThreadedEmail(smtp.ThreadedEmailParams{
+	err = s.smtpSender.SendThreadedEmailContext(ctx, smtp.ThreadedEmailParams{
 		ToEmail:    row.ToEmail,
 		ToName:     row.ToName,
 		Subject:    row.Subject,
@@ -756,7 +761,7 @@ func (s *EmailReplyService) RetryPendingReply(channelID, commentID int) (deliver
 	}
 
 	for _, id := range retryable {
-		sent, err := s.deliverPendingReply(id)
+		sent, err := s.deliverPendingReply(context.Background(), id)
 		if err != nil {
 			return delivered, err
 		}
