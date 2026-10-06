@@ -247,6 +247,13 @@ export default {
     deleteAfterProcess: 'Delete after processing',
     deleteAfterProcessHelp:
       'Remove emails from the mailbox after creating items (use with caution)',
+    processingDisposition: 'After processing',
+    dispositionLeave: 'Leave in mailbox',
+    dispositionMarkRead: 'Mark as read',
+    dispositionDelete: 'Delete after processing',
+    dispositionHelp: 'What to do with an email once it has been converted to an item.',
+    dispositionDeleteHelp:
+      'Remove the email from the mailbox after creating the item (use with caution).',
     // Form Channel Configuration
     openForm: 'Open Form',
     formConfiguration: 'Public page',
@@ -565,6 +572,9 @@ export default {
       navigationComingSoon: 'Navigation customization coming soon.',
       requestTypesDescription:
         'Drag and drop request types to reorder. Click the menu to edit, rename, or delete.',
+      systemRequestType: 'System',
+      systemRequestTypeHelp:
+        'Routes email intake into this portal. Its item type is editable; it is hidden from the public form.',
       creates: 'Creates',
       fields: 'Fields',
       addFields: 'Add Fields',

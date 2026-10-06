@@ -39,6 +39,9 @@ func ValidateConfigForEnable(channel *models.Channel, config *models.ChannelConf
 	if config.EmailRateLimitPerHour != nil && *config.EmailRateLimitPerHour < 0 {
 		return fmt.Errorf("%w: email_rate_limit_per_hour must be 0 (unlimited) or a positive number", ErrConfigNotReady)
 	}
+	if !IsValidEmailDisposition(config.EmailProcessingDisposition) {
+		return fmt.Errorf("%w: email_processing_disposition must be leave, mark_read, or delete", ErrConfigNotReady)
+	}
 
 	switch strings.ToLower(config.EmailAuthMethod) {
 	case "oauth":
@@ -82,4 +85,34 @@ func ValidateConfigForEnable(channel *models.Channel, config *models.ChannelConf
 	}
 
 	return nil
+}
+
+// ResolveEmailDisposition returns the effective post-processing action for a
+// channel. The explicit enum wins; an empty value (legacy config) maps the two
+// booleans, with delete taking precedence over mark-read.
+func ResolveEmailDisposition(config *models.ChannelConfig) string {
+	if config == nil {
+		return models.EmailDispositionLeave
+	}
+	if config.EmailProcessingDisposition != "" && IsValidEmailDisposition(config.EmailProcessingDisposition) {
+		return config.EmailProcessingDisposition
+	}
+	if config.EmailDeleteAfterProcess {
+		return models.EmailDispositionDelete
+	}
+	if config.EmailMarkAsRead {
+		return models.EmailDispositionMarkRead
+	}
+	return models.EmailDispositionLeave
+}
+
+// IsValidEmailDisposition reports whether value is a recognized disposition or
+// the empty legacy sentinel.
+func IsValidEmailDisposition(value string) bool {
+	switch value {
+	case "", models.EmailDispositionLeave, models.EmailDispositionMarkRead, models.EmailDispositionDelete:
+		return true
+	default:
+		return false
+	}
 }

@@ -17,7 +17,10 @@ import (
 )
 
 // sanitizeRequestType sanitizes request-type fields and returns warnings.
+// The system intake Kind is server-owned: admin requests can never set it, so
+// only EnsureEmailRequestType can mint a system Email request type.
 func sanitizeRequestType(rt *models.RequestType) []string {
+	rt.Kind = ""
 	return sanitize.ApplyAllWithWarnings(
 		sanitize.Pair{Target: &rt.Name, Policy: sanitize.PlainTextField, Label: "Name"},
 		sanitize.Pair{Target: &rt.Description, Policy: sanitize.RichText, Label: "Description"},

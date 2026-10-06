@@ -755,7 +755,7 @@ func (s *PortalService) GetRequestTypeFields(ctx context.Context, requestTypeID 
 func (s *PortalService) ValidateRequestTypeBelongsToChannel(ctx context.Context, requestTypeID, channelID int) (bool, error) {
 	var exists bool
 	err := s.db.QueryRowContext(ctx,
-		"SELECT EXISTS(SELECT 1 FROM request_types WHERE id = ? AND channel_id = ? AND is_active = true)",
+		"SELECT EXISTS(SELECT 1 FROM request_types WHERE id = ? AND channel_id = ? AND is_active = true AND kind != 'email')",
 		requestTypeID, channelID).Scan(&exists)
 	return exists, err
 }
@@ -886,7 +886,7 @@ func (s *PortalService) collectVisibleChannelCustomFieldIDs(ctx context.Context,
 	rtRows, err := s.db.QueryContext(ctx, `
 		SELECT rt.id, rt.item_type_id, rt.workspace_id, rt.visibility_group_ids, rt.visibility_org_ids
 		FROM request_types rt
-		WHERE rt.channel_id = ? AND rt.is_active = true
+		WHERE rt.channel_id = ? AND rt.is_active = true AND rt.kind != 'email'
 	`, channelID)
 	if err != nil {
 		return nil, fmt.Errorf("list channel request types: %w", err)

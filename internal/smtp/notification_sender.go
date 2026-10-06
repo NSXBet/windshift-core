@@ -438,6 +438,8 @@ func notificationAccentColor(t string) string {
 type mimeOptions struct {
 	FromEmail, FromName  string
 	ToEmail, ToName      string
+	ReplyToEmail         string
+	ReplyToName          string
 	Subject              string
 	HTMLBody, TextBody   string
 	MessageID, InReplyTo string
@@ -460,6 +462,12 @@ func buildMime(opts mimeOptions) string {
 	headers := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: multipart/alternative; boundary=%s\r\n",
 		from, to, encodeHeaderWord(opts.Subject), boundary)
 
+	// Route customer replies to the monitored inbox rather than the SMTP
+	// sender. Omit the header when there is no distinct monitored address, so
+	// the transport falls back to From exactly as before.
+	if replyTo := strings.TrimSpace(opts.ReplyToEmail); replyTo != "" && !strings.EqualFold(replyTo, opts.FromEmail) {
+		headers += fmt.Sprintf("Reply-To: %s\r\n", encodeMailbox(opts.ReplyToName, replyTo))
+	}
 	if messageID := formatMessageIDHeader(opts.MessageID); messageID != "" {
 		headers += fmt.Sprintf("Message-ID: %s\r\n", messageID)
 	}
@@ -758,14 +766,16 @@ func (s *NotificationSMTPSender) SendEmailWithConfig(config *models.ChannelConfi
 
 // ThreadedEmailParams contains the parameters for sending a threaded email reply.
 type ThreadedEmailParams struct {
-	ToEmail    string
-	ToName     string
-	Subject    string
-	HTMLBody   string
-	TextBody   string
-	MessageID  string
-	InReplyTo  string
-	References []string
+	ToEmail      string
+	ToName       string
+	ReplyToEmail string
+	ReplyToName  string
+	Subject      string
+	HTMLBody     string
+	TextBody     string
+	MessageID    string
+	InReplyTo    string
+	References   []string
 }
 
 // SendThreadedEmail sends an email with RFC 5322 threading headers
@@ -783,15 +793,17 @@ func (s *NotificationSMTPSender) SendThreadedEmailContext(ctx context.Context, p
 		return fmt.Errorf("failed to get SMTP config: %w", err)
 	}
 	return s.dispatchContext(ctx, config, params.ToEmail, buildMime(mimeOptions{
-		FromEmail:  config.SMTPFromEmail,
-		FromName:   config.SMTPFromName,
-		ToEmail:    params.ToEmail,
-		ToName:     params.ToName,
-		Subject:    params.Subject,
-		HTMLBody:   params.HTMLBody,
-		TextBody:   params.TextBody,
-		MessageID:  params.MessageID,
-		InReplyTo:  params.InReplyTo,
-		References: params.References,
+		FromEmail:    config.SMTPFromEmail,
+		FromName:     config.SMTPFromName,
+		ToEmail:      params.ToEmail,
+		ToName:       params.ToName,
+		ReplyToEmail: params.ReplyToEmail,
+		ReplyToName:  params.ReplyToName,
+		Subject:      params.Subject,
+		HTMLBody:     params.HTMLBody,
+		TextBody:     params.TextBody,
+		MessageID:    params.MessageID,
+		InReplyTo:    params.InReplyTo,
+		References:   params.References,
 	}))
 }

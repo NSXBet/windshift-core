@@ -128,6 +128,10 @@ CREATE TABLE IF NOT EXISTS email_reply_outbox (
 	references_json TEXT NOT NULL DEFAULT '[]',
 	from_email TEXT NOT NULL,
 	from_name TEXT NOT NULL DEFAULT '',
+	-- Monitored inbound address the customer reply routes back to. Persisted at
+	-- enqueue so a retry sends the same address even if channel config changes.
+	reply_to_email TEXT NOT NULL DEFAULT '',
+	reply_to_name TEXT NOT NULL DEFAULT '',
 	attempt_count INTEGER NOT NULL DEFAULT 0,
 	next_attempt_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	-- Set while a worker holds a delivery lease; NULL means next_attempt_at

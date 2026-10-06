@@ -295,7 +295,7 @@ func (h *PortalHandler) getRequestTypeWithVisibility(ctx context.Context, reques
 	err := h.db.QueryRowContext(ctx, `
 		SELECT id, channel_id, name, description, item_type_id, icon, color, display_order, is_active,
 		       visibility_group_ids, visibility_org_ids, title_template, created_at, updated_at
-		FROM request_types WHERE id = ? AND is_active = true
+		FROM request_types WHERE id = ? AND is_active = true AND kind != 'email'
 	`, requestTypeID).Scan(
 		&rt.ID, &rt.ChannelID, &rt.Name, &rt.Description, &rt.ItemTypeID, &rt.Icon, &rt.Color,
 		&rt.DisplayOrder, &rt.IsActive, &visibilityGroupIDs, &visibilityOrgIDs, &rt.TitleTemplate,
@@ -665,7 +665,7 @@ func (h *PortalHandler) loadPortalRequestTypes(ctx context.Context, channelID in
 		FROM request_types rt
 		LEFT JOIN item_types it ON rt.item_type_id = it.id
 		LEFT JOIN workspaces ws ON rt.workspace_id = ws.id
-		WHERE rt.channel_id = ? AND rt.is_active = true
+		WHERE rt.channel_id = ? AND rt.is_active = true AND rt.kind != 'email'
 		ORDER BY rt.display_order, rt.name`
 
 	rows, err := h.db.QueryContext(ctx, query, channelID)

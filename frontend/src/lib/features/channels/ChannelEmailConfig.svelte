@@ -4,7 +4,6 @@
   import { api } from '../../api.js';
   import Button from '../../components/Button.svelte';
   import Label from '../../components/Label.svelte';
-  import Checkbox from '../../components/Checkbox.svelte';
   import WorkspaceSelector from '../../workspaces/WorkspaceSelector.svelte';
   import DescriptionText from '../../components/DescriptionText.svelte';
   import Toggle from '../../components/Toggle.svelte';
@@ -35,10 +34,8 @@
       item_type_id: null,
       connected_portal_id: null,
       mailbox: 'INBOX',
-      mark_as_read: true,
-      delete_after_process: false,
+      processing_disposition: 'mark_read',
       rate_limit_per_hour: null,
-      auto_append_open_tickets: false,
       enabled: false
     }),
     workspaces = [],
@@ -56,8 +53,14 @@
   if (formData.connected_portal_id === undefined) {
     formData.connected_portal_id = null;
   }
-  if (formData.auto_append_open_tickets === undefined) {
-    formData.auto_append_open_tickets = false;
+  // Older callers (and stored configs) carry the two legacy booleans instead of
+  // the single disposition. Derive it once so the select always has a value.
+  if (formData.processing_disposition === undefined) {
+    formData.processing_disposition = formData.delete_after_process
+      ? 'delete'
+      : formData.mark_as_read === false
+        ? 'leave'
+        : 'mark_read';
   }
 
   let oauthIdentityChanged = $derived(
@@ -157,14 +160,16 @@
       // the stored key with null rather than leaving a stale link behind.
       email_connected_portal_id: formData.connected_portal_id ?? null,
       email_mailbox: formData.mailbox,
-      email_mark_as_read: formData.mark_as_read,
-      email_delete_after_process: formData.delete_after_process,
+      email_processing_disposition: formData.processing_disposition,
+      // Legacy booleans kept in sync so a rollback to an older build still
+      // behaves; the enum is the source of truth going forward.
+      email_mark_as_read: formData.processing_disposition === 'mark_read',
+      email_delete_after_process: formData.processing_disposition === 'delete',
       // null = default cap, 0 = unlimited, n = n per sender per hour
       email_rate_limit_per_hour:
         formData.rate_limit_per_hour === null || formData.rate_limit_per_hour === ''
           ? null
-          : Number(formData.rate_limit_per_hour),
-      email_auto_append_open_tickets: formData.auto_append_open_tickets
+          : Number(formData.rate_limit_per_hour)
     };
 
     if (formData.auth_method === 'oauth') {
@@ -477,34 +482,23 @@
         <DescriptionText>{t('channel.rateLimitHelp')}</DescriptionText>
       </div>
 
-      <div class="p-3 rounded" style="background-color: var(--ds-surface-raised);">
-        <Checkbox
-          bind:checked={formData.auto_append_open_tickets}
-          label={t('channel.autoAppendOpenTickets')}
-          hint={t('channel.autoAppendOpenTicketsHelp')}
-          size="small"
-          dataTestid="email-auto-append-open-tickets"
+      <div>
+        <SelectField
+          label={t('channel.processingDisposition')}
+          labelColor="default"
+          id="email-processing-disposition"
+          options={[
+            { value: 'leave', label: t('channel.dispositionLeave') },
+            { value: 'mark_read', label: t('channel.dispositionMarkRead') },
+            { value: 'delete', label: t('channel.dispositionDelete') }
+          ]}
+          bind:value={formData.processing_disposition}
         />
-      </div>
-
-      <div class="space-y-3">
-        <div class="p-3 rounded" style="background-color: var(--ds-surface-raised);">
-          <Checkbox
-            bind:checked={formData.mark_as_read}
-            label={t('channel.markAsRead')}
-            hint={t('channel.markAsReadHelp')}
-            size="small"
-          />
-        </div>
-
-        <div class="p-3 rounded" style="background-color: var(--ds-surface-raised);">
-          <Checkbox
-            bind:checked={formData.delete_after_process}
-            label={t('channel.deleteAfterProcess')}
-            hint={t('channel.deleteAfterProcessHelp')}
-            size="small"
-          />
-        </div>
+        <DescriptionText>
+          {formData.processing_disposition === 'delete'
+            ? t('channel.dispositionDeleteHelp')
+            : t('channel.dispositionHelp')}
+        </DescriptionText>
       </div>
     </div>
 

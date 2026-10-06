@@ -1,6 +1,7 @@
 <script>
   import { onMount, onDestroy } from 'svelte';
   import StateDisplay from '../components/StateDisplay.svelte';
+  import Lozenge from '../components/Lozenge.svelte';
   import { draggable } from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
   import {
     Palette, Navigation, X, TextCursorInput, BookOpen, Check,
@@ -610,6 +611,7 @@
             {#each portalCatalogStore.requestTypes as requestType}
               {@const hasNoFields = requestType.field_count === 0}
               {@const isExpanded = expandedRequestTypeForFields?.id === requestType.id}
+              {@const isSystemRequestType = requestType.kind === 'email'}
               {@const RequestTypeIcon = iconMap[requestType.icon] || Package}
               <div
                 class="p-3 rounded border transition-all"
@@ -633,8 +635,13 @@
 
                   <!-- Content -->
                   <div class="flex-1 min-w-0">
-                    <div class="font-medium text-sm mb-1" style="color: {portalStore.isDarkMode ? '#e2e8f0' : '#111827'};">
-                      {requestType.name}
+                    <div class="font-medium text-sm mb-1 flex items-center gap-2" style="color: {portalStore.isDarkMode ? '#e2e8f0' : '#111827'};">
+                      <span>{requestType.name}</span>
+                      {#if isSystemRequestType}
+                        <Lozenge color="gray" dataTestid="request-type-system-badge-{requestType.id}">
+                          {t('portal.customize.systemRequestType')}
+                        </Lozenge>
+                      {/if}
                     </div>
                     {#if requestType.description}
                       <div class="text-xs mb-2" style="color: {portalStore.isDarkMode ? '#94a3b8' : '#6b7280'};">
@@ -648,22 +655,30 @@
                           <div>{requestType.workspace_name}{#if requestType.workspace_key}&nbsp;({requestType.workspace_key}){/if}</div>
                         {/if}
                       </div>
-                      <button
-                        onclick={() => expandedRequestTypeForFields = isExpanded ? null : requestType}
-                        class="text-xs hover:underline text-right"
-                        style="color: {hasNoFields ? '#f59e0b' : 'var(--ds-text-link)'};"
-                      >
-                        {#if hasNoFields}
-                          <div class="font-medium">{t('portal.customize.addFields')}</div>
-                        {:else}
-                          <div>{t('portal.customize.fields')} ({requestType.field_count})</div>
-                        {/if}
-                      </button>
+                      {#if isSystemRequestType}
+                        <div class="text-xs" style="color: {portalStore.isDarkMode ? '#94a3b8' : '#6b7280'};">
+                          {t('portal.customize.systemRequestTypeHelp')}
+                        </div>
+                      {:else}
+                        <button
+                          onclick={() => expandedRequestTypeForFields = isExpanded ? null : requestType}
+                          class="text-xs hover:underline text-right"
+                          style="color: {hasNoFields ? '#f59e0b' : 'var(--ds-text-link)'};"
+                        >
+                          {#if hasNoFields}
+                            <div class="font-medium">{t('portal.customize.addFields')}</div>
+                          {:else}
+                            <div>{t('portal.customize.fields')} ({requestType.field_count})</div>
+                          {/if}
+                        </button>
+                      {/if}
                     </div>
                   </div>
 
-                  <!-- Visibility Button -->
-                  {@render visibilityShield(hasVisibilityRestrictions(requestType), () => openVisibilityModal(requestType))}
+                  <!-- Visibility Button (system rows are internal, never public) -->
+                  {#if !isSystemRequestType}
+                    {@render visibilityShield(hasVisibilityRestrictions(requestType), () => openVisibilityModal(requestType))}
+                  {/if}
 
                   <!-- Actions Dropdown -->
                   <div class="flex-shrink-0">
@@ -673,21 +688,31 @@
                       triggerStyle="color: {portalStore.isDarkMode ? '#94a3b8' : '#6b7280'};"
                       showChevron={false}
                       iconOnly={true}
+                      triggerTestid="request-type-actions-{requestType.id}"
+                      triggerLabel={requestType.name}
                       placement="bottom-end"
-                      items={[
-                        {
-                          title: t('common.edit'),
-                          icon: Edit,
-                          onClick: () => onOpenRequestTypeModal('edit', requestType)
-                        },
-                        { type: 'divider' },
-                        {
-                          title: t('common.delete'),
-                          icon: Trash2,
-                          color: 'var(--ds-text-danger)',
-                          onClick: () => deleteRequestType(requestType.id)
-                        }
-                      ]}
+                      items={isSystemRequestType
+                        ? [
+                            {
+                              title: t('common.edit'),
+                              icon: Edit,
+                              onClick: () => onOpenRequestTypeModal('edit', requestType)
+                            }
+                          ]
+                        : [
+                            {
+                              title: t('common.edit'),
+                              icon: Edit,
+                              onClick: () => onOpenRequestTypeModal('edit', requestType)
+                            },
+                            { type: 'divider' },
+                            {
+                              title: t('common.delete'),
+                              icon: Trash2,
+                              color: 'var(--ds-text-danger)',
+                              onClick: () => deleteRequestType(requestType.id)
+                            }
+                          ]}
                     />
                   </div>
                 </div>

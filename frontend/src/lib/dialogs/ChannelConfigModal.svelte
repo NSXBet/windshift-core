@@ -97,10 +97,8 @@
     item_type_id: null,
     connected_portal_id: null,
     mailbox: 'INBOX',
-    mark_as_read: true,
-    delete_after_process: false,
+    processing_disposition: 'mark_read',
     rate_limit_per_hour: null,
-    auto_append_open_tickets: false,
     enabled: false
   });
 
@@ -253,10 +251,14 @@
           item_type_id: config.email_item_type_id || null,
           connected_portal_id: config.email_connected_portal_id ?? null,
           mailbox: config.email_mailbox || 'INBOX',
-          mark_as_read: config.email_mark_as_read !== false,
-          delete_after_process: config.email_delete_after_process || false,
+          processing_disposition:
+            config.email_processing_disposition ||
+            (config.email_delete_after_process
+              ? 'delete'
+              : config.email_mark_as_read === false
+                ? 'leave'
+                : 'mark_read'),
           rate_limit_per_hour: config.email_rate_limit_per_hour ?? null,
-          auto_append_open_tickets: config.email_auto_append_open_tickets || false,
           enabled: channel.status === 'enabled'
         };
         loadWorkspacesAndItemTypes();

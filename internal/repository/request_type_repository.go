@@ -28,7 +28,7 @@ const requestTypeSelectColumns = `
 	rt.id, rt.channel_id, rt.name, rt.description, rt.item_type_id,
 	rt.icon, rt.color, rt.display_order, rt.is_active, rt.config,
 	rt.visibility_group_ids, rt.visibility_org_ids, rt.workspace_id,
-	rt.title_template, rt.created_at, rt.updated_at,
+	rt.title_template, rt.kind, rt.created_at, rt.updated_at,
 	c.name as channel_name, it.name as item_type_name,
 	ws.name as workspace_name, ws.key as workspace_key,
 	(SELECT COUNT(*) FROM request_type_fields rtf WHERE rtf.request_type_id = rt.id) as field_count`
@@ -48,7 +48,7 @@ func scanRequestType(scanner interface {
 	if err := scanner.Scan(&rt.ID, &rt.ChannelID, &rt.Name, &rt.Description, &rt.ItemTypeID,
 		&rt.Icon, &rt.Color, &rt.DisplayOrder, &rt.IsActive, &rt.Config,
 		&visibilityGroupIDs, &visibilityOrgIDs, &rt.WorkspaceID,
-		&rt.TitleTemplate, &rt.CreatedAt, &rt.UpdatedAt,
+		&rt.TitleTemplate, &rt.Kind, &rt.CreatedAt, &rt.UpdatedAt,
 		&rt.ChannelName, &rt.ItemTypeName,
 		&workspaceName, &workspaceKey, &rt.FieldCount); err != nil {
 		return rt, err
@@ -98,6 +98,21 @@ func (r *RequestTypeRepository) GetByID(id int) (*models.RequestType, error) {
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get request_type %d: %w", id, err)
+	}
+	return &rt, nil
+}
+
+// GetEmailIntakeForChannel returns the system Email request type for a portal
+// channel, or ErrNotFound when none has been provisioned.
+func (r *RequestTypeRepository) GetEmailIntakeForChannel(channelID int) (*models.RequestType, error) {
+	row := r.db.QueryRow(`SELECT`+requestTypeSelectColumns+requestTypeFromJoins+`
+		WHERE rt.channel_id = ? AND rt.kind = ?`, channelID, models.RequestTypeKindEmail)
+	rt, err := scanRequestType(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get email intake request type for channel %d: %w", channelID, err)
 	}
 	return &rt, nil
 }
@@ -256,10 +271,10 @@ func (r *RequestTypeRepository) Create(rt *models.RequestType) (int64, error) {
 	now := time.Now()
 	var id int64
 	err := r.db.QueryRow(`
-		INSERT INTO request_types (channel_id, name, description, item_type_id, icon, color, display_order, is_active, visibility_group_ids, visibility_org_ids, workspace_id, title_template, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id
+		INSERT INTO request_types (channel_id, name, description, item_type_id, icon, color, display_order, is_active, visibility_group_ids, visibility_org_ids, workspace_id, title_template, kind, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id
 	`, rt.ChannelID, rt.Name, rt.Description, rt.ItemTypeID, rt.Icon, rt.Color, rt.DisplayOrder, rt.IsActive,
-		encodeIntJSONArray(rt.VisibilityGroupIDs), encodeIntJSONArray(rt.VisibilityOrgIDs), rt.WorkspaceID, rt.TitleTemplate, now, now,
+		encodeIntJSONArray(rt.VisibilityGroupIDs), encodeIntJSONArray(rt.VisibilityOrgIDs), rt.WorkspaceID, rt.TitleTemplate, rt.Kind, now, now,
 	).Scan(&id)
 	if err != nil {
 		if database.IsUniqueConstraintError(err) {

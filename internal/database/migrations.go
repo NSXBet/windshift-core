@@ -2516,6 +2516,28 @@ var Catalog = []Migration{
 		SQLite:          notificationDigestLinksMigration,
 		Postgres:        notificationDigestLinksMigration,
 	},
+	{
+		Version:       "20261015_request_types_kind",
+		Name:          "Add system intake kind to request types (WI-1644)",
+		CheckSQLite:   sqliteColumnCheck("request_types", "kind"),
+		CheckPostgres: pgColumnCheck("request_types", "kind"),
+		SQLite:        `ALTER TABLE request_types ADD COLUMN kind TEXT NOT NULL DEFAULT ''`,
+		Postgres:      `ALTER TABLE request_types ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT ''`,
+	},
+	{
+		Version:       "20261016_email_outbox_reply_to",
+		Name:          "Persist the monitored reply address on queued customer replies (WI-1644)",
+		CheckSQLite:   sqliteColumnCheck("email_reply_outbox", "reply_to_email"),
+		CheckPostgres: pgColumnCheck("email_reply_outbox", "reply_to_email"),
+		SQLite: `
+			ALTER TABLE email_reply_outbox ADD COLUMN reply_to_email TEXT NOT NULL DEFAULT '';
+			ALTER TABLE email_reply_outbox ADD COLUMN reply_to_name TEXT NOT NULL DEFAULT '';
+		`,
+		Postgres: `
+			ALTER TABLE email_reply_outbox ADD COLUMN IF NOT EXISTS reply_to_email TEXT NOT NULL DEFAULT '';
+			ALTER TABLE email_reply_outbox ADD COLUMN IF NOT EXISTS reply_to_name TEXT NOT NULL DEFAULT '';
+		`,
+	},
 }
 
 // checkNotificationDigestLinksMigration reports the migration as already

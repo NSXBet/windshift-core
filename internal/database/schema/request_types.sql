@@ -14,6 +14,7 @@
 					visibility_org_ids TEXT DEFAULT NULL,
 					workspace_id INTEGER DEFAULT NULL,
 					title_template TEXT NOT NULL DEFAULT '',
+					kind TEXT NOT NULL DEFAULT '', -- System intake role: '' for admin-created, 'email' for the per-portal system Email request type (WI-1644)
 					created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 					updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 					FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE CASCADE,
@@ -23,3 +24,4 @@
 			
 
 -- migration: 0000_baseline
+-- migration: 20261015_request_types_kind

@@ -369,6 +369,7 @@ func (es *EmailScheduler) processChannel(ctx context.Context, ch channelInfo) bo
 	var lastBatchError string
 	var offenderUID uint32
 	deferredClaim := false
+	disposition := email.ResolveEmailDisposition(decryptedConfig)
 
 	for _, msg := range messages {
 		if msg.FetchError != nil {
@@ -420,12 +421,13 @@ func (es *EmailScheduler) processChannel(ctx context.Context, ch channelInfo) bo
 		// past it so one flooding sender cannot wedge the channel.
 		rateLimited := result.Action == email.ActionRateLimited
 		if !rateLimited && result.Action != email.ActionAlreadyExists {
-			if decryptedConfig.EmailMarkAsRead {
+			// One disposition, never both: delete supersedes mark-read.
+			switch disposition {
+			case models.EmailDispositionMarkRead:
 				if err := client.MarkAsRead(msg.UID); err != nil {
 					slog.Warn("failed to mark email as read", "uid", msg.UID, "error", err)
 				}
-			}
-			if decryptedConfig.EmailDeleteAfterProcess {
+			case models.EmailDispositionDelete:
 				if err := client.DeleteMessage(msg.UID); err != nil {
 					slog.Warn("failed to delete email", "uid", msg.UID, "error", err)
 				}
@@ -443,7 +445,7 @@ func (es *EmailScheduler) processChannel(ctx context.Context, ch channelInfo) bo
 	}
 
 	// Expunge if we deleted messages
-	if decryptedConfig.EmailDeleteAfterProcess && processedCount > 0 {
+	if disposition == models.EmailDispositionDelete && processedCount > 0 {
 		if err := client.Expunge(); err != nil {
 			slog.Warn("failed to expunge deleted messages", "error", err)
 		}

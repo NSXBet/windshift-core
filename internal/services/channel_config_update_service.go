@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/mail"
 	"net/url"
 	"regexp"
@@ -155,6 +156,14 @@ func (s *ChannelConfigUpdateService) Update(ctx context.Context, actorUserID, ch
 	}
 	if s.refresh != nil {
 		s.refresh()
+	}
+	// Provision the portal's system Email request type once it serves a
+	// workspace. Best-effort: email intake heals a missing row lazily.
+	if channel.Type == "portal" {
+		if _, err := EnsureEmailRequestType(s.channels.db, channelID, 0, nil); err != nil {
+			slog.Warn("failed to provision portal email request type",
+				"channel_id", channelID, "error", err)
+		}
 	}
 	return true, nil
 }

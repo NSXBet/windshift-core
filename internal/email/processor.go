@@ -134,10 +134,6 @@ func (p *Processor) ProcessEmail(
 	if parentItemID != nil {
 		// This is a reply - add comment to existing item
 		result, err = p.addCommentFromReply(email, *parentItemID, customerID)
-	} else if appendItemID := p.findOpenTicketToAppend(ctx, customerID, config, email); appendItemID != nil {
-		// Opt-in continuation (WI-1548): the fresh email continues the sender's
-		// open ticket instead of creating a duplicate.
-		result, err = p.addCommentFromReply(email, *appendItemID, customerID)
 	} else {
 		// This is a new conversation - create item
 		result, err = p.createItemFromEmail(ctx, email, channelID, config, customerID)
@@ -383,42 +379,6 @@ func (p *Processor) connectedPortalAdmitsEmail(ctx context.Context, portalChanne
 	return true
 }
 
-// findOpenTicketToAppend implements the WI-1548 opt-in continuation: a fresh
-// (unquoted) email from a sender with an open ticket in the intake workspace
-// continues that ticket instead of creating a duplicate. Candidates are the
-// sender's open tickets in the intake workspace where they are the creator or
-// a prior email participant — never a bare sender-address match. Closed
-// tickets never qualify, and cross-workspace tickets are deliberately not
-// appended (they surface to agents as duplicate candidates instead),
-// respecting the channel's routing config.
-func (p *Processor) findOpenTicketToAppend(ctx context.Context, customerID int, config *models.ChannelConfig, email *ParsedEmail) *int {
-	if !config.EmailAutoAppendOpenTickets || config.EmailWorkspaceID == 0 {
-		return nil
-	}
-	sender := normalizedEmail(email.From.Address)
-	var itemID int
-	err := p.db.QueryRowContext(ctx, `
-		SELECT i.id FROM items i
-		LEFT JOIN statuses s ON i.status_id = s.id
-		LEFT JOIN status_categories sc ON s.category_id = sc.id
-		WHERE i.workspace_id = ?
-		  AND (sc.is_completed = false OR sc.is_completed IS NULL)
-		  AND (
-			  i.creator_portal_customer_id = ?
-			  OR EXISTS (
-				  SELECT 1 FROM email_message_tracking t
-				  WHERE t.item_id = i.id AND LOWER(t.from_email) = ?
-			  )
-		  )
-		ORDER BY i.updated_at DESC
-		LIMIT 1
-	`, config.EmailWorkspaceID, customerID, sender).Scan(&itemID)
-	if err != nil {
-		return nil
-	}
-	return &itemID
-}
-
 // findParentItem looks up the original item from In-Reply-To or References headers.
 //
 // Matching is item-scoped across channels: Message-IDs are globally unique,
@@ -513,32 +473,29 @@ func (p *Processor) createItemFromEmail( //nolint:unparam // ctx reserved for fu
 	customerID int,
 ) (*ProcessingResult, error) {
 	_ = ctx
-	if config.EmailWorkspaceID == 0 {
-		return nil, fmt.Errorf("no workspace configured for email channel")
-	}
 
-	// Validate item type is configured
-	if config.EmailItemTypeID == nil || *config.EmailItemTypeID == 0 {
-		return nil, fmt.Errorf("no item type configured for email channel: EmailItemTypeID is required")
+	workspaceID, itemTypeID, requestTypeID, err := p.resolveEmailIntakeTarget(config)
+	if err != nil {
+		return nil, err
 	}
 
 	// Verify the item type is allowed in this workspace's configuration set.
 	// This mirrors the REST handler (restapi/v1/handlers/items.go) so email-
 	// created items go through the same validation as API-created ones.
-	allowed, err := services.IsItemTypeAllowedInWorkspace(p.db, config.EmailWorkspaceID, *config.EmailItemTypeID)
+	allowed, err := services.IsItemTypeAllowedInWorkspace(p.db, workspaceID, *itemTypeID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check item type restriction: %w", err)
 	}
 	if !allowed {
-		return nil, fmt.Errorf("item type %d is not allowed in workspace %d", *config.EmailItemTypeID, config.EmailWorkspaceID)
+		return nil, fmt.Errorf("item type %d is not allowed in workspace %d", *itemTypeID, workspaceID)
 	}
 	if config.EmailDefaultPriorityID != nil {
-		allowed, err := services.IsPriorityAllowedInWorkspace(p.db, config.EmailWorkspaceID, *config.EmailDefaultPriorityID)
+		allowed, err := services.IsPriorityAllowedInWorkspace(p.db, workspaceID, *config.EmailDefaultPriorityID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to check priority restriction: %w", err)
 		}
 		if !allowed {
-			return nil, fmt.Errorf("priority %d is not allowed in workspace %d", *config.EmailDefaultPriorityID, config.EmailWorkspaceID)
+			return nil, fmt.Errorf("priority %d is not allowed in workspace %d", *config.EmailDefaultPriorityID, workspaceID)
 		}
 	}
 
@@ -547,11 +504,12 @@ func (p *Processor) createItemFromEmail( //nolint:unparam // ctx reserved for fu
 	// channel explicitly configured a workspace-valid override; otherwise the
 	// shared service resolves the workspace default.
 	params := services.ItemCreationParams{
-		WorkspaceID:             config.EmailWorkspaceID,
+		WorkspaceID:             workspaceID,
 		Title:                   sanitize.PlainTextField.Sanitize(email.GetSubjectForItem()),
 		Description:             sanitize.Comment.Sanitize(StripSignature(email.GetBodyText())),
-		ItemTypeID:              config.EmailItemTypeID,
+		ItemTypeID:              itemTypeID,
 		PriorityID:              config.EmailDefaultPriorityID,
+		RequestTypeID:           requestTypeID,
 		CreatorPortalCustomerID: &customerID,
 		ChannelID:               &channelID,
 		EventMetadata:           itemevents.PortalCustomer(customerID, "email"),
@@ -590,6 +548,43 @@ func (p *Processor) createItemFromEmail( //nolint:unparam // ctx reserved for fu
 		Action: ActionItemCreated,
 		ItemID: &id,
 	}, nil
+}
+
+// resolveEmailIntakeTarget returns the workspace, item type, and (for portal
+// intake) system Email request type that a new email item is created under.
+//
+// A channel linked to a portal routes through the portal's system Email request
+// type, so email items carry a request_type_id and follow the same routing as
+// web submissions. A workspace-only intake channel keeps its configured
+// workspace and item type.
+func (p *Processor) resolveEmailIntakeTarget(config *models.ChannelConfig) (workspaceID int, itemTypeID, requestTypeID *int, err error) {
+	if config.EmailConnectedPortalID == nil {
+		if config.EmailWorkspaceID == 0 {
+			return 0, nil, nil, fmt.Errorf("no workspace configured for email channel")
+		}
+		if config.EmailItemTypeID == nil || *config.EmailItemTypeID == 0 {
+			return 0, nil, nil, fmt.Errorf("no item type configured for email channel: EmailItemTypeID is required")
+		}
+		return config.EmailWorkspaceID, config.EmailItemTypeID, nil, nil
+	}
+
+	rtID, err := services.EnsureEmailRequestType(
+		p.db,
+		*config.EmailConnectedPortalID,
+		config.EmailWorkspaceID,
+		config.EmailItemTypeID,
+	)
+	if err != nil {
+		return 0, nil, nil, fmt.Errorf("resolve portal email request type: %w", err)
+	}
+	resolvedItemTypeID, resolvedWorkspaceID, err := repository.NewRequestTypeRepository(p.db).GetItemTypeAndWorkspace(rtID)
+	if err != nil {
+		return 0, nil, nil, fmt.Errorf("load email request type %d: %w", rtID, err)
+	}
+	if resolvedWorkspaceID == nil {
+		return 0, nil, nil, fmt.Errorf("email request type %d has no workspace", rtID)
+	}
+	return *resolvedWorkspaceID, &resolvedItemTypeID, &rtID, nil
 }
 
 // addCommentFromReply adds a comment to an existing item from an email reply

@@ -220,6 +220,9 @@ func (s *EmailReplyService) handleCommentCreated(params HandleCommentParams, del
 	if err != nil {
 		return fmt.Errorf("encode email references: %w", err)
 	}
+	// Route replies back to the monitored intake mailbox, not the SMTP sender.
+	// Persisted per row so a retry is stable if the channel config changes.
+	replyToEmail, replyToName := s.resolveReplyToAddress(*item.ChannelID)
 	outboxIDs := make([]int, 0, len(recipients))
 	for _, recipient := range recipients {
 		messageID := recipientMessageID(params.CommentID, recipient.Email, smtpDomain)
@@ -228,13 +231,14 @@ func (s *EmailReplyService) handleCommentCreated(params HandleCommentParams, del
 			INSERT INTO email_reply_outbox (
 				comment_id, channel_id, item_id, to_email, to_name, subject,
 				html_body, text_body, message_id, in_reply_to, references_json,
-				from_email, from_name, next_attempt_at, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+				from_email, from_name, reply_to_email, reply_to_name,
+				next_attempt_at, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 			ON CONFLICT(comment_id, to_email) DO NOTHING
 			RETURNING id
 		`, params.CommentID, *item.ChannelID, params.ItemID, recipient.Email, recipient.Name,
 			subject, htmlBody, textBody, messageID, inReplyTo, string(referencesJSON),
-			s.getSMTPFromEmail(), authorName).Scan(&outboxID)
+			s.getSMTPFromEmail(), authorName, replyToEmail, replyToName).Scan(&outboxID)
 		if errors.Is(err, sql.ErrNoRows) {
 			continue // already enqueued for this recipient
 		}
@@ -257,6 +261,34 @@ func (s *EmailReplyService) handleCommentCreated(params HandleCommentParams, del
 		}
 	}
 	return nil
+}
+
+// resolveReplyToAddress returns the monitored inbound address that customer
+// replies should route back to for an item on the given channel. Empty when the
+// channel is not an email intake or carries no address; the transport then
+// omits Reply-To and falls back to From. Portal-originated items have a portal
+// channel here and resolve to empty until a default mailbox is wired.
+func (s *EmailReplyService) resolveReplyToAddress(channelID int) (address, name string) {
+	var configJSON string
+	if err := s.db.QueryRow(
+		`SELECT COALESCE(config, '{}') FROM channels WHERE id = ? AND type IN ('email', 'imap')`,
+		channelID,
+	).Scan(&configJSON); err != nil {
+		return "", ""
+	}
+	var cfg models.ChannelConfig
+	if err := json.Unmarshal([]byte(configJSON), &cfg); err != nil {
+		return "", ""
+	}
+	address = strings.TrimSpace(cfg.EmailOAuthEmail)
+	if address == "" {
+		address = strings.TrimSpace(cfg.IMAPUsername)
+	}
+	if address == "" {
+		return "", ""
+	}
+	_ = s.db.QueryRow(`SELECT name FROM channels WHERE id = ?`, channelID).Scan(&name)
+	return address, name
 }
 
 // emailRecipient is one outbound reply target.
@@ -287,6 +319,8 @@ type emailReplyOutboxRow struct {
 	ReferencesJSON string
 	FromEmail      string
 	FromName       string
+	ReplyToEmail   string
+	ReplyToName    string
 	AttemptCount   int
 }
 
@@ -430,15 +464,18 @@ func (s *EmailReplyService) sendItemNotice(item *models.Item, toEmail, toName, s
 
 	smtpDomain := s.getSMTPDomain()
 	messageID := fmt.Sprintf("<ws-notice-%d-%d@%s>", item.ID, time.Now().UnixNano(), smtpDomain)
+	replyToEmail, replyToName := s.resolveReplyToAddress(*item.ChannelID)
 	if err := s.smtpSender.SendThreadedEmail(smtp.ThreadedEmailParams{
-		ToEmail:    toEmail,
-		ToName:     toName,
-		Subject:    emailSubject,
-		HTMLBody:   htmlBody,
-		TextBody:   textBody,
-		MessageID:  messageID,
-		InReplyTo:  inReplyTo,
-		References: references,
+		ToEmail:      toEmail,
+		ToName:       toName,
+		ReplyToEmail: replyToEmail,
+		ReplyToName:  replyToName,
+		Subject:      emailSubject,
+		HTMLBody:     htmlBody,
+		TextBody:     textBody,
+		MessageID:    messageID,
+		InReplyTo:    inReplyTo,
+		References:   references,
 	}); err != nil {
 		return false, "", fmt.Errorf("send customer notice: %w", err)
 	}
@@ -541,11 +578,12 @@ func (s *EmailReplyService) deliverPendingReply(ctx context.Context, outboxID in
 		  AND next_attempt_at <= CURRENT_TIMESTAMP
 		RETURNING id, comment_id, channel_id, item_id, to_email, to_name, subject,
 		       html_body, text_body, message_id, in_reply_to, references_json,
-		       from_email, from_name, attempt_count
+		       from_email, from_name, reply_to_email, reply_to_name, attempt_count
 	`, leaseUntil, s.leaseOwner, outboxID).Scan(
 		&row.ID, &row.CommentID, &row.ChannelID, &row.ItemID, &row.ToEmail, &row.ToName,
 		&row.Subject, &row.HTMLBody, &row.TextBody, &row.MessageID, &row.InReplyTo,
-		&row.ReferencesJSON, &row.FromEmail, &row.FromName, &row.AttemptCount,
+		&row.ReferencesJSON, &row.FromEmail, &row.FromName, &row.ReplyToEmail, &row.ReplyToName,
+		&row.AttemptCount,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
@@ -560,14 +598,16 @@ func (s *EmailReplyService) deliverPendingReply(ctx context.Context, outboxID in
 		return false, fmt.Errorf("decode pending email references: %w", err)
 	}
 	err = s.smtpSender.SendThreadedEmailContext(ctx, smtp.ThreadedEmailParams{
-		ToEmail:    row.ToEmail,
-		ToName:     row.ToName,
-		Subject:    row.Subject,
-		HTMLBody:   row.HTMLBody,
-		TextBody:   row.TextBody,
-		MessageID:  row.MessageID,
-		InReplyTo:  row.InReplyTo,
-		References: references,
+		ToEmail:      row.ToEmail,
+		ToName:       row.ToName,
+		ReplyToEmail: row.ReplyToEmail,
+		ReplyToName:  row.ReplyToName,
+		Subject:      row.Subject,
+		HTMLBody:     row.HTMLBody,
+		TextBody:     row.TextBody,
+		MessageID:    row.MessageID,
+		InReplyTo:    row.InReplyTo,
+		References:   references,
 	})
 	if err != nil {
 		s.recordReplyFailure(row.ID, row.AttemptCount, err)

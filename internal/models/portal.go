@@ -75,28 +75,29 @@ type ChannelConfig struct {
 	EmailOAuthTenantID     string `json:"email_oauth_tenant_id,omitempty"`     // Microsoft tenant ID (or 'common')
 
 	// OAuth Tokens (populated after successful OAuth flow)
-	EmailOAuthAccessToken      string     `json:"email_oauth_access_token,omitempty"`      // Encrypted OAuth access token
-	EmailOAuthRefreshToken     string     `json:"email_oauth_refresh_token,omitempty"`     // Encrypted OAuth refresh token
-	EmailOAuthExpiresAt        *time.Time `json:"email_oauth_expires_at,omitempty"`        // Token expiration time
-	EmailOAuthEmail            string     `json:"email_oauth_email,omitempty"`             // Connected email address
-	EmailWorkspaceID           int        `json:"email_workspace_id,omitempty"`            // Target workspace for items
-	EmailItemTypeID            *int       `json:"email_item_type_id,omitempty"`            // Item type to create
-	EmailDefaultPriorityID     *int       `json:"email_default_priority_id,omitempty"`     // Default priority for items
-	EmailMailbox               string     `json:"email_mailbox,omitempty"`                 // IMAP mailbox (default "INBOX")
-	EmailMarkAsRead            bool       `json:"email_mark_as_read,omitempty"`            // Mark processed emails as read
-	EmailDeleteAfterProcess    bool       `json:"email_delete_after_process,omitempty"`    // Delete emails after processing
-	EmailConnectedPortalID     *int       `json:"email_connected_portal_id,omitempty"`     // Portal for "My Requests" visibility
-	EmailTrackingRetentionDays int        `json:"email_tracking_retention_days,omitempty"` // Days to keep processed-email tracking rows; 0 = default (365). Anchor rows (referenced by in_reply_to) are kept regardless.
-	KBEventsRetentionDays      int        `json:"kb_events_retention_days,omitempty"`      // Days to keep this portal's kb_events analytics rows; 0 = instance default (365). See the kb_events retention sweeper.
+	EmailOAuthAccessToken   string     `json:"email_oauth_access_token,omitempty"`   // Encrypted OAuth access token
+	EmailOAuthRefreshToken  string     `json:"email_oauth_refresh_token,omitempty"`  // Encrypted OAuth refresh token
+	EmailOAuthExpiresAt     *time.Time `json:"email_oauth_expires_at,omitempty"`     // Token expiration time
+	EmailOAuthEmail         string     `json:"email_oauth_email,omitempty"`          // Connected email address
+	EmailWorkspaceID        int        `json:"email_workspace_id,omitempty"`         // Target workspace for items
+	EmailItemTypeID         *int       `json:"email_item_type_id,omitempty"`         // Item type to create
+	EmailDefaultPriorityID  *int       `json:"email_default_priority_id,omitempty"`  // Default priority for items
+	EmailMailbox            string     `json:"email_mailbox,omitempty"`              // IMAP mailbox (default "INBOX")
+	EmailMarkAsRead         bool       `json:"email_mark_as_read,omitempty"`         // Mark processed emails as read
+	EmailDeleteAfterProcess bool       `json:"email_delete_after_process,omitempty"` // Delete emails after processing
+	// EmailProcessingDisposition is the single post-processing action for
+	// successfully ingested mail. It replaces the EmailMarkAsRead /
+	// EmailDeleteAfterProcess booleans (kept for back-compat); an empty value
+	// derives from them (delete > mark_read > leave). Because it is one value,
+	// "mark read and delete" is no longer expressible.
+	EmailProcessingDisposition string `json:"email_processing_disposition,omitempty"`
+	EmailConnectedPortalID     *int   `json:"email_connected_portal_id,omitempty"`     // Portal for "My Requests" visibility
+	EmailTrackingRetentionDays int    `json:"email_tracking_retention_days,omitempty"` // Days to keep processed-email tracking rows; 0 = default (365). Anchor rows (referenced by in_reply_to) are kept regardless.
+	KBEventsRetentionDays      int    `json:"kb_events_retention_days,omitempty"`      // Days to keep this portal's kb_events analytics rows; 0 = instance default (365). See the kb_events retention sweeper.
 	// Per-sender cap on NEW tickets per rolling hour. nil = default
 	// (DefaultEmailRateLimitPerHour), 0 = unlimited, n = n. Replies to
 	// existing threads are never rate-limited.
 	EmailRateLimitPerHour *int `json:"email_rate_limit_per_hour,omitempty"`
-	// Opt-in (WI-1548): a fresh (unquoted) email from a sender with an open
-	// ticket in this channel's workspace is appended to that ticket instead of
-	// creating a duplicate. The guard is creator-or-prior-email-participant,
-	// never sender-address match alone. Default off.
-	EmailAutoAppendOpenTickets bool `json:"email_auto_append_open_tickets,omitempty"`
 
 	// Portal Configuration
 	PortalSlug         string `json:"portal_slug,omitempty"`        // URL-friendly identifier (e.g., "support-portal")
@@ -144,6 +145,14 @@ type ChannelConfig struct {
 	FormSuccessMessage string `json:"form_success_message,omitempty"` // Default post-submit message
 	FormRedirectURL    string `json:"form_redirect_url,omitempty"`    // Optional redirect after submit
 }
+
+// Email post-processing dispositions. Exactly one applies to successfully
+// ingested mail; rate-limited mail is always left untouched.
+const (
+	EmailDispositionLeave    = "leave"
+	EmailDispositionMarkRead = "mark_read"
+	EmailDispositionDelete   = "delete"
+)
 
 // KnowledgeBasePageSource wires one workspace's Pages feature into a
 // portal knowledge base. RootPageID nil publishes the entire pages tree;
@@ -414,24 +423,34 @@ type AssetReportRowAction struct {
 	Source        string `json:"source"`
 }
 
+// RequestTypeKindEmail marks the system-provisioned request type that routes
+// email intake into a portal. It is hidden from the public request-type form
+// and carries no fields, so required form fields can never block email.
+const RequestTypeKindEmail = "email"
+
 // RequestType represents a portal request type that maps to an item type
 type RequestType struct {
-	ID                 int       `json:"id"`
-	ChannelID          int       `json:"channel_id"` // Scope request type to specific portal/channel
-	Name               string    `json:"name"`
-	Description        string    `json:"description"`
-	ItemTypeID         int       `json:"item_type_id"`                   // n:1 relationship - which item type submissions create
-	Icon               string    `json:"icon"`                           // Lucide icon name for visual representation
-	Color              string    `json:"color"`                          // Hex color for visual representation
-	DisplayOrder       int       `json:"display_order"`                  // Ordering within channel
-	IsActive           bool      `json:"is_active"`                      // Enable/disable this request type
-	Config             *string   `json:"config,omitempty"`               // JSON configuration for form-specific settings
-	WorkspaceID        *int      `json:"workspace_id,omitempty"`         // Workspace for field resolution via config sets
-	VisibilityGroupIDs []int     `json:"visibility_group_ids,omitempty"` // Internal groups that can see this request type
-	VisibilityOrgIDs   []int     `json:"visibility_org_ids,omitempty"`   // Customer organizations that can see this request type
-	TitleTemplate      string    `json:"title_template"`                 // Template used as the item title when the title field is hidden from the request form. Supports {{var}} placeholders (see services/template).
-	CreatedAt          time.Time `json:"created_at"`
-	UpdatedAt          time.Time `json:"updated_at"`
+	ID                 int     `json:"id"`
+	ChannelID          int     `json:"channel_id"` // Scope request type to specific portal/channel
+	Name               string  `json:"name"`
+	Description        string  `json:"description"`
+	ItemTypeID         int     `json:"item_type_id"`                   // n:1 relationship - which item type submissions create
+	Icon               string  `json:"icon"`                           // Lucide icon name for visual representation
+	Color              string  `json:"color"`                          // Hex color for visual representation
+	DisplayOrder       int     `json:"display_order"`                  // Ordering within channel
+	IsActive           bool    `json:"is_active"`                      // Enable/disable this request type
+	Config             *string `json:"config,omitempty"`               // JSON configuration for form-specific settings
+	WorkspaceID        *int    `json:"workspace_id,omitempty"`         // Workspace for field resolution via config sets
+	VisibilityGroupIDs []int   `json:"visibility_group_ids,omitempty"` // Internal groups that can see this request type
+	VisibilityOrgIDs   []int   `json:"visibility_org_ids,omitempty"`   // Customer organizations that can see this request type
+	TitleTemplate      string  `json:"title_template"`                 // Template used as the item title when the title field is hidden from the request form. Supports {{var}} placeholders (see services/template).
+	// Kind marks a system-provisioned request type. Empty for admin-created
+	// rows; RequestTypeKindEmail is the per-portal Email intake type (WI-1644).
+	// System rows are hidden from the public portal form but remain editable
+	// (item type) in the admin request-type listing.
+	Kind      string    `json:"kind,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 	// Joined fields for API responses
 	ChannelName  string `json:"channel_name,omitempty"`
 	ItemTypeName string `json:"item_type_name,omitempty"`

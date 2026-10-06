@@ -685,7 +685,7 @@ func (h *PortalHandler) visibleRequestTypeIDs(ctx context.Context, channelID int
 	rows, err := h.db.QueryContext(ctx, `
 		SELECT id, visibility_group_ids, visibility_org_ids
 		FROM request_types
-		WHERE channel_id = ? AND is_active = true
+		WHERE channel_id = ? AND is_active = true AND kind != 'email'
 	`, channelID)
 	if err != nil {
 		return nil, err
