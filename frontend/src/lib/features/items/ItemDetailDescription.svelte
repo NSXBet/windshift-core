@@ -84,6 +84,24 @@
     onstartEditingDescription?.();
   }
 
+  // The description display is one big click-to-edit target. Links rendered
+  // inside it must keep their native behaviour: entering edit mode re-creates
+  // the editor and removes the anchor, which cancels the pending navigation in
+  // some browsers. Ignore clicks that land on a link so the browser follows it.
+  function isLinkTarget(event) {
+    return !!event.target?.closest?.('a[href]');
+  }
+
+  function handleDescriptionClick(event) {
+    if (isLinkTarget(event)) return;
+    startEditingDescription();
+  }
+
+  function handleDescriptionKeydown(event) {
+    if (event.key !== 'Enter' || isLinkTarget(event)) return;
+    startEditingDescription();
+  }
+
   // Initialize editor content when editing starts
   $effect(() => {
     if (editingDescription) {
@@ -174,8 +192,8 @@
   {:else if item.description}
     {#if canEdit}
       <div
-        onclick={startEditingDescription}
-        onkeydown={(e) => e.key === 'Enter' && startEditingDescription()}
+        onclick={handleDescriptionClick}
+        onkeydown={handleDescriptionKeydown}
         role="button"
         tabindex="0"
         class="description-hover text-left rounded cursor-pointer transition-colors duration-150"
