@@ -4,7 +4,7 @@
   import { api } from '../../api.js';
   import { fetchV2Data } from '../../api/core.js';
   import { errorToast, successToast } from '../../stores/toasts.svelte.js';
-  import { authStore, workspaceDataStore } from '../../stores';
+  import { authStore, collectionStore, workspaceDataStore } from '../../stores';
   import { navigate } from '../../router.js';
   import { confirm } from '../../composables/useConfirm.js';
   import { ArrowLeft, ArrowRight, EyeOff, MoreHorizontal, Pencil, Plus, Trash2 } from '@lucide/svelte';
@@ -13,7 +13,14 @@
   import Modal from '../../dialogs/Modal.svelte';
   import DialogFooter from '../../dialogs/DialogFooter.svelte';
   import { createDeleteItemHandler, createItemActionsBuilder } from '../../utils/workItemTableHelpers.js';
-  import { getListColumnLabel, listGridMinWidth, listGridTemplateColumns } from '../../utils/workItemListColumns.js';
+  import {
+    buildListColumnConfiguration,
+    DEFAULT_LIST_COLUMNS,
+    getListColumnLabel,
+    listColumnsFromConfig,
+    listGridMinWidth,
+    listGridTemplateColumns,
+  } from '../../utils/workItemListColumns.js';
   import { useGradientStyles } from '../../stores/workspaceGradient.svelte.js';
   import { workspacePermissions } from '../../stores/workspacePermissions.svelte.js';
   import { collectionEditorOptions } from '../../stores/collectionEditorOptions.svelte.js';
@@ -26,6 +33,7 @@
   import DropdownMenu from '../../layout/DropdownMenu.svelte';
   import LazyRender from '../../components/LazyRender.svelte';
   import ListCellRenderer from '../collections/ListCellRenderer.svelte';
+  import ColumnSelector from '../collections/ColumnSelector.svelte';
   import QlFilterBuilder from '../shared/QlFilterBuilder.svelte';
 
   let { workspaceId, collectionId = null, queue = null } = $props();
@@ -79,6 +87,7 @@
   let allSelected = $derived(items.length > 0 && items.every((item) => selectedIds.has(item.id)));
   let currentUser = $derived(authStore.currentUser);
   let canEdit = $derived(workspacePermissions.canEdit(workspaceId));
+  let canConfigureColumns = $derived(workspacePermissions.canAdminWorkspace(workspaceId));
   let canManage = $derived.by(() => {
     if (collectionId) {
       return Boolean(
@@ -90,18 +99,11 @@
     return workspacePermissions.canAdminWorkspace(workspaceId);
   });
 
-  // The queue renders list-view rows, so its columns reuse the list column
-  // shape. The set is fixed: queues are workspace-level triage views, not
-  // configurable boards. Assignee and updated keep the queue's own labels.
-  const QUEUE_COLUMNS = [
-    { field_identifier: 'key', field_type: 'system', display_order: 0, width: 1 },
-    { field_identifier: 'title', field_type: 'system', display_order: 1, width: 4 },
-    { field_identifier: 'status', field_type: 'system', display_order: 2, width: 2 },
-    { field_identifier: 'priority', field_type: 'system', display_order: 3, width: 2 },
-    { field_identifier: 'assignee', field_type: 'system', display_order: 4, width: 2 },
-    { field_identifier: 'due_date', field_type: 'system', display_order: 5, width: 2 },
-    { field_identifier: 'updated_at', field_type: 'system', display_order: 6, width: 2 },
-  ];
+  // The queue renders list-view rows, so it reuses the list view's configurable
+  // columns (board_configurations.list_columns). Assignee and updated keep the
+  // queue's own labels when those columns are present.
+  let boardConfig = $state(null);
+  let listColumns = $state([...DEFAULT_LIST_COLUMNS]);
   const QUEUE_COLUMN_LABEL_OVERRIDES = {
     assignee: 'supportQueue.columnOwner',
     updated_at: 'supportQueue.columnUpdated',
@@ -114,8 +116,8 @@
 
   // A leading selection track sits in front of the shared list grid tracks.
   const SELECT_TRACK = '2rem';
-  let gridTemplateColumns = $derived(`${SELECT_TRACK} ${listGridTemplateColumns(QUEUE_COLUMNS)}`);
-  let gridMinWidth = $derived(`calc(${SELECT_TRACK} + ${listGridMinWidth(QUEUE_COLUMNS)})`);
+  let gridTemplateColumns = $derived(`${SELECT_TRACK} ${listGridTemplateColumns(listColumns)}`);
+  let gridMinWidth = $derived(`calc(${SELECT_TRACK} + ${listGridMinWidth(listColumns)})`);
 
   const styles = useGradientStyles();
 
@@ -175,6 +177,47 @@
     } catch (error) {
       collection = null;
     }
+  }
+
+  // Reuses the list view's column configuration so both views stay in sync.
+  async function loadBoardConfiguration() {
+    try {
+      const config = await api.collections.getBoardConfiguration(collectionId, workspaceId);
+      boardConfig = config;
+      listColumns = listColumnsFromConfig(config);
+    } catch (error) {
+      boardConfig = null;
+      listColumns = [...DEFAULT_LIST_COLUMNS];
+      if (error?.status !== 404) {
+        console.error('Failed to load list column configuration:', error);
+      }
+    }
+  }
+
+  async function saveBoardConfiguration(newColumns) {
+    try {
+      const configData = buildListColumnConfiguration(boardConfig, newColumns);
+      const saved = boardConfig?.id
+        ? await api.collections.updateBoardConfiguration(
+            collectionId,
+            boardConfig.id,
+            configData,
+            workspaceId
+          )
+        : await api.collections.createBoardConfiguration(collectionId, workspaceId, configData);
+      boardConfig = saved;
+      listColumns = listColumnsFromConfig(saved);
+      // The list view reads this scope's configuration through the shared
+      // store; drop its cache so it picks up the queue's change.
+      collectionStore.invalidateBoardConfiguration(workspaceId, collectionId);
+    } catch (error) {
+      console.error('Failed to save list column configuration:', error);
+      errorToast(t('dialogs.alerts.failedToSave', { error: error.message || error }));
+    }
+  }
+
+  function handleColumnChange({ columns }) {
+    void saveBoardConfiguration(columns);
   }
 
   async function loadQueues() {
@@ -478,6 +521,7 @@
 
   onMount(() => {
     void loadCollection();
+    void loadBoardConfiguration();
     void loadQueues().then(loadItems);
     void workspaceDataStore.initialize(workspaceId);
     api.teams
@@ -563,10 +607,19 @@
         {/if}
       </div>
 
-      <SearchInput
-        bind:value={searchQuery}
-        placeholder={t('common.search')}
-      />
+      <div class="flex items-center gap-2">
+        <SearchInput
+          bind:value={searchQuery}
+          placeholder={t('common.search')}
+        />
+        <ColumnSelector
+          columns={listColumns}
+          {customFieldDefinitions}
+          canConfigure={canConfigureColumns}
+          testId="queue-column-selector-trigger"
+          onchange={handleColumnChange}
+        />
+      </div>
     </div>
 
     {#if selectedIds.size > 0}
@@ -635,8 +688,8 @@
           style={styles.tableHeaderStyle}
         >
           <div></div>
-          {#each QUEUE_COLUMNS as column (column.field_identifier)}
-            <div>{columnLabel(column)}</div>
+          {#each listColumns as column (column.field_identifier)}
+            <div data-testid={`support-queue-header-${column.field_identifier}`}>{columnLabel(column)}</div>
           {/each}
           <div>{t('common.actions')}</div>
         </TableHeaderBar>
@@ -663,7 +716,7 @@
                       data-testid={`support-queue-item-checkbox-${item.id}`}
                       onchange={() => toggleItem(item.id)}
                     />
-                    {#each QUEUE_COLUMNS as column (column.field_identifier)}
+                    {#each listColumns as column (column.field_identifier)}
                       <div class="min-w-0 overflow-hidden">
                         <ListCellRenderer
                           {item}
