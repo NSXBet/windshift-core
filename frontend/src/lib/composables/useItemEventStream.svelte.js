@@ -24,12 +24,16 @@ export function useItemEventStream(getItemId, handlers = {}) {
 
     const pending = new Set();
     let timer = null;
+    // A handler that was already running when the subscription was torn down
+    // must not reconcile against the next item's view.
+    let active = true;
     const connectionTracker = createConnectionReconcileTracker();
 
     const flush = async () => {
       timer = null;
       const kinds = new Set(pending);
       pending.clear();
+      if (!active) return;
       try {
         // A full reconcile reloads everything, so skip the narrower reloads.
         if (kinds.has('reconcile')) {
@@ -45,6 +49,7 @@ export function useItemEventStream(getItemId, handlers = {}) {
         if (kinds.has('deleted')) refreshes.push(handlers.onDeleted?.());
         await Promise.all(refreshes);
       } catch (error) {
+        if (!active) return;
         // The transport is healthy but a data refresh failed, so the view may
         // be stale. Resume the polling fallback and reconcile on next connect.
         connectionTracker.markDisconnected();
@@ -91,6 +96,7 @@ export function useItemEventStream(getItemId, handlers = {}) {
     };
 
     return () => {
+      active = false;
       if (timer) clearTimeout(timer);
       es.close();
       itemLiveUpdates.clear(itemId);

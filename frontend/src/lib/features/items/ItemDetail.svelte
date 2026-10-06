@@ -88,7 +88,9 @@ import NativeSelect from '../../components/NativeSelect.svelte';
     reconcilePending = false;
     itemDetailStore.transitioning = true;
     return loadData()
-      .then(() => populateDropdownItems())
+      .then((loaded) => {
+        if (loaded) populateDropdownItems();
+      })
       .finally(() => {
         itemDetailStore.transitioning = false;
       });
@@ -204,6 +206,12 @@ import NativeSelect from '../../components/NativeSelect.svelte';
   // Track itemId changes for reactivity
   // svelte-ignore state_referenced_locally
   let previousItemId = $state(itemId);
+
+  // Guards asynchronous load continuations. Every navigation and unmount bumps
+  // the generation, so a superseded load cannot rewrite route identity or
+  // canonicalize the URL after the user has moved on.
+  let loadGeneration = 0;
+  let destroyed = false;
 
   // Timer guard flag to prevent duplicate timer starts
   let isStartingTimer = $state(false);
@@ -933,12 +941,14 @@ import NativeSelect from '../../components/NativeSelect.svelte';
   // Stale-while-revalidate: keep the previous item rendered while the new one
   // loads so the swap is atomic instead of skeleton-flashing.
   $effect(() => {
-    if (itemId !== previousItemId && !itemDetailStore.loading) {
+    if (String(itemId) !== String(previousItemId) && !itemDetailStore.loading) {
       previousItemId = itemId;
       itemDetailStore.transitioning = true;
 
       loadData()
-        .then(() => populateDropdownItems())
+        .then((loaded) => {
+          if (loaded) populateDropdownItems();
+        })
         .catch((error) => console.error('Failed to load item data after navigation:', error))
         .finally(() => { itemDetailStore.transitioning = false; });
     }
@@ -956,7 +966,9 @@ import NativeSelect from '../../components/NativeSelect.svelte';
     if (currentId == null || String(id) !== String(currentId)) return;
     itemDetailStore.transitioning = true;
     loadData()
-      .then(() => populateDropdownItems())
+      .then((loaded) => {
+        if (loaded) populateDropdownItems();
+      })
       .catch((error) => console.error('Failed to reload open item detail:', error))
       .finally(() => { itemDetailStore.transitioning = false; });
   });
@@ -1195,19 +1207,29 @@ import NativeSelect from '../../components/NativeSelect.svelte';
   });
 
   onDestroy(() => {
+    destroyed = true;
+    loadGeneration += 1;
     // Unregister context commands when component is destroyed
     unregisterContextCommands('item-detail');
   });
 
   // Load data using the store
   async function loadData() {
+    const generation = ++loadGeneration;
     const lookupWorkspaceKey = workspaceKey || (workspaceId && !/^\d+$/.test(String(workspaceId)) ? workspaceId : null);
     const lookupItemNumber = itemNumber || (lookupWorkspaceKey ? itemId : null);
 
-    await itemDetailStore.loadItem(workspaceId, itemId, {
+    const result = await itemDetailStore.loadItem(workspaceId, itemId, {
       workspaceKey: lookupWorkspaceKey,
       itemNumber: lookupItemNumber,
     });
+
+    // A newer navigation or unmount owns the view now. Drop this continuation
+    // before it can rewrite route identity or canonicalize the URL.
+    if (destroyed || generation !== loadGeneration) return false;
+    if (result?.status !== 'success') return false;
+
+    const resolvedItem = result.item;
 
     // Diagrams are non-blocking detail data, but they should appear without a
     // separate "Show Diagram" control.
@@ -1215,13 +1237,14 @@ import NativeSelect from '../../components/NativeSelect.svelte';
 
     if (tab === 'time') {
       await itemDetailStore.loadWorklogs();
+      if (destroyed || generation !== loadGeneration) return false;
     }
 
     // Backfill route props from the resolved item when the URL used a stable
     // key form (/workspace/WI/item/123 or /workspaces/WI/items/123).
-    if (itemDetailStore.item?.id) {
-      workspaceId = itemDetailStore.workspaceId;
-      itemId = itemDetailStore.item.id;
+    if (resolvedItem?.id) {
+      workspaceId = resolvedItem.workspace_id ?? itemDetailStore.workspaceId;
+      itemId = resolvedItem.id;
       previousItemId = itemId;
 
       // Clear notifications pointing at this item: viewing an item should
@@ -1232,19 +1255,22 @@ import NativeSelect from '../../components/NativeSelect.svelte';
       workspaceId = itemDetailStore.workspaceId;
     }
 
-    if (canonicalizeKeyRoute && !isModal && itemDetailStore.item?.id && itemDetailStore.workspaceId) {
+    if (canonicalizeKeyRoute && !isModal && resolvedItem?.id && resolvedItem.workspace_id) {
       const suffix = tab !== 'comments' ? `?tab=${tab}` : '';
-      navigate(`/workspaces/${itemDetailStore.workspaceId}/items/${itemDetailStore.item.id}${suffix}`, { replace: true });
+      navigate(`/workspaces/${resolvedItem.workspace_id}/items/${resolvedItem.id}${suffix}`, { replace: true });
     }
 
     // Load attachment settings and attachments (still using composable)
     await attachmentManager.loadSettings();
+    if (destroyed || generation !== loadGeneration) return false;
     if (attachmentManager.isEnabled()) {
       await attachmentManager.load();
+      if (destroyed || generation !== loadGeneration) return false;
     }
 
     // Load recurrence rule
     loadRecurrence();
+    return true;
   }
 
   function startCreateSubIssue() {

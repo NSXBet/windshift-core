@@ -29,6 +29,11 @@ function isAbortError(error) {
   return error?.name === 'AbortError';
 }
 
+// Outcome of a loadItem call. A superseded or failed load must not be treated
+// as a successful item load: the shared store may already hold a different
+// item by the time the caller resumes.
+const LOAD_SUPERSEDED = Object.freeze({ status: 'superseded' });
+
 function hasSharedWorkspaceReferences(workspaceId) {
   return (
     workspaceDataStore.initialized && Number(workspaceDataStore.workspaceId) === Number(workspaceId)
@@ -291,7 +296,7 @@ class ItemDetailStore {
             requestOptions
           )
         : await api.items.getDetailSummary(effectiveItemId, requestOptions);
-      if (token !== this.#loadToken) return;
+      if (token !== this.#loadToken) return LOAD_SUPERSEDED;
 
       const itemData = summary?.item;
       if (!itemData) throw new Error('Item detail summary did not include an item');
@@ -317,7 +322,7 @@ class ItemDetailStore {
       // Share MainApp's in-flight workspace bootstrap.
       workspaceInitPromise ??= workspaceDataStore.initialize(wsId);
       await workspaceInitPromise;
-      if (token !== this.#loadToken) return;
+      if (token !== this.#loadToken) return LOAD_SUPERSEDED;
       const useSharedReferences = hasSharedWorkspaceReferences(wsId);
 
       this.workspace = useSharedReferences
@@ -377,12 +382,16 @@ class ItemDetailStore {
       // and agent logs remain deferred behind their existing loaders.
       this.#syncEditingFromItem();
       await fieldConfigPromise;
-      return this.item;
+      // Screen-field hydration can outlive this request; a newer load that
+      // started meanwhile owns the store now.
+      if (token !== this.#loadToken) return LOAD_SUPERSEDED;
+      return { status: 'success', item: this.item };
     } catch (err) {
-      if (token !== this.#loadToken || isAbortError(err)) return;
+      if (token !== this.#loadToken || isAbortError(err)) return LOAD_SUPERSEDED;
       console.error('Failed to load item or workspace:', err);
       this.error = err.message || 'Failed to load data';
       this.item = null;
+      return { status: 'error', error: this.error };
     } finally {
       if (token === this.#loadToken) {
         if (this.#loadController === controller) this.#loadController = null;

@@ -221,7 +221,12 @@ function parseQuery(search) {
 export function navigate(path, { replace = false } = {}) {
   const logicalPath = toLogical(path);
   const externalPath = toExternal(logicalPath);
-  if (externalPath === window.location.pathname + window.location.search) {
+  const currentURL = window.location.pathname + window.location.search;
+  if (externalPath === currentURL) {
+    // The URL already matches, but the route store can drift (for example after
+    // a direct history write). Republish so the view catches up, without
+    // adding a duplicate history entry.
+    if (currentLocationKey !== currentURL) updateRoute();
     return;
   }
   withMobileViewTransition('push', () => {
