@@ -1,0 +1,213 @@
+package repository
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"fmt"
+	"time"
+
+	"windshift/internal/database"
+	"windshift/internal/models"
+)
+
+// IntakeRepository persists email intake routing (WI-1644).
+type IntakeRepository struct {
+	db database.Database
+}
+
+func NewIntakeRepository(db database.Database) *IntakeRepository {
+	return &IntakeRepository{db: db}
+}
+
+const intakeSelectColumns = `
+	i.id, i.mailbox_id, i.folder, i.target_type, i.target_id,
+	i.request_type_id, i.item_type_id, i.rate_limit_per_hour,
+	i.processing_disposition, i.status, i.created_at, i.updated_at,
+	COALESCE(c.name, '') AS mailbox_name`
+
+const intakeFromJoins = `
+	FROM intakes i
+	LEFT JOIN channels c ON c.id = i.mailbox_id`
+
+func scanIntake(scanner interface {
+	Scan(dest ...any) error
+}) (models.Intake, error) {
+	var in models.Intake
+	var requestTypeID, itemTypeID, rateLimit sql.NullInt64
+	if err := scanner.Scan(
+		&in.ID, &in.MailboxID, &in.Folder, &in.TargetType, &in.TargetID,
+		&requestTypeID, &itemTypeID, &rateLimit,
+		&in.ProcessingDisposition, &in.Status, &in.CreatedAt, &in.UpdatedAt,
+		&in.MailboxName,
+	); err != nil {
+		return in, err
+	}
+	if requestTypeID.Valid {
+		v := int(requestTypeID.Int64)
+		in.RequestTypeID = &v
+	}
+	if itemTypeID.Valid {
+		v := int(itemTypeID.Int64)
+		in.ItemTypeID = &v
+	}
+	if rateLimit.Valid {
+		v := int(rateLimit.Int64)
+		in.RateLimitPerHour = &v
+	}
+	return in, nil
+}
+
+// ListByMailbox returns every intake reading from a mailbox.
+func (r *IntakeRepository) ListByMailbox(ctx context.Context, mailboxID int) ([]models.Intake, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT`+intakeSelectColumns+intakeFromJoins+`
+		WHERE i.mailbox_id = ?
+		ORDER BY i.folder, i.id`, mailboxID)
+	if err != nil {
+		return nil, fmt.Errorf("list intakes for mailbox %d: %w", mailboxID, err)
+	}
+	defer func() { _ = rows.Close() }()
+	return scanIntakes(rows)
+}
+
+// ListEnabledForMailbox returns the enabled intakes a poll should process.
+func (r *IntakeRepository) ListEnabledForMailbox(ctx context.Context, mailboxID int) ([]models.Intake, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT`+intakeSelectColumns+intakeFromJoins+`
+		WHERE i.mailbox_id = ? AND i.status = 'enabled'
+		ORDER BY i.folder, i.id`, mailboxID)
+	if err != nil {
+		return nil, fmt.Errorf("list enabled intakes for mailbox %d: %w", mailboxID, err)
+	}
+	defer func() { _ = rows.Close() }()
+	return scanIntakes(rows)
+}
+
+// ListByTarget returns the intakes feeding a portal or workspace.
+func (r *IntakeRepository) ListByTarget(ctx context.Context, targetType string, targetID int) ([]models.Intake, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT`+intakeSelectColumns+intakeFromJoins+`
+		WHERE i.target_type = ? AND i.target_id = ?
+		ORDER BY i.folder, i.id`, targetType, targetID)
+	if err != nil {
+		return nil, fmt.Errorf("list intakes for %s %d: %w", targetType, targetID, err)
+	}
+	defer func() { _ = rows.Close() }()
+	return scanIntakes(rows)
+}
+
+func scanIntakes(rows *sql.Rows) ([]models.Intake, error) {
+	var out []models.Intake
+	for rows.Next() {
+		in, scanErr := scanIntake(rows)
+		if scanErr != nil {
+			return nil, fmt.Errorf("scan intake: %w", scanErr)
+		}
+		out = append(out, in)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate intakes: %w", err)
+	}
+	if out == nil {
+		out = []models.Intake{}
+	}
+	return out, nil
+}
+
+// GetByID returns an intake, or ErrNotFound.
+func (r *IntakeRepository) GetByID(ctx context.Context, id int) (*models.Intake, error) {
+	row := r.db.QueryRowContext(ctx, `SELECT`+intakeSelectColumns+intakeFromJoins+`
+		WHERE i.id = ?`, id)
+	in, err := scanIntake(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get intake %d: %w", id, err)
+	}
+	return &in, nil
+}
+
+// MailboxFolderTaken reports whether another intake already reads this folder
+// on the mailbox. excludeID > 0 excludes that row.
+func (r *IntakeRepository) MailboxFolderTaken(ctx context.Context, mailboxID int, folder string, excludeID int) (bool, error) {
+	var exists bool
+	err := r.db.QueryRowContext(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM intakes
+			WHERE mailbox_id = ? AND folder = ? AND id != ?
+		)
+	`, mailboxID, folder, excludeID).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("check intake folder: %w", err)
+	}
+	return exists, nil
+}
+
+// Create inserts an intake and returns its id.
+func (r *IntakeRepository) Create(ctx context.Context, in *models.Intake) (int, error) {
+	now := time.Now()
+	folder := in.Folder
+	if folder == "" {
+		folder = "INBOX"
+	}
+	status := in.Status
+	if status == "" {
+		status = "enabled"
+	}
+	var id int
+	err := r.db.QueryRowContext(ctx, `
+		INSERT INTO intakes (
+			mailbox_id, folder, target_type, target_id, request_type_id, item_type_id,
+			rate_limit_per_hour, processing_disposition, status, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id
+	`, in.MailboxID, folder, in.TargetType, in.TargetID, in.RequestTypeID, in.ItemTypeID,
+		in.RateLimitPerHour, in.ProcessingDisposition, status, now, now).Scan(&id)
+	if err != nil {
+		if database.IsUniqueConstraintError(err) {
+			return 0, ErrDuplicateEntry
+		}
+		return 0, fmt.Errorf("create intake: %w", err)
+	}
+	return id, nil
+}
+
+// Update replaces the editable fields of an intake.
+func (r *IntakeRepository) Update(ctx context.Context, in *models.Intake) error {
+	folder := in.Folder
+	if folder == "" {
+		folder = "INBOX"
+	}
+	res, err := r.db.ExecWriteContext(ctx, `
+		UPDATE intakes SET
+			folder = ?, target_type = ?, target_id = ?, request_type_id = ?, item_type_id = ?,
+			rate_limit_per_hour = ?, processing_disposition = ?, status = ?, updated_at = ?
+		WHERE id = ?
+	`, folder, in.TargetType, in.TargetID, in.RequestTypeID, in.ItemTypeID,
+		in.RateLimitPerHour, in.ProcessingDisposition, in.Status, time.Now(), in.ID)
+	if err != nil {
+		if database.IsUniqueConstraintError(err) {
+			return ErrDuplicateEntry
+		}
+		return fmt.Errorf("update intake %d: %w", in.ID, err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// Delete removes an intake and its watermark.
+func (r *IntakeRepository) Delete(ctx context.Context, id int) error {
+	return database.WithTx(r.db, func(tx database.Tx) error {
+		if _, err := tx.Exec(`DELETE FROM email_intake_state WHERE intake_id = ?`, id); err != nil {
+			return fmt.Errorf("delete intake state %d: %w", id, err)
+		}
+		res, err := tx.Exec(`DELETE FROM intakes WHERE id = ?`, id)
+		if err != nil {
+			return fmt.Errorf("delete intake %d: %w", id, err)
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			return ErrNotFound
+		}
+		return nil
+	})
+}

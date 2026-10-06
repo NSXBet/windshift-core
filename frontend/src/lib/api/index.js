@@ -33,7 +33,13 @@ import {
   itemLinkedAssets,
 } from './assets.js';
 import { auth } from './auth.js';
-import { assetReports, channelCategories, channels, requestTypes } from './channels.js';
+import {
+  assetReports,
+  channelCategories,
+  channelIntakes,
+  channels,
+  requestTypes,
+} from './channels.js';
 import { collectionCategories, collections } from './collections.js';
 import { conditionSets } from './conditionSets.js';
 import {
@@ -258,6 +264,9 @@ export const api = {
 
   // Channel Categories
   channelCategories,
+
+  // Mailbox intakes (WI-1644)
+  channelIntakes,
 
   // Milestones
   milestones,

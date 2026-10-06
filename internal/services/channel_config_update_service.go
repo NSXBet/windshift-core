@@ -237,10 +237,11 @@ func (s *ChannelConfigUpdateService) PrepareEnable(ctx context.Context, actorUse
 	return rawConfig, nil
 }
 
-// prepareEmailEnable validates an inbound email channel before activation:
-// the mailbox configuration must be complete, its target workspace must
-// exist, the item type and default priority must be allowed there, and a
-// non-administrator must be able to administer that workspace.
+// prepareEmailEnable validates an inbound email channel before activation: the
+// mailbox connection must be complete and the channel must have at least one
+// intake (folder + target) or legacy routing config. Per-intake target
+// validation happens when the intake is created; the legacy config checks are
+// kept so channels not yet migrated still enable.
 func (s *ChannelConfigUpdateService) prepareEmailEnable(ctx context.Context, actorUserID int, channel *models.Channel, config *models.ChannelConfig, admin bool) error {
 	if s.validateEmail == nil {
 		return channelConfigInvalid("Email channel validation is not configured")
@@ -248,6 +249,16 @@ func (s *ChannelConfigUpdateService) prepareEmailEnable(ctx context.Context, act
 	if err := s.validateEmail(channel, config); err != nil {
 		return channelConfigInvalid(err.Error())
 	}
+
+	intakes, err := repository.NewIntakeRepository(s.channels.db).ListEnabledForMailbox(ctx, channel.ID)
+	if err != nil {
+		return err
+	}
+	hasLegacyRouting := config.EmailWorkspaceID > 0 || config.EmailConnectedPortalID != nil
+	if len(intakes) == 0 && !hasLegacyRouting {
+		return channelConfigInvalid("Email channel has no intake: add at least one intake (folder and target) before enabling")
+	}
+
 	if config.EmailWorkspaceID > 0 {
 		bad, err := s.channels.repo.FindBadWorkspaceIDs([]int{config.EmailWorkspaceID})
 		if err != nil {

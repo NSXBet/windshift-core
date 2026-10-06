@@ -271,10 +271,10 @@ func (c *itemCreation) insertRow(tx database.Tx, itemNumber int, fracIndex strin
 		INSERT INTO items (
 			workspace_id, workspace_item_number, item_type_id, title, description, status_id, priority_id, is_task,
 			iteration_id, project_id, inherit_project, time_project_id, assignee_id, team_id, reporter_id, creator_id, creator_portal_customer_id,
-			channel_id, request_type_id, portal_org_shared, due_date, start_date, end_date, related_work_item_id,
+			channel_id, request_type_id, intake_id, portal_org_shared, due_date, start_date, end_date, related_work_item_id,
 			story_points, estimate_minutes, custom_field_values, virtual_field_data, parent_id,
 			frac_index, created_at, updated_at, last_active_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		RETURNING id
 	`
 
@@ -282,7 +282,7 @@ func (c *itemCreation) insertRow(tx database.Tx, itemNumber int, fracIndex strin
 	err := tx.QueryRow(query,
 		p.WorkspaceID, itemNumber, p.ItemTypeID, p.Title, p.Description, c.statusID, c.priorityID, p.IsTask,
 		p.IterationID, p.ProjectID, p.InheritProject, p.TimeProjectID, p.AssigneeID, p.TeamID, p.ReporterID, p.CreatorID,
-		p.CreatorPortalCustomerID, p.ChannelID, p.RequestTypeID, p.PortalOrgShared, p.DueDate, p.StartDate, p.EndDate,
+		p.CreatorPortalCustomerID, p.ChannelID, p.RequestTypeID, p.IntakeID, p.PortalOrgShared, p.DueDate, p.StartDate, p.EndDate,
 		p.RelatedWorkItemID, p.StoryPoints, p.EstimateMinutes, nullString(p.CustomFieldValuesJSON),
 		nullString(p.VirtualFieldDataJSON), p.ParentID, fracIndex, c.createdAt, c.updatedAt, c.updatedAt,
 	).Scan(&itemID)

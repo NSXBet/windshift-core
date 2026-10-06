@@ -71,6 +71,20 @@ func (p *Processor) ProcessEmail(
 	uidValidity uint32,
 	config *models.ChannelConfig,
 ) (*ProcessingResult, error) {
+	return p.ProcessEmailWithIntake(ctx, email, channelID, uidValidity, config, nil)
+}
+
+// ProcessEmailWithIntake is ProcessEmail for a specific intake. The intake id
+// is stamped on the tracking row for per-intake rate limiting; dedup stays
+// mailbox-scoped on channelID.
+func (p *Processor) ProcessEmailWithIntake(
+	ctx context.Context,
+	email *ParsedEmail,
+	channelID int,
+	uidValidity uint32,
+	config *models.ChannelConfig,
+	intakeID *int,
+) (*ProcessingResult, error) {
 	if email == nil {
 		return nil, fmt.Errorf("email is required")
 	}
@@ -88,7 +102,7 @@ func (p *Processor) ProcessEmail(
 	// 1. Preclaim tracking row. INSERT ... ON CONFLICT DO NOTHING reports 0
 	// rows affected when this dedup_key is already taken — that's our dedup
 	// signal, replacing the older "isAlreadyProcessed" SELECT pre-check.
-	claim, err := p.preclaimTracking(ctx, email, channelID, dedupKey, uidValidity)
+	claim, err := p.preclaimTracking(ctx, email, channelID, intakeID, dedupKey, uidValidity)
 	if err != nil {
 		return nil, fmt.Errorf("failed to claim tracking row: %w", err)
 	}
@@ -118,7 +132,7 @@ func (p *Processor) ProcessEmail(
 	}
 
 	// Flood protection gates NEW conversations only; replies keep flowing.
-	if parentItemID == nil && p.senderIsRateLimited(ctx, channelID, config, email.From.Address) {
+	if parentItemID == nil && p.senderIsRateLimited(ctx, channelID, intakeID, config, email.From.Address) {
 		p.markRateLimited(ctx, channelID, dedupKey)
 		slog.Info("rate-limited new ticket from sender",
 			"channel_id", channelID,
@@ -136,7 +150,7 @@ func (p *Processor) ProcessEmail(
 		result, err = p.addCommentFromReply(email, *parentItemID, customerID)
 	} else {
 		// This is a new conversation - create item
-		result, err = p.createItemFromEmail(ctx, email, channelID, config, customerID)
+		result, err = p.createItemFromEmail(ctx, email, channelID, config, customerID, intakeID)
 	}
 
 	if err != nil {
@@ -212,22 +226,33 @@ func ResolveEmailRateLimitPerHour(config *models.ChannelConfig) int {
 	return *config.EmailRateLimitPerHour
 }
 
-// senderIsRateLimited reports whether senderEmail has reached the channel's
-// per-sender cap on newly created tickets within the rolling window. Replies
-// to existing threads are checked by the caller before this runs. A transient
-// count failure fails open: the rate limit is a safety valve, not a gate that
-// should drop customer mail.
-func (p *Processor) senderIsRateLimited(ctx context.Context, channelID int, config *models.ChannelConfig, senderEmail string) bool {
+// senderIsRateLimited reports whether senderEmail has reached the intake's
+// per-sender cap on newly created tickets within the rolling window. The cap
+// is per intake (folder/target), so one mailbox feeding two targets keeps
+// independent quotas. Legacy callers without an intake fall back to the
+// channel. Replies to existing threads are checked before this runs. A
+// transient count failure fails open: the rate limit is a safety valve, not a
+// gate that should drop customer mail.
+func (p *Processor) senderIsRateLimited(ctx context.Context, channelID int, intakeID *int, config *models.ChannelConfig, senderEmail string) bool {
 	limit := ResolveEmailRateLimitPerHour(config)
 	if limit <= 0 {
 		return false
 	}
 	var recent int
-	err := p.db.QueryRowContext(ctx, `
-		SELECT COUNT(*) FROM email_message_tracking
-		WHERE channel_id = ? AND LOWER(from_email) = ? AND direction = 'inbound'
-		  AND item_id IS NOT NULL AND comment_id IS NULL AND processed_at > ?
-	`, channelID, strings.ToLower(senderEmail), time.Now().Add(-emailRateLimitWindow)).Scan(&recent)
+	var err error
+	if intakeID != nil {
+		err = p.db.QueryRowContext(ctx, `
+			SELECT COUNT(*) FROM email_message_tracking
+			WHERE intake_id = ? AND LOWER(from_email) = ? AND direction = 'inbound'
+			  AND item_id IS NOT NULL AND comment_id IS NULL AND processed_at > ?
+		`, *intakeID, strings.ToLower(senderEmail), time.Now().Add(-emailRateLimitWindow)).Scan(&recent)
+	} else {
+		err = p.db.QueryRowContext(ctx, `
+			SELECT COUNT(*) FROM email_message_tracking
+			WHERE channel_id = ? AND LOWER(from_email) = ? AND direction = 'inbound'
+			  AND item_id IS NOT NULL AND comment_id IS NULL AND processed_at > ?
+		`, channelID, strings.ToLower(senderEmail), time.Now().Add(-emailRateLimitWindow)).Scan(&recent)
+	}
 	if err != nil {
 		slog.Warn("failed to count recent sender tickets; skipping rate limit",
 			"error", err, "channel_id", channelID)
@@ -471,6 +496,7 @@ func (p *Processor) createItemFromEmail( //nolint:unparam // ctx reserved for fu
 	channelID int,
 	config *models.ChannelConfig,
 	customerID int,
+	intakeID *int,
 ) (*ProcessingResult, error) {
 	_ = ctx
 
@@ -510,6 +536,7 @@ func (p *Processor) createItemFromEmail( //nolint:unparam // ctx reserved for fu
 		ItemTypeID:              itemTypeID,
 		PriorityID:              config.EmailDefaultPriorityID,
 		RequestTypeID:           requestTypeID,
+		IntakeID:                intakeID,
 		CreatorPortalCustomerID: &customerID,
 		ChannelID:               &channelID,
 		EventMetadata:           itemevents.PortalCustomer(customerID, "email"),
@@ -841,15 +868,17 @@ func (p *Processor) preclaimTracking(
 	ctx context.Context,
 	email *ParsedEmail,
 	channelID int,
+	intakeID *int,
 	dedupKey string,
 	uidValidity uint32,
 ) (trackingClaimState, error) {
 	res, err := p.db.ExecWriteContext(ctx, `
 		INSERT INTO email_message_tracking (
-			channel_id, message_id, dedup_key, in_reply_to, from_email, from_name, subject,
+			channel_id, intake_id, message_id, dedup_key, in_reply_to, from_email, from_name, subject,
 			item_id, comment_id, direction, uid, uid_validity, processed_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, 'inbound', ?, ?, CURRENT_TIMESTAMP)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, 'inbound', ?, ?, CURRENT_TIMESTAMP)
 		ON CONFLICT(channel_id, dedup_key) DO UPDATE SET
+			intake_id = excluded.intake_id,
 			message_id = excluded.message_id,
 			in_reply_to = excluded.in_reply_to,
 			from_email = excluded.from_email,
@@ -863,6 +892,7 @@ func (p *Processor) preclaimTracking(
 		  AND email_message_tracking.processed_at < ?
 	`,
 		channelID,
+		intakeID,
 		email.MessageID,
 		dedupKey,
 		nullString(email.InReplyTo),

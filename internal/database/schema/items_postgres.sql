@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS items (
 	-- Portal/channel fields
 	channel_id INTEGER,
 	request_type_id INTEGER,
+	intake_id INTEGER, -- email intake that created this item (WI-1644)
 	-- Set at creation when the portal requester shares the request with their
 	-- organisation (WI-1139). Immutable afterwards.
 	portal_org_shared BOOLEAN NOT NULL DEFAULT false,
@@ -158,6 +159,7 @@ ON CONFLICT (id) DO NOTHING;
 -- Portal/channel indexes
 CREATE INDEX IF NOT EXISTS idx_items_channel_id ON items(channel_id);
 CREATE INDEX IF NOT EXISTS idx_items_request_type_id ON items(request_type_id);
+CREATE INDEX IF NOT EXISTS idx_items_intake_id ON items(intake_id);
 
 -- Personal task relationship index
 CREATE INDEX IF NOT EXISTS idx_items_related_work_item_id ON items(related_work_item_id);

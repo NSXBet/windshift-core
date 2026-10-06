@@ -19,6 +19,10 @@ type ChannelRepository struct {
 	db database.Database
 }
 
+// DB exposes the underlying database for handlers that need adjacent
+// repositories (e.g. channel intakes) without a second connection.
+func (r *ChannelRepository) DB() database.Database { return r.db }
+
 // NewChannelRepository creates a new channel repository
 func NewChannelRepository(db database.Database) *ChannelRepository {
 	return &ChannelRepository{db: db}

@@ -41,6 +41,42 @@ CREATE TABLE IF NOT EXISTS email_channel_state (
 
 CREATE INDEX IF NOT EXISTS idx_email_channel_state_channel_id ON email_channel_state(channel_id);
 
+-- Intakes (WI-1644): routing for a mailbox. A mailbox (type='email' channel)
+-- owns the connection; an intake owns one folder and the target it feeds.
+-- One mailbox may feed several intakes, but only via distinct folders.
+CREATE TABLE IF NOT EXISTS intakes (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	mailbox_id INTEGER NOT NULL,
+	folder TEXT NOT NULL DEFAULT 'INBOX',
+	target_type TEXT NOT NULL, -- 'portal' | 'workspace'
+	target_id INTEGER NOT NULL,
+	request_type_id INTEGER, -- portal target: system Email request type (resolved lazily when NULL)
+	item_type_id INTEGER, -- workspace target
+	rate_limit_per_hour INTEGER,
+	processing_disposition TEXT NOT NULL DEFAULT '',
+	status TEXT NOT NULL DEFAULT 'enabled',
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+	FOREIGN KEY (mailbox_id) REFERENCES channels(id) ON DELETE CASCADE
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_intakes_mailbox_folder ON intakes(mailbox_id, folder);
+CREATE INDEX IF NOT EXISTS idx_intakes_target ON intakes(target_type, target_id);
+
+-- Per-folder IMAP watermark. The mailbox connection is polled once, but each
+-- intake keeps its own UIDVALIDITY/UID cursor so folders advance independently.
+CREATE TABLE IF NOT EXISTS email_intake_state (
+	intake_id INTEGER PRIMARY KEY,
+	last_uid INTEGER DEFAULT 0,
+	uid_validity INTEGER DEFAULT 0,
+	failed_message_uid INTEGER NOT NULL DEFAULT 0,
+	failed_message_uid_validity INTEGER NOT NULL DEFAULT 0,
+	failed_message_count INTEGER NOT NULL DEFAULT 0,
+	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	FOREIGN KEY (intake_id) REFERENCES intakes(id) ON DELETE CASCADE
+);
+
 -- Cross-process lease for OAuth token refresh/callback mutations. A process
 -- crash is recovered by expires_at rather than wedging a channel forever.
 CREATE TABLE IF NOT EXISTS email_credential_leases (
@@ -75,6 +111,9 @@ CREATE INDEX IF NOT EXISTS idx_email_processing_leases_expires_at
 CREATE TABLE IF NOT EXISTS email_message_tracking (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	channel_id INTEGER NOT NULL,
+	-- intake_id records which intake (folder/target) ingested this message, for
+	-- per-intake rate limiting. Dedup itself stays mailbox-scoped on channel_id.
+	intake_id INTEGER,
 	message_id TEXT NOT NULL,
 	dedup_key TEXT NOT NULL DEFAULT '',
 	in_reply_to TEXT,

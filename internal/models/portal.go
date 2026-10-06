@@ -667,6 +667,18 @@ type EmailChannelState struct {
 	UpdatedAt                time.Time `json:"updated_at"`
 }
 
+// EmailIntakeState is the per-folder IMAP cursor for an intake (WI-1644). The
+// mailbox connection is shared, but each intake advances its own watermark.
+// Channel-level health (last checked, error count) stays on EmailChannelState.
+type EmailIntakeState struct {
+	IntakeID                 int    `json:"intake_id"`
+	LastUID                  int    `json:"last_uid"`
+	UIDValidity              uint32 `json:"uid_validity"`
+	FailedMessageUID         int    `json:"-"`
+	FailedMessageUIDValidity uint32 `json:"-"`
+	FailedMessageCount       int    `json:"-"`
+}
+
 // EmailMessageTracking records processed emails for deduplication and reply threading
 type EmailMessageTracking struct {
 	ID          int       `json:"id"`

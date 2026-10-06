@@ -4,8 +4,8 @@
   import { api } from '../../api.js';
   import Button from '../../components/Button.svelte';
   import Label from '../../components/Label.svelte';
-  import WorkspaceSelector from '../../workspaces/WorkspaceSelector.svelte';
   import DescriptionText from '../../components/DescriptionText.svelte';
+  import ChannelIntakesSection from './ChannelIntakesSection.svelte';
   import Toggle from '../../components/Toggle.svelte';
   import { publicBaseURL } from '../../runtime/contextPath.js';
   import { isSystemAdmin } from '../../stores/permissions.svelte.js';
@@ -73,23 +73,6 @@
   );
   let oauthIsConnected = $derived(formData.oauth_connected && !oauthIdentityChanged);
 
-  // Keep a configured-but-unlisted portal selectable so a save never silently
-  // clears the link (e.g. the manager cannot list the portal channel).
-  let portalOptions = $derived.by(() => {
-    const options = [{ value: null, label: t('channel.connectedPortalNotConnected') }];
-    for (const portal of portals) {
-      options.push({ value: portal.id, label: portal.name });
-    }
-    const known = portals.some((portal) => portal.id === formData.connected_portal_id);
-    if (formData.connected_portal_id != null && !known) {
-      options.push({
-        value: formData.connected_portal_id,
-        label: t('channel.connectedPortalUnknown', { id: formData.connected_portal_id })
-      });
-    }
-    return options;
-  });
-
   async function startOAuthFlow() {
     if (!$isSystemAdmin || !channelId) return;
 
@@ -138,38 +121,14 @@
       }
     }
 
-    if (!formData.workspace_id) {
-      return { valid: false, message: t('channel.targetWorkspaceRequired') };
-    }
-    if (!formData.item_type_id) {
-      return { valid: false, message: t('channel.itemTypeRequired') };
-    }
-    if (formData.rate_limit_per_hour !== null && formData.rate_limit_per_hour !== '' && Number(formData.rate_limit_per_hour) < 0) {
-      return { valid: false, message: t('channel.rateLimitInvalid') };
-    }
-
     return { valid: true };
   }
 
   export function getConfig() {
+    // The channel config carries the connection only. Routing (folder, target,
+    // request/item type, rate limit, disposition) lives on intakes.
     const baseConfig = {
-      email_auth_method: formData.auth_method,
-      email_workspace_id: formData.workspace_id,
-      email_item_type_id: formData.item_type_id,
-      // null explicitly disconnects the portal; the config merge overwrites
-      // the stored key with null rather than leaving a stale link behind.
-      email_connected_portal_id: formData.connected_portal_id ?? null,
-      email_mailbox: formData.mailbox,
-      email_processing_disposition: formData.processing_disposition,
-      // Legacy booleans kept in sync so a rollback to an older build still
-      // behaves; the enum is the source of truth going forward.
-      email_mark_as_read: formData.processing_disposition === 'mark_read',
-      email_delete_after_process: formData.processing_disposition === 'delete',
-      // null = default cap, 0 = unlimited, n = n per sender per hour
-      email_rate_limit_per_hour:
-        formData.rate_limit_per_hour === null || formData.rate_limit_per_hour === ''
-          ? null
-          : Number(formData.rate_limit_per_hour)
+      email_auth_method: formData.auth_method
     };
 
     if (formData.auth_method === 'oauth') {
@@ -407,100 +366,16 @@
       </div>
     {/if}
 
-    <!-- Item Creation -->
-    <div class="pt-4 border-t space-y-4" style="border-color: var(--ds-border);">
-      <h5 class="text-sm font-medium" style="color: var(--ds-text);">{t('channel.itemCreation')}</h5>
-
-      <div class="grid grid-cols-2 gap-4">
-        <div>
-          <Label color="default" required class="mb-2">{t('channel.targetWorkspace')}</Label>
-          <WorkspaceSelector
-            bind:value={formData.workspace_id}
-            {workspaces}
-            placeholder={t('channel.selectWorkspace')}
-            onSelect={(workspace) => {
-              formData.item_type_id = null;
-              onLoadItemTypes(formData.workspace_id);
-            }}
-          />
-        </div>
-        <div>
-          <SelectField
-            label={t('channel.itemType')}
-            required
-            labelColor="default"
-            disabled={!formData.workspace_id}
-            options={[{ value: null, label: t('channel.selectItemType') }, ...itemTypes.map(type => ({ value: type.id, label: type.name }))]}
-            bind:value={formData.item_type_id}
-          />
-          {#if !formData.workspace_id}
-            <DescriptionText>{t('channel.selectWorkspaceFirst')}</DescriptionText>
-          {/if}
-        </div>
-      </div>
-    </div>
-
-    <!-- Customer Portal -->
-    <div class="pt-4 border-t space-y-4" style="border-color: var(--ds-border);">
-      <h5 class="text-sm font-medium" style="color: var(--ds-text);">{t('channel.connectedPortalSection')}</h5>
-
-      <div>
-        <SelectField
-          label={t('channel.connectedPortal')}
-          labelColor="default"
-          id="email-connected-portal"
-          options={portalOptions}
-          bind:value={formData.connected_portal_id}
-        />
-        <DescriptionText>{t('channel.connectedPortalHelp')}</DescriptionText>
-      </div>
-    </div>
-
-    <!-- Processing Options -->
-    <div class="pt-4 border-t space-y-4" style="border-color: var(--ds-border);">
-      <h5 class="text-sm font-medium" style="color: var(--ds-text);">{t('channel.processingOptions')}</h5>
-
-      <div>
-        <TextField
-          label={t('channel.mailbox')}
-          labelColor="default"
-          placeholder="INBOX"
-          bind:value={formData.mailbox}
-        />
-        <DescriptionText>{t('channel.mailboxHelp')}</DescriptionText>
-      </div>
-
-      <div>
-        <TextField
-          label={t('channel.rateLimitPerHour')}
-          labelColor="default"
-          type="number"
-          min="0"
-          placeholder="100"
-          bind:value={formData.rate_limit_per_hour}
-        />
-        <DescriptionText>{t('channel.rateLimitHelp')}</DescriptionText>
-      </div>
-
-      <div>
-        <SelectField
-          label={t('channel.processingDisposition')}
-          labelColor="default"
-          id="email-processing-disposition"
-          options={[
-            { value: 'leave', label: t('channel.dispositionLeave') },
-            { value: 'mark_read', label: t('channel.dispositionMarkRead') },
-            { value: 'delete', label: t('channel.dispositionDelete') }
-          ]}
-          bind:value={formData.processing_disposition}
-        />
-        <DescriptionText>
-          {formData.processing_disposition === 'delete'
-            ? t('channel.dispositionDeleteHelp')
-            : t('channel.dispositionHelp')}
-        </DescriptionText>
-      </div>
-    </div>
+    <!-- Intakes: routing is separate from the connection. One mailbox can feed
+         several intakes via distinct folders. -->
+    <ChannelIntakesSection
+      {channelId}
+      {workspaces}
+      {itemTypes}
+      {portals}
+      {onToast}
+      {onLoadItemTypes}
+    />
 
     <div class="flex items-center justify-between">
       <div>

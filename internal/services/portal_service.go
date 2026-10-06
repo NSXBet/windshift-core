@@ -258,6 +258,25 @@ func (s *PortalService) portalRequestVisibility(ctx context.Context, portalChann
 		vis.ServedWorkspaceIDs = portalCfg.PortalWorkspaceIDs
 	}
 
+	// Intakes targeting this portal own the mailbox links since WI-1644.
+	linked := map[int]struct{}{}
+	intakes, err := repository.NewIntakeRepository(s.db).ListByTarget(ctx, models.IntakeTargetPortal, portalChannelID)
+	if err != nil {
+		return vis, fmt.Errorf("list portal intakes: %w", err)
+	}
+	for _, intake := range intakes {
+		if intake.Status != "enabled" {
+			continue
+		}
+		if _, seen := linked[intake.MailboxID]; seen {
+			continue
+		}
+		linked[intake.MailboxID] = struct{}{}
+		vis.LinkedEmailChannelIDs = append(vis.LinkedEmailChannelIDs, intake.MailboxID)
+	}
+
+	// Legacy fallback: enabled email channels that still carry
+	// email_connected_portal_id but have not been migrated to an intake.
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, COALESCE(config, '{}') FROM channels
 		WHERE type = 'email' AND direction = 'inbound' AND status = 'enabled'
@@ -276,9 +295,14 @@ func (s *PortalService) portalRequestVisibility(ctx context.Context, portalChann
 		if json.Unmarshal([]byte(configJSON), &cfg) != nil {
 			continue
 		}
-		if cfg.EmailConnectedPortalID != nil && *cfg.EmailConnectedPortalID == portalChannelID {
-			vis.LinkedEmailChannelIDs = append(vis.LinkedEmailChannelIDs, id)
+		if cfg.EmailConnectedPortalID == nil || *cfg.EmailConnectedPortalID != portalChannelID {
+			continue
 		}
+		if _, seen := linked[id]; seen {
+			continue
+		}
+		linked[id] = struct{}{}
+		vis.LinkedEmailChannelIDs = append(vis.LinkedEmailChannelIDs, id)
 	}
 	return vis, rows.Err()
 }

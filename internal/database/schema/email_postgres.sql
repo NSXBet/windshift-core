@@ -41,6 +41,38 @@ CREATE TABLE IF NOT EXISTS email_channel_state (
 
 CREATE INDEX IF NOT EXISTS idx_email_channel_state_channel_id ON email_channel_state(channel_id);
 
+-- Intakes (WI-1644); see email.sql for the contract.
+CREATE TABLE IF NOT EXISTS intakes (
+	id SERIAL PRIMARY KEY,
+	mailbox_id INTEGER NOT NULL,
+	folder TEXT NOT NULL DEFAULT 'INBOX',
+	target_type TEXT NOT NULL,
+	target_id INTEGER NOT NULL,
+	request_type_id INTEGER,
+	item_type_id INTEGER,
+	rate_limit_per_hour INTEGER,
+	processing_disposition TEXT NOT NULL DEFAULT '',
+	status TEXT NOT NULL DEFAULT 'enabled',
+	created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+	updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+	FOREIGN KEY (mailbox_id) REFERENCES channels(id) ON DELETE CASCADE
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_intakes_mailbox_folder ON intakes(mailbox_id, folder);
+CREATE INDEX IF NOT EXISTS idx_intakes_target ON intakes(target_type, target_id);
+
+CREATE TABLE IF NOT EXISTS email_intake_state (
+	intake_id INTEGER PRIMARY KEY,
+	last_uid INTEGER DEFAULT 0,
+	uid_validity BIGINT DEFAULT 0,
+	failed_message_uid INTEGER NOT NULL DEFAULT 0,
+	failed_message_uid_validity BIGINT NOT NULL DEFAULT 0,
+	failed_message_count INTEGER NOT NULL DEFAULT 0,
+	created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	FOREIGN KEY (intake_id) REFERENCES intakes(id) ON DELETE CASCADE
+);
+
 -- Cross-process lease for OAuth token refresh/callback mutations. A process
 -- crash is recovered by expires_at rather than wedging a channel forever.
 CREATE TABLE IF NOT EXISTS email_credential_leases (
@@ -69,6 +101,7 @@ CREATE INDEX IF NOT EXISTS idx_email_processing_leases_expires_at
 CREATE TABLE IF NOT EXISTS email_message_tracking (
 	id SERIAL PRIMARY KEY,
 	channel_id INTEGER NOT NULL,
+	intake_id INTEGER,
 	message_id TEXT NOT NULL,
 	dedup_key TEXT NOT NULL DEFAULT '',
 	in_reply_to TEXT,

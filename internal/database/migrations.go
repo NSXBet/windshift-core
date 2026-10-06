@@ -2538,6 +2538,18 @@ var Catalog = []Migration{
 			ALTER TABLE email_reply_outbox ADD COLUMN IF NOT EXISTS reply_to_name TEXT NOT NULL DEFAULT '';
 		`,
 	},
+	{
+		Version:         "20261018_intake_split",
+		Name:            "Split email intake routing out of mailbox channels (WI-1644)",
+		CheckSQLite:     sqliteTableCheck("intakes"),
+		CheckPostgres:   pgTableCheck("intakes"),
+		CheckSQLiteFn:   checkIntakeSplitMigration,
+		CheckPostgresFn: checkIntakeSplitMigration,
+		SQLite:          "applyIntakeSplitMigration:v1",
+		Postgres:        "applyIntakeSplitMigration:v1",
+		ApplySQLite:     applyIntakeSplitMigration,
+		ApplyPostgres:   applyIntakeSplitMigration,
+	},
 }
 
 // checkNotificationDigestLinksMigration reports the migration as already
@@ -3111,6 +3123,245 @@ func applySQLiteSSOAttributeMappingDefault(db Database) (retErr error) {
 		return fmt.Errorf("commit SSO provider rebuild: %w", err)
 	}
 
+	return nil
+}
+
+// checkIntakeSplitMigration reports whether the intake split has been applied.
+func checkIntakeSplitMigration(db Database) (bool, error) {
+	var tableCheck, trackingCol, itemsCol string
+	if db.GetDriverName() == driverPostgres {
+		tableCheck = pgTableCheck("intakes")
+		trackingCol = pgColumnCheck("email_message_tracking", "intake_id")
+		itemsCol = pgColumnCheck("items", "intake_id")
+	} else {
+		tableCheck = sqliteTableCheck("intakes")
+		trackingCol = sqliteColumnCheck("email_message_tracking", "intake_id")
+		itemsCol = sqliteColumnCheck("items", "intake_id")
+	}
+	for _, q := range []string{tableCheck, trackingCol, itemsCol} {
+		var n int
+		if err := db.QueryRow(q).Scan(&n); err != nil {
+			return false, err
+		}
+		if n == 0 {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+const intakesTableSQLite = `CREATE TABLE IF NOT EXISTS intakes (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	mailbox_id INTEGER NOT NULL,
+	folder TEXT NOT NULL DEFAULT 'INBOX',
+	target_type TEXT NOT NULL,
+	target_id INTEGER NOT NULL,
+	request_type_id INTEGER,
+	item_type_id INTEGER,
+	rate_limit_per_hour INTEGER,
+	processing_disposition TEXT NOT NULL DEFAULT '',
+	status TEXT NOT NULL DEFAULT 'enabled',
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+	FOREIGN KEY (mailbox_id) REFERENCES channels(id) ON DELETE CASCADE
+)`
+
+const intakesTablePostgres = `CREATE TABLE IF NOT EXISTS intakes (
+	id SERIAL PRIMARY KEY,
+	mailbox_id INTEGER NOT NULL,
+	folder TEXT NOT NULL DEFAULT 'INBOX',
+	target_type TEXT NOT NULL,
+	target_id INTEGER NOT NULL,
+	request_type_id INTEGER,
+	item_type_id INTEGER,
+	rate_limit_per_hour INTEGER,
+	processing_disposition TEXT NOT NULL DEFAULT '',
+	status TEXT NOT NULL DEFAULT 'enabled',
+	created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+	updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+	FOREIGN KEY (mailbox_id) REFERENCES channels(id) ON DELETE CASCADE
+)`
+
+const intakeStateTableSQLite = `CREATE TABLE IF NOT EXISTS email_intake_state (
+	intake_id INTEGER PRIMARY KEY,
+	last_uid INTEGER DEFAULT 0,
+	uid_validity INTEGER DEFAULT 0,
+	failed_message_uid INTEGER NOT NULL DEFAULT 0,
+	failed_message_uid_validity INTEGER NOT NULL DEFAULT 0,
+	failed_message_count INTEGER NOT NULL DEFAULT 0,
+	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	FOREIGN KEY (intake_id) REFERENCES intakes(id) ON DELETE CASCADE
+)`
+
+const intakeStateTablePostgres = `CREATE TABLE IF NOT EXISTS email_intake_state (
+	intake_id INTEGER PRIMARY KEY,
+	last_uid INTEGER DEFAULT 0,
+	uid_validity BIGINT DEFAULT 0,
+	failed_message_uid INTEGER NOT NULL DEFAULT 0,
+	failed_message_uid_validity BIGINT NOT NULL DEFAULT 0,
+	failed_message_count INTEGER NOT NULL DEFAULT 0,
+	created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	FOREIGN KEY (intake_id) REFERENCES intakes(id) ON DELETE CASCADE
+)`
+
+// applyIntakeSplitMigration creates the intake tables, adds provenance columns,
+// and mints one intake per existing email channel from its routing config. The
+// legacy routing fields stay in the channel config but are no longer read; the
+// watermark moves to the per-intake state.
+func applyIntakeSplitMigration(db Database) error {
+	statements := make([]string, 0, 7)
+	if db.GetDriverName() == driverPostgres {
+		statements = append(statements,
+			intakesTablePostgres,
+			intakeStateTablePostgres,
+			`ALTER TABLE email_message_tracking ADD COLUMN IF NOT EXISTS intake_id INTEGER`,
+			`ALTER TABLE items ADD COLUMN IF NOT EXISTS intake_id INTEGER`,
+		)
+	} else {
+		statements = append(statements,
+			intakesTableSQLite,
+			intakeStateTableSQLite,
+			`ALTER TABLE email_message_tracking ADD COLUMN intake_id INTEGER`,
+			`ALTER TABLE items ADD COLUMN intake_id INTEGER`,
+		)
+	}
+	statements = append(statements,
+		`CREATE UNIQUE INDEX IF NOT EXISTS uq_intakes_mailbox_folder ON intakes(mailbox_id, folder)`,
+		`CREATE INDEX IF NOT EXISTS idx_intakes_target ON intakes(target_type, target_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_items_intake_id ON items(intake_id)`,
+	)
+	for _, stmt := range statements {
+		if _, err := db.Exec(stmt); err != nil {
+			return fmt.Errorf("intake split ddl: %w", err)
+		}
+	}
+	return backfillIntakesFromChannels(db)
+}
+
+// backfillIntakesFromChannels creates one intake per inbound email channel and
+// copies the channel's watermark into the new per-intake state so no mail is
+// refetched.
+func backfillIntakesFromChannels(db Database) error {
+	rows, err := db.Query(`
+		SELECT id, COALESCE(config, '{}') FROM channels
+		WHERE type = 'email' AND direction = 'inbound'
+	`)
+	if err != nil {
+		return fmt.Errorf("list email channels for intake backfill: %w", err)
+	}
+	type created struct {
+		channelID int
+		intakeID  int
+	}
+	var createdIntakes []created
+	for rows.Next() {
+		var channelID int
+		var configJSON string
+		if err := rows.Scan(&channelID, &configJSON); err != nil {
+			_ = rows.Close()
+			return fmt.Errorf("scan email channel for intake backfill: %w", err)
+		}
+		var cfg struct {
+			EmailConnectedPortalID     *int   `json:"email_connected_portal_id"`
+			EmailWorkspaceID           int    `json:"email_workspace_id"`
+			EmailItemTypeID            *int   `json:"email_item_type_id"`
+			EmailMailbox               string `json:"email_mailbox"`
+			EmailRateLimitPerHour      *int   `json:"email_rate_limit_per_hour"`
+			EmailProcessingDisposition string `json:"email_processing_disposition"`
+			EmailMarkAsRead            bool   `json:"email_mark_as_read"`
+			EmailDeleteAfterProcess    bool   `json:"email_delete_after_process"`
+		}
+		if err := json.Unmarshal([]byte(configJSON), &cfg); err != nil {
+			continue
+		}
+
+		var targetType string
+		var targetID int
+		var itemTypeID *int
+		switch {
+		case cfg.EmailConnectedPortalID != nil:
+			targetType = "portal"
+			targetID = *cfg.EmailConnectedPortalID
+		case cfg.EmailWorkspaceID > 0:
+			targetType = "workspace"
+			targetID = cfg.EmailWorkspaceID
+			itemTypeID = cfg.EmailItemTypeID
+		default:
+			continue
+		}
+		folder := cfg.EmailMailbox
+		if folder == "" {
+			folder = "INBOX"
+		}
+		disposition := cfg.EmailProcessingDisposition
+		if disposition == "" {
+			switch {
+			case cfg.EmailDeleteAfterProcess:
+				disposition = "delete"
+			case cfg.EmailMarkAsRead:
+				disposition = "mark_read"
+			default:
+				disposition = "leave"
+			}
+		}
+
+		var intakeID int
+		err := db.QueryRow(`
+			INSERT INTO intakes (
+				mailbox_id, folder, target_type, target_id, request_type_id, item_type_id,
+				rate_limit_per_hour, processing_disposition, status, created_at, updated_at
+			) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, 'enabled', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+			RETURNING id
+		`, channelID, folder, targetType, targetID, itemTypeID, cfg.EmailRateLimitPerHour, disposition).Scan(&intakeID)
+		if err != nil {
+			_ = rows.Close()
+			return fmt.Errorf("create intake for channel %d: %w", channelID, err)
+		}
+		createdIntakes = append(createdIntakes, created{channelID: channelID, intakeID: intakeID})
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return fmt.Errorf("iterate email channels for intake backfill: %w", err)
+	}
+	_ = rows.Close()
+
+	for _, c := range createdIntakes {
+		if _, err := db.ExecWrite(`
+			INSERT INTO email_intake_state (
+				intake_id, last_uid, uid_validity,
+				failed_message_uid, failed_message_uid_validity, failed_message_count,
+				created_at, updated_at
+			)
+			SELECT ?, last_uid, uid_validity,
+			       failed_message_uid, failed_message_uid_validity, failed_message_count,
+			       CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+			FROM email_channel_state WHERE channel_id = ?
+			ON CONFLICT(intake_id) DO NOTHING
+		`, c.intakeID, c.channelID); err != nil {
+			return fmt.Errorf("copy channel %d watermark to intake %d: %w", c.channelID, c.intakeID, err)
+		}
+	}
+
+	// Provenance for already-ingested mail: attribute historical rows to the
+	// single intake that now represents their channel.
+	if _, err := db.ExecWrite(`
+		UPDATE email_message_tracking SET intake_id = (
+			SELECT i.id FROM intakes i WHERE i.mailbox_id = email_message_tracking.channel_id ORDER BY i.id LIMIT 1
+		)
+		WHERE intake_id IS NULL AND channel_id IN (SELECT id FROM channels WHERE type = 'email')
+	`); err != nil {
+		return fmt.Errorf("backfill tracking intake_id: %w", err)
+	}
+	if _, err := db.ExecWrite(`
+		UPDATE items SET intake_id = (
+			SELECT i.id FROM intakes i WHERE i.mailbox_id = items.channel_id ORDER BY i.id LIMIT 1
+		)
+		WHERE intake_id IS NULL AND channel_id IN (SELECT id FROM channels WHERE type = 'email')
+	`); err != nil {
+		return fmt.Errorf("backfill item intake_id: %w", err)
+	}
 	return nil
 }
 

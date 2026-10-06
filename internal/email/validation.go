@@ -27,15 +27,9 @@ func ValidateConfigForEnable(channel *models.Channel, config *models.ChannelConf
 		return nil
 	}
 
-	if config.EmailWorkspaceID == 0 {
-		return fmt.Errorf("%w: email_workspace_id is required", ErrConfigNotReady)
-	}
-	if config.EmailItemTypeID == nil || *config.EmailItemTypeID == 0 {
-		return fmt.Errorf("%w: email_item_type_id is required", ErrConfigNotReady)
-	}
-	if strings.TrimSpace(config.EmailMailbox) == "" {
-		return fmt.Errorf("%w: email_mailbox is required (default \"INBOX\")", ErrConfigNotReady)
-	}
+	// Routing (workspace/portal/item type/folder) lives on intakes since
+	// WI-1644; the channel config only needs a usable connection. Intake
+	// presence is validated by the caller, which has DB access.
 	if config.EmailRateLimitPerHour != nil && *config.EmailRateLimitPerHour < 0 {
 		return fmt.Errorf("%w: email_rate_limit_per_hour must be 0 (unlimited) or a positive number", ErrConfigNotReady)
 	}
