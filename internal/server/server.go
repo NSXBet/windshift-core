@@ -575,6 +575,7 @@ func (s *Server) initialize() error {
 	if baseURL == "" {
 		baseURL = fmt.Sprintf("http://localhost:%s%s", cfg.Port, cfg.ContextPath)
 	}
+	smtpSender.SetBaseURL(baseURL)
 
 	emailVerificationService := services.NewEmailVerificationService(s.db, smtpSender, baseURL)
 

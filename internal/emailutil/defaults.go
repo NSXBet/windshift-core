@@ -183,9 +183,10 @@ const notificationBatchHTML = emailShellOpen + `<h1 style="margin:0 0 16px;font-
 {{range .Notifications}}
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 12px;border:1px solid #eef0f3;border-left:3px solid {{.AccentColor}};border-radius:8px;background:#fafbfc;">
 <tr><td style="padding:14px 16px;">
-<div style="font-weight:600;font-size:14px;color:#0f172a;margin-bottom:4px;">{{.Title}}</div>
+<div style="font-weight:600;font-size:14px;color:#0f172a;margin-bottom:4px;">{{if .ActionURL}}<a href="{{.ActionURL}}" style="color:#0f172a;text-decoration:none;">{{.Title}}</a>{{else}}{{.Title}}{{end}}</div>
 <div style="font-size:13px;color:#374151;line-height:1.5;">{{.Message}}</div>
 <div style="font-size:12px;color:#9ca3af;margin-top:8px;">{{.FormattedTime}}</div>
+{{if .ActionURL}}<div style="font-size:13px;margin-top:8px;"><a href="{{.ActionURL}}" style="color:#2874bb;text-decoration:underline;">View in Windshift</a></div>{{end}}
 </td></tr>
 </table>
 {{end}}
@@ -199,7 +200,8 @@ You have {{.NotificationCount}} new notification{{if ne .NotificationCount 1}}s{
 {{range .Notifications}}* {{.Title}}
   {{.Message}}
   {{.FormattedTime}}
-
+{{if .ActionURL}}  View: {{.ActionURL}}
+{{end}}
 {{end}}
 Manage your notification preferences in Windshift.
 `

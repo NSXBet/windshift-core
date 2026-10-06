@@ -173,6 +173,7 @@ type NotificationSMTPSender struct {
 	db         database.Database
 	templates  *repository.EmailTemplateRepository
 	encryption Encryptor
+	baseURL    string
 }
 
 // NewNotificationSMTPSender creates a new SMTP notification sender
@@ -181,6 +182,13 @@ func NewNotificationSMTPSender(db database.Database) *NotificationSMTPSender {
 		db:        db,
 		templates: repository.NewEmailTemplateRepository(db),
 	}
+}
+
+// SetBaseURL sets the browser-visible base URL used to turn notification
+// action paths into clickable links in digest emails. Called from server
+// startup.
+func (s *NotificationSMTPSender) SetBaseURL(baseURL string) {
+	s.baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
 }
 
 // SetEncryption wires the at-rest encryption service used to decrypt
@@ -335,7 +343,7 @@ func (s *NotificationSMTPSender) SendBatchedNotificationsContext(ctx context.Con
 		return fmt.Errorf("failed to get SMTP config: %w", err)
 	}
 
-	subject, htmlBody, textBody, err := s.RenderEmail(emailutil.TemplateNotificationBatch, buildNotificationBatchData(userName, notifications))
+	subject, htmlBody, textBody, err := s.RenderEmail(emailutil.TemplateNotificationBatch, buildNotificationBatchData(s.baseURL, userName, notifications))
 	if err != nil {
 		return fmt.Errorf("failed to render notification email: %w", err)
 	}
@@ -352,9 +360,10 @@ type notificationBatchEntry struct {
 	Type          string
 	AccentColor   string
 	FormattedTime string
+	ActionURL     string
 }
 
-func buildNotificationBatchData(userName string, notifications []models.Notification) any {
+func buildNotificationBatchData(baseURL, userName string, notifications []models.Notification) any {
 	data := struct {
 		UserName          string
 		NotificationCount int
@@ -370,9 +379,28 @@ func buildNotificationBatchData(userName string, notifications []models.Notifica
 			Type:          n.Type,
 			AccentColor:   notificationAccentColor(n.Type),
 			FormattedTime: n.Timestamp.Format("January 2, 2006 at 3:04 PM"),
+			ActionURL:     absoluteActionURL(baseURL, n.ActionURL),
 		})
 	}
 	return data
+}
+
+// absoluteActionURL turns a stored relative notification action path into a
+// clickable absolute URL. Already-absolute URLs pass through, and an empty
+// base URL leaves the path as-is so the template can still omit the link.
+func absoluteActionURL(baseURL, actionURL string) string {
+	actionURL = strings.TrimSpace(actionURL)
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if actionURL == "" || baseURL == "" {
+		return actionURL
+	}
+	if strings.HasPrefix(actionURL, "http://") || strings.HasPrefix(actionURL, "https://") || strings.HasPrefix(actionURL, "//") {
+		return actionURL
+	}
+	if !strings.HasPrefix(actionURL, "/") {
+		actionURL = "/" + actionURL
+	}
+	return baseURL + actionURL
 }
 
 // notificationAccentColor maps notification types to a brand-aligned accent

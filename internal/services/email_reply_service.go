@@ -441,6 +441,24 @@ func (s *EmailReplyService) sendItemNotice(item *models.Item, toEmail, toName, s
 	}); err != nil {
 		return false, "", fmt.Errorf("send customer notice: %w", err)
 	}
+
+	// Record the notice's own Message-ID so a reply that carries only
+	// In-Reply-To (no References) still resolves to this item instead of
+	// starting a new ticket. Best-effort: the mail is already sent.
+	if _, err := s.db.ExecWrite(`
+		INSERT INTO email_message_tracking (
+			channel_id, message_id, dedup_key, in_reply_to, from_email, from_name, subject,
+			item_id, comment_id, direction, processed_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, 'outbound', CURRENT_TIMESTAMP)
+		ON CONFLICT(channel_id, dedup_key) DO NOTHING
+	`, *item.ChannelID, messageID, messageID, inReplyTo, s.getSMTPFromEmail(), authorName, emailSubject, item.ID); err != nil {
+		slog.Warn("failed to record customer notice in email tracking; replies may not thread",
+			slog.String("component", "email_reply_service"),
+			slog.Int("item_id", item.ID),
+			slog.String("message_id", messageID),
+			slog.Any("error", err),
+		)
+	}
 	return true, "", nil
 }
 

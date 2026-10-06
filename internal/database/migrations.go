@@ -2508,7 +2508,62 @@ var Catalog = []Migration{
 		SQLite:          portalReplyMarkdownMigration,
 		Postgres:        portalReplyMarkdownMigration,
 	},
+	{
+		Version:         "20261014_notification_digest_links",
+		Name:            "Add clickable action links to notification digest emails",
+		CheckSQLiteFn:   checkNotificationDigestLinksMigration,
+		CheckPostgresFn: checkNotificationDigestLinksMigration,
+		SQLite:          notificationDigestLinksMigration,
+		Postgres:        notificationDigestLinksMigration,
+	},
 }
+
+// checkNotificationDigestLinksMigration reports the migration as already
+// applied when the digest template already renders the action URL. Trivially
+// true on fresh installs, where the table is empty at migration time.
+func checkNotificationDigestLinksMigration(db Database) (bool, error) {
+	var stale int
+	err := db.QueryRow(`
+		SELECT COUNT(*) FROM notification_templates
+		WHERE name = 'notification_batch' AND content NOT LIKE '%ActionURL%'
+	`).Scan(&stale)
+	if err != nil {
+		return false, err
+	}
+	return stale == 0, nil
+}
+
+// notificationDigestLinksMigration rewrites the shipped digest template so the
+// action URL the sender now provides becomes a clickable link. Each REPLACE is
+// scoped to the exact shipped markup, so admin edits elsewhere survive and
+// re-running is a no-op.
+const notificationDigestLinksMigration = `
+UPDATE notification_templates
+SET content = REPLACE(
+    REPLACE(
+        content,
+        '<div style="font-weight:600;font-size:14px;color:#0f172a;margin-bottom:4px;">{{.Title}}</div>',
+        '<div style="font-weight:600;font-size:14px;color:#0f172a;margin-bottom:4px;">{{if .ActionURL}}<a href="{{.ActionURL}}" style="color:#0f172a;text-decoration:none;">{{.Title}}</a>{{else}}{{.Title}}{{end}}</div>'
+    ),
+    '<div style="font-size:12px;color:#9ca3af;margin-top:8px;">{{.FormattedTime}}</div>
+</td>',
+    '<div style="font-size:12px;color:#9ca3af;margin-top:8px;">{{.FormattedTime}}</div>{{if .ActionURL}}<div style="font-size:13px;margin-top:8px;"><a href="{{.ActionURL}}" style="color:#2874bb;text-decoration:underline;">View in Windshift</a></div>{{end}}
+</td>'
+)
+WHERE name = 'notification_batch';
+UPDATE notification_templates
+SET text_body = REPLACE(
+    text_body,
+    '  {{.FormattedTime}}
+
+{{end}}',
+    '  {{.FormattedTime}}{{if .ActionURL}}
+  View: {{.ActionURL}}{{end}}
+
+{{end}}'
+)
+WHERE name = 'notification_batch';
+`
 
 // checkPortalReplyMarkdownMigration reports the migration as already applied
 // when the portal reply template no longer renders raw {{.Content}}. Trivially

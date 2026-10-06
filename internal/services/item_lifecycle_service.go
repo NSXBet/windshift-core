@@ -313,6 +313,19 @@ func (s *ItemLifecycleService) Merge(ctx context.Context, input ItemMergeInput) 
 				if _, err := tx.Exec(`UPDATE email_reply_outbox SET item_id = ? WHERE item_id = ?`, target.ID, plan.item.ID); err != nil {
 					return fmt.Errorf("re-point pending replies from item %d: %w", plan.item.ID, err)
 				}
+				// External participants follow the content too, or a source-only
+				// participant loses canonical portal access and reply notifications.
+				// Dedupe first: the unique (item_id, portal_customer_id) index
+				// would otherwise reject a customer on both tickets.
+				if _, err := tx.Exec(`
+					DELETE FROM item_participants
+					WHERE item_id = ? AND portal_customer_id IN (SELECT portal_customer_id FROM item_participants WHERE item_id = ?)
+				`, plan.item.ID, target.ID); err != nil {
+					return fmt.Errorf("deduplicate participants for item %d: %w", plan.item.ID, err)
+				}
+				if _, err := tx.Exec(`UPDATE item_participants SET item_id = ? WHERE item_id = ?`, target.ID, plan.item.ID); err != nil {
+					return fmt.Errorf("move participants from item %d: %w", plan.item.ID, err)
+				}
 			}
 
 			// The conditional update closes the race between the pre-checks and
