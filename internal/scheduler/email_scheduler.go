@@ -385,7 +385,11 @@ func (es *EmailScheduler) pollIntake(
 	effective.EmailWorkspaceID = 0
 	effective.EmailItemTypeID = nil
 	effective.EmailRateLimitPerHour = intake.RateLimitPerHour
-	effective.EmailProcessingDisposition = intake.ProcessingDisposition
+	// An empty intake disposition means "inherit the mailbox default", so keep
+	// whatever the mailbox config carries (enum or legacy booleans).
+	if intake.ProcessingDisposition != "" {
+		effective.EmailProcessingDisposition = intake.ProcessingDisposition
+	}
 	if intake.TargetType == models.IntakeTargetPortal {
 		portalID := intake.TargetID
 		effective.EmailConnectedPortalID = &portalID
