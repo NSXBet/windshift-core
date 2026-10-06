@@ -203,9 +203,21 @@ import NativeSelect from '../../components/NativeSelect.svelte';
 
   let availableSubIssueTypes = $derived(itemDetailStore.availableSubIssueTypes);
 
+  // Identity of a key-addressed route (workspace key + item number), or null
+  // for numeric/global routes.
+  function lookupIdentity(key, number) {
+    return key ? `${key}\u0000${number}` : null;
+  }
+
   // Track itemId changes for reactivity
   // svelte-ignore state_referenced_locally
   let previousItemId = $state(itemId);
+
+  // The requested key-route identity. Item numbers repeat across workspaces, so
+  // itemId alone cannot tell a same-number destination in another workspace
+  // apart from a re-render of the current one.
+  // svelte-ignore state_referenced_locally
+  let previousLookupKey = lookupIdentity(workspaceKey, itemNumber);
 
   // Guards asynchronous load continuations. Every navigation and unmount bumps
   // the generation, so a superseded load cannot rewrite route identity or
@@ -941,8 +953,14 @@ import NativeSelect from '../../components/NativeSelect.svelte';
   // Stale-while-revalidate: keep the previous item rendered while the new one
   // loads so the swap is atomic instead of skeleton-flashing.
   $effect(() => {
-    if (String(itemId) !== String(previousItemId) && !itemDetailStore.loading) {
+    const lookupKey = lookupIdentity(workspaceKey, itemNumber);
+    const lookupChanged = lookupKey != null && lookupKey !== previousLookupKey;
+    if (
+      (String(itemId) !== String(previousItemId) || lookupChanged) &&
+      !itemDetailStore.loading
+    ) {
       previousItemId = itemId;
+      previousLookupKey = lookupKey;
       itemDetailStore.transitioning = true;
 
       loadData()
