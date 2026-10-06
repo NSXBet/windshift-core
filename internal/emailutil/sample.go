@@ -11,25 +11,31 @@ func SampleData(name string) any {
 		return struct {
 			FirstName    string
 			MagicLinkURL string
+			ExpiresIn    string
 		}{
 			FirstName:    "Alex",
 			MagicLinkURL: "https://app.example.com/portal/acme/verify#token=preview-token",
+			ExpiresIn:    "30 minutes",
 		}
 	case TemplateEmailVerification:
 		return struct {
 			FirstName       string
 			VerificationURL string
+			ExpiresIn       string
 		}{
 			FirstName:       "Alex",
 			VerificationURL: "https://app.example.com/verify-email?token=preview-token",
+			ExpiresIn:       "24 hours",
 		}
 	case TemplateInvitation:
 		return struct {
 			FirstName     string
 			InvitationURL string
+			ExpiresIn     string
 		}{
 			FirstName:     "Alex",
 			InvitationURL: "https://app.example.com/set-password/preview-token",
+			ExpiresIn:     "7 days",
 		}
 	case TemplatePortalReply:
 		return struct {
@@ -51,11 +57,13 @@ func SampleData(name string) any {
 			ItemKey     string
 			ItemTitle   string
 			ApprovalURL string
+			ExpiresIn   string
 		}{
 			FirstName:   "Alex",
 			ItemKey:     "ACME-42",
 			ItemTitle:   "Quarterly budget proposal",
 			ApprovalURL: "https://app.example.com/portal/acme/verify#token=preview-token&next=/portal/acme/approvals/17",
+			ExpiresIn:   "24 hours",
 		}
 	case TemplateNotificationBatch:
 		type entry struct {
@@ -100,4 +108,12 @@ func SampleData(name string) any {
 	default:
 		return struct{}{}
 	}
+}
+
+// HasSampleData reports whether the named template has preview data, i.e. is a
+// built-in transactional template whose variables can be validated against a
+// concrete schema.
+func HasSampleData(name string) bool {
+	_, empty := SampleData(name).(struct{})
+	return !empty
 }

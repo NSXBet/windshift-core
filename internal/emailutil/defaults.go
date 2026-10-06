@@ -77,6 +77,21 @@ const emailShellOpen = `<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{{.Subject}}</title>
+<style>
+.ws-md p{margin:0 0 12px;}
+.ws-md p:last-child{margin-bottom:0;}
+.ws-md a{color:#2874bb;text-decoration:underline;}
+.ws-md h1,.ws-md h2,.ws-md h3{margin:16px 0 8px;color:#0f172a;}
+.ws-md ul,.ws-md ol{margin:0 0 12px;padding-left:22px;}
+.ws-md li{margin:0 0 4px;}
+.ws-md table{border-collapse:collapse;width:100%;margin:0 0 12px;}
+.ws-md th,.ws-md td{border:1px solid #d1d5db;padding:6px 10px;text-align:left;vertical-align:top;}
+.ws-md th{background:#f3f4f6;font-weight:600;}
+.ws-md code{font-family:ui-monospace,monospace;font-size:13px;background:#f3f4f6;padding:1px 4px;border-radius:3px;}
+.ws-md pre{background:#f3f4f6;padding:12px;border-radius:6px;overflow-x:auto;}
+.ws-md pre code{background:none;padding:0;}
+.ws-md blockquote{margin:0 0 12px;padding:0 12px;border-left:3px solid #d1d5db;color:#4b5563;}
+</style>
 </head>
 <body style="margin:0;padding:0;background:#f4f5f7;font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#1f2937;-webkit-font-smoothing:antialiased;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f5f7;padding:40px 16px;">
@@ -88,21 +103,30 @@ const emailShellOpen = `<!DOCTYPE html>
 <tr><td style="padding:32px;font-size:15px;line-height:1.6;color:#1f2937;">
 `
 
-const emailShellClose = `</td></tr>
+// The footer band is split from its message so the do-not-reply and repliable
+// variants stay structurally identical.
+const emailShellFooterOpen = `</td></tr>
 <tr><td style="padding:20px 32px;background:#fafbfc;border-top:1px solid #f1f2f4;font-size:12px;line-height:1.5;color:#6b7280;text-align:center;">
-This is an automated email — please do not reply.
-</td></tr>
+`
+
+const emailShellFooterClose = `</td></tr>
 </table>
 </td></tr>
 </table>
 </body>
 </html>`
 
+const emailShellClose = emailShellFooterOpen + `This is an automated email — please do not reply.` + emailShellFooterClose
+
+// emailShellCloseRepliable is used by templates whose body asks the customer to
+// reply. A do-not-reply footer would contradict that instruction.
+const emailShellCloseRepliable = emailShellFooterOpen + `You're receiving this because you have an open request with us.` + emailShellFooterClose
+
 const buttonStyle = `display:inline-block;background:#2874bb;color:#ffffff;text-decoration:none;font-weight:600;font-size:14px;padding:12px 24px;border-radius:8px;line-height:1.2;`
 
 const magicLinkHTML = emailShellOpen + `<h1 style="margin:0 0 16px;font-size:22px;font-weight:600;color:#0f172a;letter-spacing:-0.01em;">Sign in to your portal</h1>
 <p style="margin:0 0 8px;">Hi {{.FirstName}},</p>
-<p style="margin:0 0 24px;">Click the button below to sign in. The link is valid for 15 minutes.</p>
+<p style="margin:0 0 24px;">Click the button below to sign in. The link is valid for {{.ExpiresIn}}.</p>
 <p style="margin:0 0 24px;"><a href="{{.MagicLinkURL}}" style="` + buttonStyle + `">Sign in</a></p>
 <p style="margin:0 0 8px;font-size:13px;color:#6b7280;">If the button doesn't work, copy and paste this URL into your browser:</p>
 <p style="margin:0 0 24px;font-size:13px;word-break:break-all;"><a href="{{.MagicLinkURL}}" style="color:#2874bb;text-decoration:underline;">{{.MagicLinkURL}}</a></p>
@@ -111,7 +135,7 @@ const magicLinkHTML = emailShellOpen + `<h1 style="margin:0 0 16px;font-size:22p
 
 const magicLinkText = `Hi {{.FirstName}},
 
-Click the link below to sign in to your portal. The link is valid for 15 minutes:
+Click the link below to sign in to your portal. The link is valid for {{.ExpiresIn}}:
 
 {{.MagicLinkURL}}
 
@@ -124,7 +148,7 @@ const emailVerificationHTML = emailShellOpen + `<h1 style="margin:0 0 16px;font-
 <p style="margin:0 0 24px;"><a href="{{.VerificationURL}}" style="` + buttonStyle + `">Verify email</a></p>
 <p style="margin:0 0 8px;font-size:13px;color:#6b7280;">If the button doesn't work, copy and paste this URL into your browser:</p>
 <p style="margin:0 0 24px;font-size:13px;word-break:break-all;"><a href="{{.VerificationURL}}" style="color:#2874bb;text-decoration:underline;">{{.VerificationURL}}</a></p>
-<p style="margin:0;font-size:13px;color:#6b7280;">This link expires in 24 hours. If you didn't create a Windshift account, you can ignore this email.</p>
+<p style="margin:0;font-size:13px;color:#6b7280;">This link expires in {{.ExpiresIn}}. If you didn't create a Windshift account, you can ignore this email.</p>
 ` + emailShellClose
 
 const emailVerificationText = `Hi {{.FirstName}},
@@ -133,7 +157,7 @@ Please confirm your email address to finish setting up your account:
 
 {{.VerificationURL}}
 
-This link expires in 24 hours. If you didn't create a Windshift account, you can ignore this email.
+This link expires in {{.ExpiresIn}}. If you didn't create a Windshift account, you can ignore this email.
 `
 
 const invitationHTML = emailShellOpen + `<h1 style="margin:0 0 16px;font-size:22px;font-weight:600;color:#0f172a;letter-spacing:-0.01em;">You've been invited to Windshift</h1>
@@ -142,7 +166,7 @@ const invitationHTML = emailShellOpen + `<h1 style="margin:0 0 16px;font-size:22
 <p style="margin:0 0 24px;"><a href="{{.InvitationURL}}" style="` + buttonStyle + `">Set your password</a></p>
 <p style="margin:0 0 8px;font-size:13px;color:#6b7280;">If the button doesn't work, copy and paste this URL into your browser:</p>
 <p style="margin:0 0 24px;font-size:13px;word-break:break-all;"><a href="{{.InvitationURL}}" style="color:#2874bb;text-decoration:underline;">{{.InvitationURL}}</a></p>
-<p style="margin:0;font-size:13px;color:#6b7280;">This invitation expires in 7 days. If you weren't expecting it, you can safely ignore this email.</p>
+<p style="margin:0;font-size:13px;color:#6b7280;">This invitation expires in {{.ExpiresIn}}. If you weren't expecting it, you can safely ignore this email.</p>
 ` + emailShellClose
 
 const invitationText = `Hi {{.FirstName}},
@@ -151,7 +175,7 @@ You've been invited to join Windshift. Set a password to activate your account:
 
 {{.InvitationURL}}
 
-This invitation expires in 7 days. If you weren't expecting it, you can safely ignore this email.
+This invitation expires in {{.ExpiresIn}}. If you weren't expecting it, you can safely ignore this email.
 `
 
 const notificationBatchHTML = emailShellOpen + `<h1 style="margin:0 0 16px;font-size:22px;font-weight:600;color:#0f172a;letter-spacing:-0.01em;">{{if eq .NotificationCount 1}}1 new notification{{else}}{{.NotificationCount}} new notifications{{end}}</h1>
@@ -185,9 +209,9 @@ const portalReplyHTML = emailShellOpen + `<p style="margin:0 0 16px;font-size:14
 <span style="font-family:'JetBrains Mono',ui-monospace,monospace;color:#2874bb;">{{.ItemKey}}</span>
 &nbsp;·&nbsp; {{.ItemTitle}}
 </p>
-<div style="white-space:pre-wrap;font-size:15px;line-height:1.6;color:#1f2937;border-left:3px solid #2874bb;background:#fafbfc;border-radius:6px;padding:16px;">{{.Content}}</div>
+<div class="ws-md" style="font-size:15px;line-height:1.6;color:#1f2937;border-left:3px solid #2874bb;background:#fafbfc;border-radius:6px;padding:16px;">{{markdown .Content}}</div>
 <p style="margin:24px 0 0;font-size:13px;color:#6b7280;">To continue the conversation, simply reply to this email.</p>
-` + emailShellClose
+` + emailShellCloseRepliable
 
 const portalReplyText = `{{.AuthorName}} replied on {{.ItemKey}} · {{.ItemTitle}}
 
@@ -203,7 +227,7 @@ const approvalRequestedHTML = emailShellOpen + `<h1 style="margin:0 0 16px;font-
 <p style="margin:0 0 8px;">Your approval is required on
 <span style="font-family:'JetBrains Mono',ui-monospace,monospace;color:#2874bb;">{{.ItemKey}}</span>
 &nbsp;·&nbsp; {{.ItemTitle}}.</p>
-<p style="margin:0 0 24px;">Click the button below to review and decide. The link is valid for 15 minutes.</p>
+<p style="margin:0 0 24px;">Click the button below to review and decide. The link is valid for {{.ExpiresIn}}.</p>
 <p style="margin:0 0 24px;"><a href="{{.ApprovalURL}}" style="` + buttonStyle + `">Review approval</a></p>
 <p style="margin:0 0 8px;font-size:13px;color:#6b7280;">If the button doesn't work, copy and paste this URL into your browser:</p>
 <p style="margin:0 0 24px;font-size:13px;word-break:break-all;"><a href="{{.ApprovalURL}}" style="color:#2874bb;text-decoration:underline;">{{.ApprovalURL}}</a></p>
@@ -214,7 +238,7 @@ const approvalRequestedText = `Hi {{.FirstName}},
 
 Your approval is required on {{.ItemKey}} · {{.ItemTitle}}.
 
-Click the link below to review and decide. The link is valid for 15 minutes:
+Click the link below to review and decide. The link is valid for {{.ExpiresIn}}:
 
 {{.ApprovalURL}}
 

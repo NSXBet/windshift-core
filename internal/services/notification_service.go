@@ -1291,14 +1291,21 @@ func (ns *NotificationService) queryUserIDs(errLabel, query string, args ...any)
 	return ids
 }
 
-// getWorkspaceAdmins retrieves admin user IDs for a workspace
+// getWorkspaceAdmins retrieves admin user IDs for a workspace, including admins
+// whose role is granted through a group rather than a direct assignment.
 func (ns *NotificationService) getWorkspaceAdmins(workspaceID int) []int {
 	return ns.queryUserIDs("fetch workspace admins", `
 		SELECT DISTINCT uwr.user_id
 		FROM user_workspace_roles uwr
 		JOIN workspace_roles wr ON uwr.role_id = wr.id
 		WHERE uwr.workspace_id = ? AND wr.builtin_key = ?
-	`, workspaceID, models.RoleBuiltinAdministrator)
+		UNION
+		SELECT DISTINCT gm.user_id
+		FROM group_workspace_roles gwr
+		JOIN workspace_roles wr ON gwr.role_id = wr.id
+		JOIN group_members gm ON gwr.group_id = gm.group_id
+		WHERE gwr.workspace_id = ? AND wr.builtin_key = ?
+	`, workspaceID, models.RoleBuiltinAdministrator, workspaceID, models.RoleBuiltinAdministrator)
 }
 
 // getItemWatchers retrieves active watcher user IDs for an item

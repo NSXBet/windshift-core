@@ -131,7 +131,8 @@ func (s *MagicLinkService) SendMagicLinkEmail(email, name, token, portalSlug str
 	return s.smtpSender.SendTransactional(email, emailutil.TemplateMagicLink, struct {
 		FirstName    string
 		MagicLinkURL string
-	}{name, url})
+		ExpiresIn    string
+	}{name, url, emailutil.HumanizeDuration(MagicLinkExpiry)})
 }
 
 // SendApprovalRequestEmail sends an "approval requested" email to a portal
@@ -151,7 +152,8 @@ func (s *MagicLinkService) SendApprovalRequestEmail(email, name, token, portalSl
 		ItemKey     string
 		ItemTitle   string
 		ApprovalURL string
-	}{name, itemKey, itemTitle, approvalURL})
+		ExpiresIn   string
+	}{name, itemKey, itemTitle, approvalURL, emailutil.HumanizeDuration(ApprovalMagicLinkExpiry)})
 }
 
 // ValidateMagicLink validates a magic link token presented at a specific

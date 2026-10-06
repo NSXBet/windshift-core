@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"mime"
 	"net"
 	"net/mail"
@@ -196,19 +197,53 @@ func (s *NotificationSMTPSender) SetEncryption(enc Encryptor) {
 // only has to pass its native fields without remembering to mirror the
 // subject in the struct.
 func (s *NotificationSMTPSender) RenderEmail(templateName string, data any) (subject, htmlBody, textBody string, err error) {
-	subjectSrc, htmlSrc, textSrc := s.resolveTemplate(templateName)
+	subjectSrc, htmlSrc, textSrc, fromDB := s.resolveTemplate(templateName)
 
+	subject, htmlBody, textBody, err = renderEmailTemplates(subjectSrc, htmlSrc, textSrc, data)
+	if err == nil {
+		return subject, htmlBody, textBody, nil
+	}
+
+	// A broken admin-edited template must not take down the whole email family.
+	// Fall back to the embedded default and leave a trail for operators.
+	if !fromDB {
+		return "", "", "", err
+	}
+	def, ok := defaultTemplate(templateName)
+	if !ok {
+		return "", "", "", err
+	}
+	slog.Warn("admin email template failed to render; using built-in default",
+		slog.String("component", "smtp"),
+		slog.String("template", templateName),
+		slog.Any("error", err),
+	)
+	return renderEmailTemplates(def.Subject, def.HTMLBody, def.TextBody, data)
+}
+
+// renderEmailTemplates renders subject then body, exposing the rendered subject
+// to the body as {{.Subject}} (used by the shared shell's <title> tag).
+func renderEmailTemplates(subjectSrc, htmlSrc, textSrc string, data any) (subject, htmlBody, textBody string, err error) {
 	_, subject, err = emailutil.RenderTemplates(subjectSrc, subjectSrc, data)
 	if err != nil {
 		return "", "", "", err
 	}
-
 	enriched := emailutil.EnrichWithSubject(data, subject)
 	htmlBody, textBody, err = emailutil.RenderTemplates(htmlSrc, textSrc, enriched)
 	if err != nil {
 		return "", "", "", err
 	}
 	return subject, htmlBody, textBody, nil
+}
+
+// defaultTemplate returns the embedded fallback for a template name.
+func defaultTemplate(name string) (emailutil.DefaultTemplate, bool) {
+	for _, t := range emailutil.DefaultTemplates() {
+		if t.Name == name {
+			return t, true
+		}
+	}
+	return emailutil.DefaultTemplate{}, false
 }
 
 // SendTransactional renders a named template against `data` and sends it via
@@ -226,18 +261,18 @@ func (s *NotificationSMTPSender) SendTransactional(toEmail, templateName string,
 	return s.SendCustomEmail(toEmail, subject, htmlBody, textBody)
 }
 
-func (s *NotificationSMTPSender) resolveTemplate(name string) (subject, html, text string) {
+// resolveTemplate returns the template sources and whether they came from the
+// admin-editable DB row (as opposed to the embedded default).
+func (s *NotificationSMTPSender) resolveTemplate(name string) (subject, html, text string, fromDB bool) {
 	if s.templates != nil {
 		if t, err := s.templates.GetByName(name); err == nil && t != nil {
-			return t.Subject, t.HTMLBody, t.TextBody
+			return t.Subject, t.HTMLBody, t.TextBody, true
 		}
 	}
-	for _, t := range emailutil.DefaultTemplates() {
-		if t.Name == name {
-			return t.Subject, t.HTMLBody, t.TextBody
-		}
+	if t, ok := defaultTemplate(name); ok {
+		return t.Subject, t.HTMLBody, t.TextBody, false
 	}
-	return "", "", ""
+	return "", "", "", false
 }
 
 // IsSMTPConfigured checks if SMTP is properly configured

@@ -114,7 +114,8 @@ func (s *InvitationService) SendInvitationEmail(user *models.User, token string)
 	return s.smtpSender.SendTransactional(user.Email, emailutil.TemplateInvitation, struct {
 		FirstName     string
 		InvitationURL string
-	}{firstName, url})
+		ExpiresIn     string
+	}{firstName, url, emailutil.HumanizeDuration(InvitationExpiry)})
 }
 
 // VerifyInvitation validates an invitation token and returns the user info

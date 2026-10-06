@@ -2492,7 +2492,100 @@ var Catalog = []Migration{
 		SQLite:        "ALTER TABLE llm_usage ADD COLUMN calls INTEGER NOT NULL DEFAULT 1",
 		Postgres:      "ALTER TABLE llm_usage ADD COLUMN IF NOT EXISTS calls INTEGER NOT NULL DEFAULT 1",
 	},
+	{
+		Version:         "20261012_transactional_email_copy",
+		Name:            "Align transactional email copy with real expiries and reply behavior",
+		CheckSQLiteFn:   checkTransactionalEmailCopyMigration,
+		CheckPostgresFn: checkTransactionalEmailCopyMigration,
+		SQLite:          transactionalEmailCopyMigration,
+		Postgres:        transactionalEmailCopyMigration,
+	},
+	{
+		Version:         "20261013_portal_reply_markdown",
+		Name:            "Render portal reply Markdown in the HTML email",
+		CheckSQLiteFn:   checkPortalReplyMarkdownMigration,
+		CheckPostgresFn: checkPortalReplyMarkdownMigration,
+		SQLite:          portalReplyMarkdownMigration,
+		Postgres:        portalReplyMarkdownMigration,
+	},
 }
+
+// checkPortalReplyMarkdownMigration reports the migration as already applied
+// when the portal reply template no longer renders raw {{.Content}}. Trivially
+// true on fresh installs, where the table is empty at migration time.
+func checkPortalReplyMarkdownMigration(db Database) (bool, error) {
+	var stale int
+	err := db.QueryRow(`
+		SELECT COUNT(*) FROM notification_templates
+		WHERE name = 'portal_reply' AND content LIKE '%{{.Content}}%'
+	`).Scan(&stale)
+	if err != nil {
+		return false, err
+	}
+	return stale == 0, nil
+}
+
+// portalReplyMarkdownCSS styles the rendered Markdown block for email clients.
+// Kept quote-free so it embeds cleanly in the migration's SQL string literal.
+const portalReplyMarkdownCSS = `<style>
+.ws-md p{margin:0 0 12px;}
+.ws-md p:last-child{margin-bottom:0;}
+.ws-md a{color:#2874bb;text-decoration:underline;}
+.ws-md h1,.ws-md h2,.ws-md h3{margin:16px 0 8px;color:#0f172a;}
+.ws-md ul,.ws-md ol{margin:0 0 12px;padding-left:22px;}
+.ws-md li{margin:0 0 4px;}
+.ws-md table{border-collapse:collapse;width:100%;margin:0 0 12px;}
+.ws-md th,.ws-md td{border:1px solid #d1d5db;padding:6px 10px;text-align:left;vertical-align:top;}
+.ws-md th{background:#f3f4f6;font-weight:600;}
+.ws-md code{font-family:ui-monospace,monospace;font-size:13px;background:#f3f4f6;padding:1px 4px;border-radius:3px;}
+.ws-md pre{background:#f3f4f6;padding:12px;border-radius:6px;overflow-x:auto;}
+.ws-md pre code{background:none;padding:0;}
+.ws-md blockquote{margin:0 0 12px;padding:0 12px;border-left:3px solid #d1d5db;color:#4b5563;}
+</style>`
+
+// portalReplyMarkdownMigration switches the shipped portal reply template to
+// render Markdown as HTML, and injects the matching styles into templates that
+// predate the shared shell's <style> block. Both statements are idempotent and
+// scoped so admin edits elsewhere survive.
+const portalReplyMarkdownMigration = `
+UPDATE notification_templates
+SET content = REPLACE(content, '<title>{{.Subject}}</title>', '<title>{{.Subject}}</title>` + portalReplyMarkdownCSS + `')
+WHERE content LIKE '%<title>{{.Subject}}</title>%' AND content NOT LIKE '%ws-md table%';
+UPDATE notification_templates
+SET content = REPLACE(REPLACE(content, '{{.Content}}', '{{markdown .Content}}'), 'white-space:pre-wrap;', '')
+WHERE name = 'portal_reply';
+`
+
+// checkTransactionalEmailCopyMigration reports the migration as already applied
+// when no shipped template still carries the old copy. Trivially true on fresh
+// installs, where the table is empty at migration time (templates are seeded
+// afterwards).
+func checkTransactionalEmailCopyMigration(db Database) (bool, error) {
+	var stale int
+	err := db.QueryRow(`
+		SELECT COUNT(*) FROM notification_templates
+		WHERE (name IN ('magic_link', 'approval_requested') AND (content LIKE '%valid for 15 minutes%' OR text_body LIKE '%valid for 15 minutes%'))
+		   OR (name = 'email_verification' AND (content LIKE '%expires in 24 hours%' OR text_body LIKE '%expires in 24 hours%'))
+		   OR (name = 'invitation' AND (content LIKE '%expires in 7 days%' OR text_body LIKE '%expires in 7 days%'))
+		   OR (name = 'portal_reply' AND content LIKE '%please do not reply%')
+	`).Scan(&stale)
+	if err != nil {
+		return false, err
+	}
+	return stale == 0, nil
+}
+
+// transactionalEmailCopyMigration rewrites the shipped transactional email copy
+// in place. Each REPLACE targets only the exact phrase the default used to
+// contain, so admin edits to other parts of a template survive and re-running is
+// a no-op. Templates that no longer carry the phrase are left untouched.
+const transactionalEmailCopyMigration = `
+UPDATE notification_templates SET content = REPLACE(content, 'The link is valid for 15 minutes.', 'The link is valid for {{.ExpiresIn}}.'), text_body = REPLACE(text_body, 'The link is valid for 15 minutes:', 'The link is valid for {{.ExpiresIn}}:') WHERE name = 'magic_link';
+UPDATE notification_templates SET content = REPLACE(content, 'The link is valid for 15 minutes.', 'The link is valid for {{.ExpiresIn}}.'), text_body = REPLACE(text_body, 'The link is valid for 15 minutes:', 'The link is valid for {{.ExpiresIn}}:') WHERE name = 'approval_requested';
+UPDATE notification_templates SET content = REPLACE(content, 'This link expires in 24 hours.', 'This link expires in {{.ExpiresIn}}.'), text_body = REPLACE(text_body, 'This link expires in 24 hours.', 'This link expires in {{.ExpiresIn}}.') WHERE name = 'email_verification';
+UPDATE notification_templates SET content = REPLACE(content, 'This invitation expires in 7 days.', 'This invitation expires in {{.ExpiresIn}}.'), text_body = REPLACE(text_body, 'This invitation expires in 7 days.', 'This invitation expires in {{.ExpiresIn}}.') WHERE name = 'invitation';
+UPDATE notification_templates SET content = REPLACE(content, 'This is an automated email — please do not reply.', 'You''re receiving this because you have an open request with us.') WHERE name = 'portal_reply';
+`
 
 // viewSettingsToolsBackfillIDs lists the workspace tools ids as they existed
 // when the migration shipped. The list is deliberately frozen: later id
