@@ -7,9 +7,7 @@
   import { notificationActions } from '../stores/notifications.js';
   import { errorToast, infoToast } from '../stores/toasts.svelte.js';
   import { timerStore } from '../stores/timerStore.svelte.js';
-  import { useWorkItemPoller } from '../composables/useWorkItemPoller.svelte.js';
   import { useItemEventStream } from '../composables/useItemEventStream.svelte.js';
-  import { itemLiveUpdates } from '../stores/itemLiveUpdates.svelte.js';
   import { usePullToRefresh } from '../composables/usePullToRefresh.svelte.js';
   import { formatDateOnly } from '../utils/dateFormatter.js';
   import { formatItemKey } from '../utils/itemKey.js';
@@ -247,27 +245,17 @@
     navigate(`/m/new?parent=${itemId}`);
   }
 
-  // Live updates (WI-484). Mobile reloads via refresh() (item record,
-  // transitions, children, watch) for every granular kind — the same work the
-  // poll did — and dispatches the comment event the embedded Comments listens
-  // for. The stream opens before the initial snapshot so a first-connect
-  // reconcile is unnecessary; reconnect/stale still run refresh().
+  // Live updates (WI-484). The stream is coarse: any change runs refresh()
+  // (item record, transitions, children, watch) and dispatches the comment
+  // event the embedded Comments listens for. The stream opens before the
+  // initial snapshot so a first-connect reconcile is unnecessary.
   useItemEventStream(() => itemId, {
-    // Full reconcile also refreshes the embedded Comments (separate component),
-    // so a comment that arrived before the stream connected isn't missed.
     onReconcile: () => {
       refresh();
       window.dispatchEvent(new CustomEvent('item-comments-changed', { detail: { itemId } }));
       window.dispatchEvent(new CustomEvent('item-scm-links-changed', { detail: { itemId } }));
     },
-    onItem: () => refresh(),
-    onChildren: () => refresh(),
-    onLinks: () => {
-      refresh();
-      window.dispatchEvent(new CustomEvent('item-scm-links-changed', { detail: { itemId } }));
-    },
     onDeleted: () => handleDeleted(),
-    onComment: () => window.dispatchEvent(new CustomEvent('item-comments-changed', { detail: { itemId } })),
   });
 
   // Reload whenever the item id changes — the component is not remounted when
@@ -338,12 +326,8 @@
     } catch { /* keep prior */ }
   }
 
-  // Match desktop freshness: adaptive background poll (30s active / 5m idle) for
-  // changes made elsewhere (other users, automations, workflow side effects),
-  // plus an instant refresh when an AI run completes (chatStore emits on the bus).
-  // While the SSE stream is healthy the poll is demoted (WI-484); it resumes if
-  // the stream drops or is unsupported.
-  useWorkItemPoller(() => refresh(), { enabled: () => !itemLiveUpdates.isLive(itemId) });
+  // Refresh when an AI run completes (chatStore emits on the bus); live SSE
+  // changes drive the rest.
   $effect(() => agentRunBus.subscribe(() => refresh()));
 
   // The viewed item was deleted elsewhere: toast and leave the now-stale detail.

@@ -13,9 +13,7 @@
   import { addToast, successToast, errorToast, infoToast } from '../../stores/toasts.svelte.js';
   import { timerStore } from '../../stores/timerStore.svelte.js';
   import { useItemAttachments } from '../../composables/useItemAttachments.svelte.js';
-  import { useWorkItemPoller } from '../../composables/useWorkItemPoller.svelte.js';
   import { useItemEventStream } from '../../composables/useItemEventStream.svelte.js';
-  import { itemLiveUpdates } from '../../stores/itemLiveUpdates.svelte.js';
   import { notificationActions } from '../../stores/notifications.js';
   import { agentRuns } from '../../stores/agentRuns.svelte.js';
   import {
@@ -69,13 +67,6 @@ import NativeSelect from '../../components/NativeSelect.svelte';
   let item = $derived(itemDetailStore.item);
   let workspace = $derived(itemDetailStore.workspace);
 
-  // Keep the open issue detail in sync with agent/background changes. While the
-  // SSE stream is healthy the poller is demoted (it resumes automatically if the
-  // stream drops or is unsupported).
-  useWorkItemPoller(() => itemDetailStore.refreshCurrentItem(), {
-    enabled: () => !itemLiveUpdates.isLive(itemId),
-  });
-
   // A reconcile request that arrives while the detail is loading must not be
   // dropped: queue it and run once the in-flight load settles.
   let reconcilePending = $state(false);
@@ -102,29 +93,16 @@ import NativeSelect from '../../components/NativeSelect.svelte';
     }
   });
 
-  // Live updates (WI-484): push changes instead of waiting for the 30s poll.
-  // Maps each event kind to a targeted reload. Every healthy connection
-  // reconciles the full detail; a failed handler falls back to polling.
+  // Live updates (WI-484): the stream is coarse, so any change pushes a full
+  // reconcile instead of waiting for a poll. Comments, SCM links, and Zammad
+  // links are separate components, so the reconcile also nudges them.
   const liveStream = useItemEventStream(() => itemId, {
-    // Full reconcile (connect/reconnect/server reload): reload the item AND
-    // comments. Comments is a separate component, so loadData() alone would
-    // leave it stale.
     onReconcile: () => {
       window.dispatchEvent(new CustomEvent('item-comments-changed', { detail: { itemId } }));
       window.dispatchEvent(new CustomEvent('item-scm-links-changed', { detail: { itemId } }));
       window.dispatchEvent(new CustomEvent('item-zammad-links-changed', { detail: { itemId } }));
       return runFullReconcile();
     },
-    onItem: () => itemDetailStore.refreshCurrentItem(),
-    onChildren: () => itemDetailStore.loadChildItems(),
-    onComment: () => window.dispatchEvent(new CustomEvent('item-comments-changed', { detail: { itemId } })),
-    // Generic and SCM links have independent targeted refresh paths. A link
-    // event must not restart the full item-detail bootstrap.
-    onLinks: () => {
-      window.dispatchEvent(new CustomEvent('item-scm-links-changed', { detail: { itemId } }));
-      return itemDetailStore.loadLinks();
-    },
-    onZammad: () => window.dispatchEvent(new CustomEvent('item-zammad-links-changed', { detail: { itemId } })),
     // The viewed item was deleted (its own topic published `deleted`). This is
     // authoritative — mark it gone so the view closes instead of refetching
     // (which would 404) and showing stale data.

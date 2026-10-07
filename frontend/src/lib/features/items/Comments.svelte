@@ -5,8 +5,6 @@
 	import { authStore } from '../../stores';
 	import { subscribeToNewNotifications } from '../../stores/notifications.js';
 	import { useEventListener } from 'runed';
-	import { usePoller } from '../../composables/usePoller.svelte.js';
-	import { itemLiveUpdates } from '../../stores/itemLiveUpdates.svelte.js';
 	import MilkdownEditor from '../../editors/LazyMilkdownEditor.svelte';
 	import Button from '../../components/Button.svelte';
 	import Avatar from '../../components/Avatar.svelte';
@@ -60,6 +58,17 @@
 	// Count of comments that arrived via polling and the user hasn't acknowledged.
 	let newCount = $state(0);
 
+	// The notification bus (poll path) and the item SSE stream (reconcile path)
+	// both merge into `comments` and increment `newCount`. Run them one at a
+	// time so the second observes the first's merge instead of counting the
+	// same comment again.
+	let commentSyncPromise = Promise.resolve();
+	function serializeCommentSync(sync) {
+		const run = commentSyncPromise.then(sync, sync);
+		commentSyncPromise = run.catch(() => {});
+		return run;
+	}
+
 	function agentTooltipContent(comment) {
 		if (!comment.is_agent) return '';
 		const owner = agentOwnerName(comment);
@@ -98,11 +107,6 @@
 	onMount(() => {
 		loadComments({ initial: true });
 	});
-
-	// Poll for new comments while viewing the item. Adaptive cadence via
-	// activityStore (30s active / 5m idle / hidden tab). Demoted while the item's
-	// SSE stream is healthy (WI-484); resumes automatically if it drops.
-	usePoller(() => pollForNewComments(), { enabled: () => !itemLiveUpdates.isLive(itemId) });
 
 	// Instant path: a new 'comment' or 'mention' notification for the item
 	// currently open triggers a refresh without waiting for the next tick.
@@ -179,7 +183,11 @@
 	 * Fetch only rows newer than the newest one already held. Merging by ID
 	 * preserves loaded older pages, the draft box, and any in-progress editor.
 	 */
-	async function pollForNewComments() {
+	function pollForNewComments() {
+		return serializeCommentSync(syncNewComments);
+	}
+
+	async function syncNewComments() {
 		let response;
 		try {
 			response = await loadAttributedComments(api, itemId, {
@@ -217,7 +225,11 @@
 	 * after deletion. Paging to the current depth preserves the user's explicit
 	 * Load more state without reverting to an unbounded thread fetch.
 	 */
-	async function reconcileLoadedComments() {
+	function reconcileLoadedComments() {
+		return serializeCommentSync(syncLoadedComments);
+	}
+
+	async function syncLoadedComments() {
 		const version = ++reconciliationVersion;
 		let targetCount = Math.max(COMMENT_PAGE_SIZE, comments.length);
 		const previousTotalCount = totalCount;

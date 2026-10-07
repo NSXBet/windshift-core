@@ -2,11 +2,11 @@ package services
 
 import "sync"
 
-// ItemChangeKind enumerates the kinds of item-detail mutations that should push
-// a live update to subscribers of an item's event stream. The set is
-// deliberately coarse: a subscriber maps a kind to a targeted reload, and any
-// unrecognized kind falls back to a full reload, so adding a kind never breaks
-// an older client.
+// ItemChangeKind labels the kind of item-detail mutation that should push a
+// live update. The label is internal audit metadata only: the item event stream
+// is deliberately coarse and emits a single `changed` event (or `deleted`) for
+// every kind, so the client always reloads the whole detail and adding or
+// removing a label cannot break it.
 type ItemChangeKind string
 
 const (
@@ -27,9 +27,10 @@ const (
 // Implementations must be safe for concurrent use: PublishItemChange is called
 // from request goroutines, schedulers, and background workers.
 type ItemChangePublisher interface {
-	// PublishItemChange announces that the item identified by itemID changed in
-	// the given way. It must be cheap and non-blocking; a hub implementation
-	// fans out to in-memory subscribers without touching the database.
+	// PublishItemChange announces that the item identified by itemID changed. The
+	// kind is recorded for diagnostics; subscribers see a coarse change. It must
+	// be cheap and non-blocking; a hub implementation fans out to in-memory
+	// subscribers without touching the database.
 	PublishItemChange(itemID int, kind ItemChangeKind)
 }
 

@@ -13,6 +13,7 @@
   import { formatDateOnly } from '../../utils/dateFormatter.js';
   import { navigate } from '../../router.js';
   import ItemDetailBreadcrumbs from '../items/ItemDetailBreadcrumbs.svelte';
+  import { useItemEventStream } from '../../composables/useItemEventStream.svelte.js';
   import { t } from '../../stores/i18n.svelte.js';
 
   let {
@@ -285,6 +286,33 @@
     } else {
       // Full-page mode: navigate back
       window.history.back();
+    }
+  }
+
+  // Live updates (WI-484): personal tasks use the same item event stream as the
+  // workspace item detail. Any change reloads the task and refreshes the
+  // embedded Comments; a deletion closes the view.
+  useItemEventStream(() => itemId, {
+    onReconcile: () => {
+      refreshItem();
+      window.dispatchEvent(new CustomEvent('item-comments-changed', { detail: { itemId } }));
+    },
+    onDeleted: () => closeModal(),
+  });
+
+  // Silent reload so a live change never flashes the loading state or clobbers
+  // fields the user is editing.
+  async function refreshItem() {
+    const id = item?.id;
+    if (id == null) return;
+    try {
+      const fresh = await api.items.get(id);
+      if (item?.id !== id) return;
+      item = { ...item, ...fresh };
+      if (!editingTitle) editTitle = fresh.title || '';
+      if (!editingDescription) editDescription = fresh.description || '';
+    } catch (err) {
+      if (err?.status === 404) closeModal();
     }
   }
 
