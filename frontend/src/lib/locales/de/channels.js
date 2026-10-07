@@ -199,6 +199,9 @@ export default {
     markAsReadHelp: 'E-Mails als gelesen markieren, sobald sie in Vorgänge umgewandelt wurden',
     deleteAfterProcess: 'Nach Verarbeitung löschen',
     deleteAfterProcessHelp: 'E-Mails nach dem Erstellen von Vorgängen aus dem Postfach entfernen (mit Vorsicht verwenden)',
+    intakesMailboxAddress: 'Überwacht {address}',
+    intakeLastUID: 'Letzte UID {uid}',
+    intakeRateLimited: '{count} zurückgehalten',
     // Form Channel Configuration
     openForm: 'Open Form',
     formConfiguration: 'Form Configuration',
@@ -263,6 +266,8 @@ export default {
       syncStatus: 'Synchronisierungsstatus',
       lastChecked: 'Zuletzt geprüft',
       never: 'Nie',
+      intakeLastUID: 'Letzte UID {uid}',
+      intakeLastPolled: 'Geprüft {time}',
       errors: 'Fehler',
       noErrors: 'Keine Fehler',
       from: 'Von',

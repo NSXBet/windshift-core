@@ -197,6 +197,9 @@ export default {
     markAsReadHelp: '邮件转换为事项后标记为已读',
     deleteAfterProcess: '处理后删除',
     deleteAfterProcessHelp: '创建事项后从邮箱中移除邮件（谨慎使用）',
+    intakesMailboxAddress: '正在监控 {address}',
+    intakeLastUID: '最新 UID {uid}',
+    intakeRateLimited: '已暂缓 {count} 封',
     // Form Channel Configuration
     openForm: 'Open Form',
     formConfiguration: 'Form Configuration',
@@ -261,6 +264,8 @@ export default {
       syncStatus: '同步状态',
       lastChecked: '上次检查',
       never: '从未',
+      intakeLastUID: '最新 UID {uid}',
+      intakeLastPolled: '上次轮询 {time}',
       errors: '错误',
       noErrors: '无错误',
       from: '发件人',

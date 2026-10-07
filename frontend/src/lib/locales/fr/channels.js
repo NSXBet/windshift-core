@@ -228,6 +228,9 @@ export default {
     deleteAfterProcess: 'Supprimer après traitement',
     deleteAfterProcessHelp:
       'Supprimer les e-mails de la boîte aux lettres après la création des éléments (à utiliser avec précaution)',
+    intakesMailboxAddress: 'Surveillance de {address}',
+    intakeLastUID: 'Dernier UID {uid}',
+    intakeRateLimited: '{count} retenus',
     // Form Channel Configuration
     openForm: 'Ouvrir le formulaire',
     formConfiguration: 'Page publique',
@@ -303,6 +306,8 @@ export default {
       syncStatus: 'Statut de synchronisation',
       lastChecked: 'Dernière vérification',
       never: 'Jamais',
+      intakeLastUID: 'Dernier UID {uid}',
+      intakeLastPolled: 'Vérifié {time}',
       errors: 'Erreurs',
       noErrors: 'Aucune erreur',
       from: 'De',
