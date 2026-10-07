@@ -18,7 +18,6 @@ type intakeRequest struct {
 	TargetType            string `json:"target_type"`
 	TargetID              int    `json:"target_id"`
 	ItemTypeID            *int   `json:"item_type_id"`
-	RequestTypeID         *int   `json:"request_type_id"`
 	RateLimitPerHour      *int   `json:"rate_limit_per_hour"`
 	ProcessingDisposition string `json:"processing_disposition"`
 	Status                string `json:"status"`
@@ -44,6 +43,25 @@ func (h *ChannelHandler) authorizeIntakeTarget(ctx context.Context, actorID int,
 	if targetID <= 0 {
 		return fmt.Errorf("target_id is required")
 	}
+
+	// Shape checks run for every actor, including system admins: a portal
+	// intake must point at an inbound portal, not any channel the actor manages.
+	switch targetType {
+	case models.IntakeTargetWorkspace:
+		// The workspace shape is enforced by ItemTypeAllowedInWorkspace and the
+		// permission check below.
+	case models.IntakeTargetPortal:
+		portal, err := h.service.GetByID(ctx, targetID)
+		if err != nil && !errors.Is(err, repository.ErrNotFound) {
+			return err
+		}
+		if portal == nil || portal.Type != "portal" || portal.Direction != "inbound" {
+			return fmt.Errorf("%w: target_id must reference an inbound portal channel", errIntakeInvalid)
+		}
+	default:
+		return fmt.Errorf("target_type must be %q or %q", models.IntakeTargetPortal, models.IntakeTargetWorkspace)
+	}
+
 	admin, err := h.permissionService.IsSystemAdmin(actorID)
 	if err != nil {
 		return err
@@ -51,6 +69,7 @@ func (h *ChannelHandler) authorizeIntakeTarget(ctx context.Context, actorID int,
 	if admin {
 		return nil
 	}
+
 	switch targetType {
 	case models.IntakeTargetWorkspace:
 		allowed, err := h.permissionService.HasWorkspacePermission(actorID, targetID, models.PermissionWorkspaceAdmin)
@@ -60,7 +79,6 @@ func (h *ChannelHandler) authorizeIntakeTarget(ctx context.Context, actorID int,
 		if !allowed {
 			return errIntakeTargetForbidden
 		}
-		return nil
 	case models.IntakeTargetPortal:
 		canManage, err := h.service.UserCanManage(ctx, actorID, targetID)
 		if err != nil {
@@ -69,10 +87,8 @@ func (h *ChannelHandler) authorizeIntakeTarget(ctx context.Context, actorID int,
 		if !canManage {
 			return errIntakeTargetForbidden
 		}
-		return nil
-	default:
-		return fmt.Errorf("target_type must be %q or %q", models.IntakeTargetPortal, models.IntakeTargetWorkspace)
 	}
+	return nil
 }
 
 var (
@@ -143,7 +159,6 @@ func (h *ChannelHandler) validateIntakeRequest(ctx context.Context, actorID, mai
 		TargetType:            req.TargetType,
 		TargetID:              req.TargetID,
 		ItemTypeID:            req.ItemTypeID,
-		RequestTypeID:         req.RequestTypeID,
 		RateLimitPerHour:      req.RateLimitPerHour,
 		ProcessingDisposition: req.ProcessingDisposition,
 		Status:                status,

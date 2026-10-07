@@ -259,6 +259,17 @@ func (s *ChannelConfigUpdateService) prepareEmailEnable(ctx context.Context, act
 		return channelConfigInvalid("Email channel has no intake: add at least one intake (folder and target) before enabling")
 	}
 
+	// Routing lives on intakes once any exist, so authorize the actor against
+	// each intake target instead of the stale legacy email_workspace_id field.
+	if len(intakes) > 0 {
+		for _, intake := range intakes {
+			if err := s.validateEmailIntakeEnable(ctx, actorUserID, intake, admin); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
 	if config.EmailWorkspaceID > 0 {
 		bad, err := s.channels.repo.FindBadWorkspaceIDs([]int{config.EmailWorkspaceID})
 		if err != nil {
@@ -278,6 +289,46 @@ func (s *ChannelConfigUpdateService) prepareEmailEnable(ctx context.Context, act
 		}
 		if !canConnect {
 			return channelConfigForbidden("workspace administration permission is required to connect the email target workspace")
+		}
+	}
+	return nil
+}
+
+// validateEmailIntakeEnable checks one enabled intake before the mailbox is
+// activated: its workspace item type must still be valid and, for non-admins,
+// the actor must manage the intake target.
+func (s *ChannelConfigUpdateService) validateEmailIntakeEnable(ctx context.Context, actorUserID int, intake models.Intake, admin bool) error {
+	if intake.TargetType == models.IntakeTargetWorkspace {
+		if intake.ItemTypeID == nil || *intake.ItemTypeID <= 0 {
+			return channelConfigInvalid(fmt.Sprintf("Email intake %d has no item type", intake.ID))
+		}
+		allowed, err := s.channels.ItemTypeAllowedInWorkspace(intake.TargetID, *intake.ItemTypeID)
+		if err != nil {
+			return err
+		}
+		if !allowed {
+			return channelConfigInvalid(fmt.Sprintf("Item type %d is not allowed in workspace %d", *intake.ItemTypeID, intake.TargetID))
+		}
+	}
+	if admin {
+		return nil
+	}
+	switch intake.TargetType {
+	case models.IntakeTargetWorkspace:
+		allowed, err := s.permission.HasWorkspacePermission(actorUserID, intake.TargetID, models.PermissionWorkspaceAdmin)
+		if err != nil {
+			return err
+		}
+		if !allowed {
+			return channelConfigForbidden("workspace administration permission is required to connect the email intake target workspace")
+		}
+	case models.IntakeTargetPortal:
+		canManage, err := s.channels.UserCanManage(ctx, actorUserID, intake.TargetID)
+		if err != nil {
+			return err
+		}
+		if !canManage {
+			return channelConfigForbidden("permission to manage the email intake target portal is required")
 		}
 	}
 	return nil

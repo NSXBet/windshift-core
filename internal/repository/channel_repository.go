@@ -403,6 +403,15 @@ func (r *ChannelRepository) Delete(ctx context.Context, tx database.Tx, id int) 
 		return ErrNotFound
 	}
 
+	// A deleted portal leaves no target for the mailboxes that fed it. Remove
+	// those intakes so the scheduler stops polling folders that can only fail.
+	if _, err := tx.Exec(
+		`DELETE FROM intakes WHERE target_type = ? AND target_id = ?`,
+		models.IntakeTargetPortal, id,
+	); err != nil {
+		return fmt.Errorf("failed to delete intakes targeting channel %d: %w", id, err)
+	}
+
 	return nil
 }
 
@@ -810,6 +819,9 @@ type ChannelDeleteImpact struct {
 	PortalMagicLinks       int `json:"portal_magic_links"`
 	PortalSessions         int `json:"portal_sessions"`
 	Items                  int `json:"items"`
+	// IntakeTargets counts intakes that feed this channel as a portal target.
+	// They are removed by the delete so they do not outlive their target.
+	IntakeTargets int `json:"intake_targets"`
 }
 
 // GetDeleteImpact gathers row counts for the cascading-or-orphaning tables
@@ -852,6 +864,16 @@ func (r *ChannelRepository) GetDeleteImpact(ctx context.Context, channelID int) 
 		}
 		*item.target = value
 	}
+
+	// Intakes reference a portal target polymorphically (target_type + target_id)
+	// rather than through channel_id, so count them separately.
+	var intakeTargets int
+	if err := r.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM intakes WHERE target_type = ? AND target_id = ?
+	`, models.IntakeTargetPortal, channelID).Scan(&intakeTargets); err != nil {
+		return ChannelDeleteImpact{}, fmt.Errorf("count intakes targeting channel %d: %w", channelID, err)
+	}
+	out.IntakeTargets = intakeTargets
 	return out, nil
 }
 
@@ -1188,10 +1210,27 @@ func (r *ChannelRepository) GetEarliestRateLimitedUID(ctx context.Context, chann
 	var minUID sql.NullInt64
 	err = r.db.QueryRowContext(ctx, `
 		SELECT MIN(uid) FROM email_message_tracking
-		WHERE channel_id = ? AND rate_limited_at IS NOT NULL AND uid_validity = ? AND uid > 0
+		WHERE channel_id = ? AND intake_id IS NULL AND rate_limited_at IS NOT NULL AND uid_validity = ? AND uid > 0
 	`, channelID, int64(uidValidity)).Scan(&minUID)
 	if err != nil {
 		return 0, false, fmt.Errorf("find earliest rate-limited email for channel %d: %w", channelID, err)
+	}
+	if !minUID.Valid {
+		return 0, false, nil
+	}
+	return int(minUID.Int64), true, nil
+}
+
+// GetEarliestRateLimitedUIDForIntake is the per-intake equivalent of
+// GetEarliestRateLimitedUID: it looks only at rows this intake ingested.
+func (r *ChannelRepository) GetEarliestRateLimitedUIDForIntake(ctx context.Context, intakeID int, uidValidity uint32) (uid int, ok bool, err error) {
+	var minUID sql.NullInt64
+	err = r.db.QueryRowContext(ctx, `
+		SELECT MIN(uid) FROM email_message_tracking
+		WHERE intake_id = ? AND rate_limited_at IS NOT NULL AND uid_validity = ? AND uid > 0
+	`, intakeID, int64(uidValidity)).Scan(&minUID)
+	if err != nil {
+		return 0, false, fmt.Errorf("find earliest rate-limited email for intake %d: %w", intakeID, err)
 	}
 	if !minUID.Valid {
 		return 0, false, nil
@@ -1210,7 +1249,7 @@ func (r *ChannelRepository) RequeueRateLimitedClaims(ctx context.Context, channe
 	res, err := r.db.ExecWriteContext(ctx, `
 		UPDATE email_message_tracking
 		SET processed_at = ?
-		WHERE channel_id = ? AND rate_limited_at IS NOT NULL AND uid_validity = ? AND uid > 0
+		WHERE channel_id = ? AND intake_id IS NULL AND rate_limited_at IS NOT NULL AND uid_validity = ? AND uid > 0
 		  AND item_id IS NULL AND comment_id IS NULL
 	`, time.Unix(0, 0).UTC(), channelID, int64(uidValidity))
 	if err != nil {
@@ -1219,6 +1258,25 @@ func (r *ChannelRepository) RequeueRateLimitedClaims(ctx context.Context, channe
 	count, err := res.RowsAffected()
 	if err != nil {
 		return 0, fmt.Errorf("count reset rate-limited claims for channel %d: %w", channelID, err)
+	}
+	return int(count), nil
+}
+
+// RequeueRateLimitedClaimsForIntake is the per-intake equivalent of
+// RequeueRateLimitedClaims.
+func (r *ChannelRepository) RequeueRateLimitedClaimsForIntake(ctx context.Context, intakeID int, uidValidity uint32) (int, error) {
+	res, err := r.db.ExecWriteContext(ctx, `
+		UPDATE email_message_tracking
+		SET processed_at = ?
+		WHERE intake_id = ? AND rate_limited_at IS NOT NULL AND uid_validity = ? AND uid > 0
+		  AND item_id IS NULL AND comment_id IS NULL
+	`, time.Unix(0, 0).UTC(), intakeID, int64(uidValidity))
+	if err != nil {
+		return 0, fmt.Errorf("reset rate-limited claims for intake %d: %w", intakeID, err)
+	}
+	count, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("count reset rate-limited claims for intake %d: %w", intakeID, err)
 	}
 	return int(count), nil
 }
@@ -1238,6 +1296,23 @@ func (r *ChannelRepository) ResetEmailWatermarkToUID(ctx context.Context, channe
 		WHERE channel_id = ?
 	`, lastUID, channelID); err != nil {
 		return fmt.Errorf("rewind email watermark for channel %d: %w", channelID, err)
+	}
+	return nil
+}
+
+// ResetIntakeWatermarkToUID rewinds one intake's per-folder watermark and
+// clears its poison tracker.
+func (r *ChannelRepository) ResetIntakeWatermarkToUID(ctx context.Context, intakeID, lastUID int) error {
+	if lastUID < 0 {
+		lastUID = 0
+	}
+	if _, err := r.db.ExecWriteContext(ctx, `
+		UPDATE email_intake_state
+		SET last_uid = ?, failed_message_uid = 0, failed_message_uid_validity = 0,
+		    failed_message_count = 0, updated_at = CURRENT_TIMESTAMP
+		WHERE intake_id = ?
+	`, lastUID, intakeID); err != nil {
+		return fmt.Errorf("rewind email watermark for intake %d: %w", intakeID, err)
 	}
 	return nil
 }

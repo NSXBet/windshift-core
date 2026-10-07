@@ -272,17 +272,34 @@ func (s *EmailReplyService) resolveReplyToAddress(channelID int) (address, name 
 		return address, name
 	}
 	// Portal-originated items carry a portal channel. Route replies back to the
-	// mailbox whose intake feeds that portal, picking the oldest enabled one so
-	// the choice is stable across sends.
-	var mailboxID int
-	if err := s.db.QueryRow(`
-		SELECT mailbox_id FROM intakes
-		WHERE target_type = 'portal' AND target_id = ? AND status = 'enabled'
-		ORDER BY id LIMIT 1
-	`, channelID).Scan(&mailboxID); err != nil {
+	// mailbox whose enabled intake feeds that portal, preferring the oldest one
+	// so the choice is stable across sends. Disabled mailboxes are skipped, and
+	// a mailbox with no readable address falls through to the next candidate.
+	rows, err := s.db.Query(`
+		SELECT i.mailbox_id
+		FROM intakes i
+		JOIN channels c ON c.id = i.mailbox_id
+		WHERE i.target_type = 'portal' AND i.target_id = ?
+		  AND i.status = 'enabled' AND c.status = 'enabled'
+		ORDER BY i.id
+	`, channelID)
+	if err != nil {
 		return "", ""
 	}
-	return s.mailboxAddress(mailboxID)
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var mailboxID int
+		if err := rows.Scan(&mailboxID); err != nil {
+			return "", ""
+		}
+		if address, name = s.mailboxAddress(mailboxID); address != "" {
+			return address, name
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return "", ""
+	}
+	return "", ""
 }
 
 // mailboxAddress resolves the monitored address of an email/imap channel.

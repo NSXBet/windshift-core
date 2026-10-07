@@ -1364,6 +1364,43 @@ func (h *ChannelHandler) RequeueRateLimitedEmails(w http.ResponseWriter, r *http
 		return
 	}
 
+	requeuedCount := 0
+	earliestUID := 0
+	foundAny := false
+
+	// Since WI-1644 the poll cursor is per intake, so requeue must rewind each
+	// intake's own watermark. Tracking rows carry the intake that ingested them.
+	intakes, err := repository.NewIntakeRepository(h.channelRepo.DB()).ListEnabledForMailbox(ctx, id)
+	if err != nil {
+		respondInternalError(w, r, err)
+		return
+	}
+	for _, intake := range intakes {
+		uid, found, err := h.channelRepo.GetEarliestRateLimitedUIDForIntake(ctx, intake.ID, intake.UIDValidity)
+		if err != nil {
+			respondInternalError(w, r, err)
+			return
+		}
+		if !found {
+			continue
+		}
+		if err := h.channelRepo.ResetIntakeWatermarkToUID(ctx, intake.ID, uid-1); err != nil {
+			respondInternalError(w, r, err)
+			return
+		}
+		n, err := h.channelRepo.RequeueRateLimitedClaimsForIntake(ctx, intake.ID, intake.UIDValidity)
+		if err != nil {
+			respondInternalError(w, r, err)
+			return
+		}
+		requeuedCount += n
+		if !foundAny || uid < earliestUID {
+			earliestUID = uid
+		}
+		foundAny = true
+	}
+
+	// Pre-split tracking rows (intake_id NULL) still use the channel watermark.
 	state, err := h.channelRepo.GetEmailChannelState(ctx, id)
 	if err != nil && !errors.Is(err, repository.ErrNotFound) {
 		respondInternalError(w, r, err)
@@ -1373,29 +1410,34 @@ func (h *ChannelHandler) RequeueRateLimitedEmails(w http.ResponseWriter, r *http
 	if state != nil {
 		uidValidity = state.UIDValidity
 	}
-
-	earliestUID, found, err := h.channelRepo.GetEarliestRateLimitedUID(ctx, id, uidValidity)
+	legacyUID, legacyFound, err := h.channelRepo.GetEarliestRateLimitedUID(ctx, id, uidValidity)
 	if err != nil {
 		respondInternalError(w, r, err)
 		return
 	}
-	if !found {
+	if legacyFound {
+		if err := h.channelRepo.ResetEmailWatermarkToUID(ctx, id, legacyUID-1); err != nil {
+			respondInternalError(w, r, err)
+			return
+		}
+		n, err := h.channelRepo.RequeueRateLimitedClaims(ctx, id, uidValidity)
+		if err != nil {
+			respondInternalError(w, r, err)
+			return
+		}
+		requeuedCount += n
+		if !foundAny || legacyUID < earliestUID {
+			earliestUID = legacyUID
+		}
+		foundAny = true
+	}
+
+	if !foundAny {
 		respondJSONOK(w, map[string]any{
 			"requeued":   false,
 			"channel_id": id,
 			"message":    "No rate-limited messages to requeue",
 		})
-		return
-	}
-
-	if err := h.channelRepo.ResetEmailWatermarkToUID(ctx, id, earliestUID-1); err != nil {
-		respondInternalError(w, r, err)
-		return
-	}
-
-	requeuedCount, err := h.channelRepo.RequeueRateLimitedClaims(ctx, id, uidValidity)
-	if err != nil {
-		respondInternalError(w, r, err)
 		return
 	}
 
@@ -1769,6 +1811,20 @@ func (h *ChannelHandler) GetEmailLog(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get channel state. ErrNotFound just means "fresh channel, no state yet".
+	// emailIntakeState is the per-folder cursor and health the log renders for
+	// each intake. The channel-level last_uid is only meaningful for a legacy
+	// mailbox with no intake rows.
+	type emailIntakeState struct {
+		IntakeID         int        `json:"intake_id"`
+		Folder           string     `json:"folder"`
+		TargetType       string     `json:"target_type"`
+		TargetID         int        `json:"target_id"`
+		Status           string     `json:"status"`
+		LastUID          int        `json:"last_uid"`
+		UIDValidity      uint32     `json:"uid_validity"`
+		LastPolledAt     *time.Time `json:"last_polled_at,omitempty"`
+		RateLimitedCount int        `json:"rate_limited_count"`
+	}
 	type emailChannelState struct {
 		LastCheckedAt *time.Time `json:"last_checked_at"`
 		LastUID       int        `json:"last_uid"`
@@ -1780,8 +1836,11 @@ func (h *ChannelHandler) GetEmailLog(w http.ResponseWriter, r *http.Request) {
 		// RateLimitedCount is how many messages flood protection declined and
 		// are waiting for operator requeue.
 		RateLimitedCount int `json:"rate_limited_count"`
+		// Intakes carries each folder's cursor so operators can see per-intake
+		// progress; the channel-level cursor above is legacy-only.
+		Intakes []emailIntakeState `json:"intakes"`
 	}
-	state := emailChannelState{Healthy: true}
+	state := emailChannelState{Healthy: true, Intakes: []emailIntakeState{}}
 	if got, err := h.channelRepo.GetEmailChannelState(ctx, id); err == nil {
 		state.LastUID = got.LastUID
 		state.LastCheckedAt = got.LastCheckedAt
@@ -1798,6 +1857,25 @@ func (h *ChannelHandler) GetEmailLog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	state.RateLimitedCount = rateLimitedCount
+
+	intakes, err := repository.NewIntakeRepository(h.channelRepo.DB()).ListByMailbox(ctx, id)
+	if err != nil {
+		respondInternalError(w, r, err)
+		return
+	}
+	for _, intake := range intakes {
+		state.Intakes = append(state.Intakes, emailIntakeState{
+			IntakeID:         intake.ID,
+			Folder:           intake.Folder,
+			TargetType:       intake.TargetType,
+			TargetID:         intake.TargetID,
+			Status:           intake.Status,
+			LastUID:          intake.LastUID,
+			UIDValidity:      intake.UIDValidity,
+			LastPolledAt:     intake.LastPolledAt,
+			RateLimitedCount: intake.RateLimitedCount,
+		})
+	}
 
 	total, err := h.channelRepo.CountEmailMessages(ctx, id, search)
 	if err != nil {

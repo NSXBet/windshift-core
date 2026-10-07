@@ -3,8 +3,10 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"windshift/internal/database"
@@ -24,22 +26,30 @@ const intakeSelectColumns = `
 	i.id, i.mailbox_id, i.folder, i.target_type, i.target_id,
 	i.request_type_id, i.item_type_id, i.rate_limit_per_hour,
 	i.processing_disposition, i.status, i.created_at, i.updated_at,
-	COALESCE(c.name, '') AS mailbox_name`
+	COALESCE(c.name, '') AS mailbox_name,
+	COALESCE(s.last_uid, 0), COALESCE(s.uid_validity, 0), s.updated_at,
+	COALESCE((
+		SELECT COUNT(*) FROM email_message_tracking emt
+		WHERE emt.intake_id = i.id AND emt.rate_limited_at IS NOT NULL
+	), 0)`
 
 const intakeFromJoins = `
 	FROM intakes i
-	LEFT JOIN channels c ON c.id = i.mailbox_id`
+	LEFT JOIN channels c ON c.id = i.mailbox_id
+	LEFT JOIN email_intake_state s ON s.intake_id = i.id`
 
 func scanIntake(scanner interface {
 	Scan(dest ...any) error
 }) (models.Intake, error) {
 	var in models.Intake
 	var requestTypeID, itemTypeID, rateLimit sql.NullInt64
+	var lastPolledAt sql.NullTime
 	if err := scanner.Scan(
 		&in.ID, &in.MailboxID, &in.Folder, &in.TargetType, &in.TargetID,
 		&requestTypeID, &itemTypeID, &rateLimit,
 		&in.ProcessingDisposition, &in.Status, &in.CreatedAt, &in.UpdatedAt,
 		&in.MailboxName,
+		&in.LastUID, &in.UIDValidity, &lastPolledAt, &in.RateLimitedCount,
 	); err != nil {
 		return in, err
 	}
@@ -55,10 +65,15 @@ func scanIntake(scanner interface {
 		v := int(rateLimit.Int64)
 		in.RateLimitPerHour = &v
 	}
+	if lastPolledAt.Valid {
+		t := lastPolledAt.Time
+		in.LastPolledAt = &t
+	}
 	return in, nil
 }
 
-// ListByMailbox returns every intake reading from a mailbox.
+// ListByMailbox returns every intake reading from a mailbox, with the
+// mailbox's monitored address attached for display.
 func (r *IntakeRepository) ListByMailbox(ctx context.Context, mailboxID int) ([]models.Intake, error) {
 	rows, err := r.db.QueryContext(ctx, `SELECT`+intakeSelectColumns+intakeFromJoins+`
 		WHERE i.mailbox_id = ?
@@ -67,7 +82,47 @@ func (r *IntakeRepository) ListByMailbox(ctx context.Context, mailboxID int) ([]
 		return nil, fmt.Errorf("list intakes for mailbox %d: %w", mailboxID, err)
 	}
 	defer func() { _ = rows.Close() }()
-	return scanIntakes(rows)
+	intakes, err := scanIntakes(rows)
+	if err != nil {
+		return nil, err
+	}
+	if err := r.attachMailboxAddress(ctx, mailboxID, intakes); err != nil {
+		return nil, err
+	}
+	return intakes, nil
+}
+
+// attachMailboxAddress fills in the monitored address every intake on the
+// mailbox shares. The address lives on the mailbox channel config, so it is
+// resolved once rather than joined per row.
+func (r *IntakeRepository) attachMailboxAddress(ctx context.Context, mailboxID int, intakes []models.Intake) error {
+	if len(intakes) == 0 {
+		return nil
+	}
+	var configJSON string
+	err := r.db.QueryRowContext(ctx,
+		`SELECT COALESCE(config, '{}') FROM channels WHERE id = ? AND type IN ('email', 'imap')`,
+		mailboxID,
+	).Scan(&configJSON)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("load mailbox %d config: %w", mailboxID, err)
+	}
+	var cfg models.ChannelConfig
+	if err := json.Unmarshal([]byte(configJSON), &cfg); err != nil {
+		// A malformed legacy config must not hide the intake list.
+		return nil //nolint:nilerr // display-only address
+	}
+	address := strings.TrimSpace(cfg.EmailOAuthEmail)
+	if address == "" {
+		address = strings.TrimSpace(cfg.IMAPUsername)
+	}
+	for i := range intakes {
+		intakes[i].MailboxAddress = address
+	}
+	return nil
 }
 
 // ListEnabledForMailbox returns the enabled intakes a poll should process.
@@ -191,6 +246,19 @@ func (r *IntakeRepository) Update(ctx context.Context, in *models.Intake) error 
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		return ErrNotFound
+	}
+	return nil
+}
+
+// DeleteByTargetTx removes every intake feeding a deleted portal channel or
+// workspace, so the mailbox stops polling a target that no longer exists.
+// email_intake_state cascades from the intake row.
+func (r *IntakeRepository) DeleteByTargetTx(tx database.Tx, targetType string, targetID int) error {
+	if _, err := tx.Exec(
+		`DELETE FROM intakes WHERE target_type = ? AND target_id = ?`,
+		targetType, targetID,
+	); err != nil {
+		return fmt.Errorf("delete %s intakes for target %d: %w", targetType, targetID, err)
 	}
 	return nil
 }
