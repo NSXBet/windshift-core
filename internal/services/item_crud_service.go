@@ -140,6 +140,9 @@ func (s *ItemCRUDService) deleteSingleWithAuthorization(itemID int, metadata ite
 		if _, err := recorder.Deleted(ctx, tx, root, 0, metadata); err != nil {
 			return err
 		}
+		if err := s.stampEmailTrackingCompletedTx(tx, []int{itemID}); err != nil {
+			return err
+		}
 		if err := s.deleteItemRelationsTx(tx, itemID); err != nil {
 			return err
 		}
@@ -216,6 +219,9 @@ func (s *ItemCRUDService) deleteWithAuthorization(itemID int, metadata itemevent
 				return err
 			}
 		}
+		if err := s.stampEmailTrackingCompletedTx(tx, itemIDs); err != nil {
+			return err
+		}
 		// Remove children first so the foreign key cannot bypass their cleanup.
 		for i := len(items) - 1; i >= 0; i-- {
 			id := items[i].ID
@@ -238,6 +244,34 @@ func (s *ItemCRUDService) deleteWithAuthorization(itemID int, metadata itemevent
 		PublishItemChange(*result.AffectedParent)
 	}
 	return &result, nil
+}
+
+// stampEmailTrackingCompletedTx marks the inbound-email tracking rows tied to
+// the items about to be deleted. The item/comment FKs null their references
+// during the delete, but completed_at is the durable tombstone that keeps the
+// message deduplicated, so a mailbox refetch cannot recreate the deleted
+// ticket. Rows for reply comments are matched through the comment's item.
+func (s *ItemCRUDService) stampEmailTrackingCompletedTx(tx database.Tx, itemIDs []int) error {
+	if len(itemIDs) == 0 {
+		return nil
+	}
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(itemIDs)), ",")
+	args := make([]any, 0, len(itemIDs)*2)
+	for _, id := range itemIDs {
+		args = append(args, id)
+	}
+	for _, id := range itemIDs {
+		args = append(args, id)
+	}
+	if _, err := tx.Exec(`
+		UPDATE email_message_tracking
+		SET completed_at = COALESCE(completed_at, CURRENT_TIMESTAMP)
+		WHERE item_id IN (`+placeholders+`)
+		   OR comment_id IN (SELECT id FROM comments WHERE item_id IN (`+placeholders+`))
+	`, args...); err != nil {
+		return fmt.Errorf("stamp email tracking completed for deleted items: %w", err)
+	}
+	return nil
 }
 
 func (s *ItemCRUDService) deleteItemRelationsTx(tx database.Tx, itemID int) error {

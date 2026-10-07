@@ -2558,6 +2558,60 @@ var Catalog = []Migration{
 		SQLite:        `ALTER TABLE email_message_tracking ADD COLUMN completed_at DATETIME`,
 		Postgres:      `ALTER TABLE email_message_tracking ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ`,
 	},
+	{
+		// WI-1658 added completed_at but left pre-existing tracking rows NULL.
+		// When one of their tickets was deleted the FK nulled item_id while the
+		// marker stayed NULL, so preclaimTracking reclaimed the row and recreated
+		// the ticket. Stamp the tombstones the column should have had: any row
+		// that still references an item/comment is definitely completed, and an
+		// orphaned row older than an hour (well past the 5-minute stale-claim
+		// window) that was never rate-limited is a deleted-ticket tombstone
+		// rather than a live claim. Rate-limited rows stay untouched so operators
+		// can requeue them, and recent orphans stay untouched so a genuine retry
+		// can finish.
+		Version:         "20261020_email_tracking_completed_backfill",
+		Name:            "Backfill completed_at for email tracking rows that predate the tombstone (WI-1658)",
+		CheckSQLiteFn:   checkEmailTrackingCompletedBackfill,
+		CheckPostgresFn: checkEmailTrackingCompletedBackfill,
+		SQLite: `UPDATE email_message_tracking
+		SET completed_at = processed_at
+		WHERE completed_at IS NULL
+		  AND rate_limited_at IS NULL
+		  AND (item_id IS NOT NULL
+		       OR comment_id IS NOT NULL
+		       OR processed_at < datetime('now', '-1 hour'))`,
+		Postgres: `UPDATE email_message_tracking
+		SET completed_at = processed_at
+		WHERE completed_at IS NULL
+		  AND rate_limited_at IS NULL
+		  AND (item_id IS NOT NULL
+		       OR comment_id IS NOT NULL
+		       OR processed_at < NOW() - INTERVAL '1 hour')`,
+	},
+}
+
+// checkEmailTrackingCompletedBackfill reports whether the completed_at backfill
+// has nothing left to do. A fresh install (empty table) and an already-migrated
+// database both return true, so the UPDATE only runs on an upgrade that still
+// has legacy rows. The predicate mirrors the UPDATE exactly.
+func checkEmailTrackingCompletedBackfill(db Database) (bool, error) {
+	stale := "datetime('now', '-1 hour')"
+	if db.GetDriverName() == driverPostgres {
+		stale = "NOW() - INTERVAL '1 hour'"
+	}
+	var pending int
+	err := db.QueryRow(`
+		SELECT COUNT(*) FROM email_message_tracking
+		WHERE completed_at IS NULL
+		  AND rate_limited_at IS NULL
+		  AND (item_id IS NOT NULL
+		       OR comment_id IS NOT NULL
+		       OR processed_at < ` + stale + `)
+	`).Scan(&pending)
+	if err != nil {
+		return false, err
+	}
+	return pending == 0, nil
 }
 
 // checkNotificationDigestLinksMigration reports the migration as already
