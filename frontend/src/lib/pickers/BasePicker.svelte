@@ -4,6 +4,7 @@
   import { Check, ChevronDown, X, Search } from '@lucide/svelte';
   import Spinner from '../components/Spinner.svelte';
   import { t } from '../stores/i18n.svelte.js';
+  import { controlSizeClasses } from '../utils/controlSizes.js';
 
   let {
     // Core props
@@ -572,7 +573,7 @@
   {:else if multiple}
     <!-- Multi-select: Container with chips + input (original behavior) -->
     <div
-      class="w-full min-h-[38px] px-2.5 py-1.5 pr-10 rounded border transition-all duration-200
+      class="w-full min-h-[38px] {controlSizeClasses('medium')} pr-10 rounded border transition-all duration-200
              focus-within:outline-none focus-within:ring-2 focus-within:ring-ds-border-focused
              disabled:opacity-50 disabled:cursor-not-allowed flex flex-wrap items-center gap-1.5"
       style="background-color: var(--ds-background-input); border-color: var(--ds-border);"
@@ -611,9 +612,9 @@
            data-testid={inputTestid}
            aria-label={ariaLabel}
            onkeydowncapture={handleKeydown}
-           class="w-full px-4 py-2 pr-16 rounded border transition-all duration-200
+           class="w-full {controlSizeClasses('medium')} pr-16 rounded border transition-all duration-200
                   focus:outline-none focus:ring-2 focus:ring-ds-border-focused
-                  disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                  disabled:opacity-50 disabled:cursor-not-allowed"
            style="background-color: var(--ds-background-input); border-color: var(--ds-border); color: var(--ds-text);" />
     <div class="absolute right-2 top-1/2 transform -translate-y-1/2 flex items-center gap-1">
       {#if allowClear && value != null && !disabled && showSelectedInTrigger}

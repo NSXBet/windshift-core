@@ -131,6 +131,7 @@
             labelColor="default"
             type="number"
             placeholder="587"
+            dataTestid="smtp-port"
             bind:value={formData.port}
           />
         </div>

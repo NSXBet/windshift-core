@@ -1,5 +1,6 @@
 <script>
   import { createPopover, melt } from '@melt-ui/svelte';
+  import { controlSizeClasses } from '../utils/controlSizes.js';
   import { ChevronDown, Check } from '@lucide/svelte';
   import { tick, untrack } from 'svelte';
 
@@ -62,10 +63,7 @@
   const displayText = $derived(selectedOption?.label || placeholder || '');
 
   // Size variants
-  const sizeClasses = $derived({
-    small: 'px-3 py-1.5 text-sm',
-    medium: 'px-3 py-2 text-sm'
-  }[size] || 'px-3 py-2 text-sm');
+  const sizeClasses = $derived(controlSizeClasses(size));
 
   // Open dropdown and focus selected/first item
   function openDropdown() {

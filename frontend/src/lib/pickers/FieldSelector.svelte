@@ -4,6 +4,7 @@
   import { api } from '../api.js';
   import { t } from '../stores/i18n.svelte.js';
   import BasePicker from './BasePicker.svelte';
+  import { controlSizeClasses } from '../utils/controlSizes.js';
   import {
     completionFieldToFilterField,
     findQlCompletionField,
@@ -190,7 +191,7 @@
     <div
       data-testid="field-selector-trigger"
       aria-disabled={disabled}
-      class="w-full flex items-center justify-between px-3 py-2 border rounded transition-colors"
+      class="w-full flex items-center justify-between {controlSizeClasses('medium')} border rounded transition-colors"
       style="border-color: var(--ds-border); background-color: {disabled ? 'var(--ds-background-neutral)' : 'var(--ds-surface)'}; {disabled ? 'opacity: 0.5; cursor: not-allowed;' : ''}"
     >
       {#if selectedField}
