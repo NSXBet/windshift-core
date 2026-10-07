@@ -1077,6 +1077,12 @@ func (s *Server) initialize() error {
 	// process-wide item-change publisher (WI-483 installed a no-op default), and
 	// give the item handler the hub so GET /items/{id}/events can subscribe.
 	sseHub := services.NewSSEHub()
+	if os.Getenv("WINDSHIFT_E2E_TEST_HOOKS") == "1" {
+		// Parallel e2e workers share the admin user; rapid reloads briefly
+		// overlap streams and would trip the production per-user cap, turning a
+		// healthy reconnect into a spurious 429 console error.
+		sseHub.SetMaxUserStreams(256)
+	}
 	services.SetItemChangePublisher(sseHub)
 	services.SetWorkspaceChangePublisher(sseHub)
 	services.SetUserChangePublisher(sseHub)
