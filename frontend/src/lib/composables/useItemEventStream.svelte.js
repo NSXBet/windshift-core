@@ -4,11 +4,10 @@ import { itemLiveUpdates } from '../stores/itemLiveUpdates.svelte.js';
 const DEBOUNCE_MS = 250;
 
 /**
- * Subscribes to an item's event stream and batches targeted reloads. Callers
- * open the stream before their initial snapshot, so the first healthy
- * connection is already covered; only a reconnect (or an error before the
- * first connect) reconciles. Polling remains the fallback while disconnected
- * or after a refresh failure.
+ * Subscribes to an item's event stream and batches targeted reloads. Every
+ * healthy connection reconciles, because the initial snapshot can be served
+ * before the stream is actually live. Polling remains the fallback while
+ * disconnected or after a refresh failure.
  *
  * @param {() => (number|string|null|undefined)} getItemId
  * @param {{ onReconcile?: Function, onItem?: Function, onChildren?: Function, onComment?: Function, onLinks?: Function, onZammad?: Function, onDeleted?: Function }} handlers
@@ -119,25 +118,17 @@ export function normalizeItemEventStreamID(itemId) {
 }
 
 /**
- * Track whether a `connected` event represents the initial healthy stream or
- * recovery after a gap. Exported as a pure helper for regression tests.
+ * Track whether a `connected` event needs a reconcile. A healthy connection
+ * always does: constructing the EventSource only starts the subscription, so
+ * the caller's initial snapshot can be served before the stream is live and a
+ * change in that window is never replayed. Exported as a pure helper for
+ * regression tests.
  */
 export function createConnectionReconcileTracker() {
-  let connectedOnce = false;
-  let disconnected = false;
-
   return {
-    // The caller subscribes before taking its initial snapshot, so the first
-    // healthy connection has no gap to reconcile. A reconnect or an error
-    // before the first connect means changes may have been missed.
     markConnected() {
-      const shouldReconcile = connectedOnce || disconnected;
-      connectedOnce = true;
-      disconnected = false;
-      return shouldReconcile;
+      return true;
     },
-    markDisconnected() {
-      disconnected = true;
-    },
+    markDisconnected() {},
   };
 }

@@ -375,11 +375,17 @@ func (s *ItemApplicationService) countItemsBefore(ctx context.Context, where str
 	return count, nil
 }
 
-// countResolvedBefore counts scoped resolutions that happened before the
-// window start, so the opening backlog can subtract them.
+// countResolvedBefore counts scoped items that were closed at the window
+// start: a resolution before From with no reopen after it. Counting items
+// rather than resolution events keeps a resolved/reopened/re-resolved item from
+// being subtracted more than once.
 func (s *ItemApplicationService) countResolvedBefore(ctx context.Context, where string, whereArgs []any, before time.Time) (int64, error) {
-	query := `SELECT COUNT(*) ` + repository.ItemListFilterFromClause() + ` JOIN item_support_events e ON e.item_id = i.id ` + where + ` AND e.kind = ? AND e.occurred_at < ?`
-	args := append(append([]any{}, whereArgs...), models.SupportEventResolved, before)
+	query := `SELECT COUNT(*) ` + repository.ItemListFilterFromClause() + ` JOIN item_support_events e ON e.item_id = i.id ` + where + ` AND e.kind = ? AND e.occurred_at < ?
+		AND NOT EXISTS (
+			SELECT 1 FROM item_support_events r
+			WHERE r.item_id = e.item_id AND r.kind = ? AND r.occurred_at < ? AND r.occurred_at > e.occurred_at
+		)`
+	args := append(append([]any{}, whereArgs...), models.SupportEventResolved, before, models.SupportEventReopened, before)
 	var count int64
 	if err := s.db.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
 		return 0, fmt.Errorf("count opening resolutions: %w", err)

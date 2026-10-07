@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 
+	"windshift/internal/models"
 	"windshift/internal/repository"
 )
 
@@ -124,6 +125,41 @@ func (s *Service) CustomFieldExists(id int) (bool, error) {
 		return false, err
 	}
 	return field != nil, nil
+}
+
+// CustomFieldTypesCompatible reports whether a value extracted for sourceType
+// can be stored in a target field of targetType. Text and textarea are
+// interchangeable; everything else must match so the stored value keeps the
+// shape the target field expects.
+func CustomFieldTypesCompatible(targetType, sourceType string) bool {
+	target := models.CanonicalCustomFieldType(targetType)
+	source := models.CanonicalCustomFieldType(sourceType)
+	// An unclassified type cannot be checked, so do not block it.
+	if target == "" || source == "" {
+		return true
+	}
+	if target == source {
+		return true
+	}
+	textish := func(t string) bool { return t == "text" || t == "textarea" }
+	return textish(target) && textish(source)
+}
+
+// CustomFieldTargetType returns the existing custom field's type, or "" when
+// the field does not exist. Used to reject mappings whose value shape would
+// not fit the target field.
+func (s *Service) CustomFieldTargetType(id int) (string, error) {
+	field, err := s.customFields.FindByID(id)
+	if errors.Is(err, repository.ErrNotFound) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if field == nil {
+		return "", nil
+	}
+	return field.FieldType, nil
 }
 
 // WorkspaceImportTarget returns an active, non-personal, non-template

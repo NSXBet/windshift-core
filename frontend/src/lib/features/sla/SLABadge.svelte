@@ -10,17 +10,22 @@
   let states = $state([]);
   let thresholds = $state([]);
   let loaded = $state(false);
+  // Plain (non-reactive) guard: hide the previous item's badge while its
+  // replacement loads, but keep the current badge visible across the board's
+  // periodic refresh so it does not blank every tick.
+  let loadedItemId = null;
   let requestGeneration = 0;
 
   async function load(id, workspace, token) {
     if (!id) return;
     const generation = ++requestGeneration;
-    loaded = false;
+    if (id !== loadedItemId) loaded = false;
     const [stateList, thresholdList] = await Promise.all([getItemSLA(id, workspace), getSLAThresholds(workspace)]);
     if (generation !== requestGeneration || token !== refreshToken) return;
     states = stateList ?? [];
     thresholds = thresholdList ?? [];
     loaded = true;
+    loadedItemId = id;
   }
 
   $effect(() => {

@@ -878,7 +878,9 @@ func (p *Processor) preclaimTracking(
 			item_id, comment_id, direction, uid, uid_validity, processed_at
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, 'inbound', ?, ?, CURRENT_TIMESTAMP)
 		ON CONFLICT(channel_id, dedup_key) DO UPDATE SET
-			intake_id = excluded.intake_id,
+			-- Keep the intake that first claimed the message so a duplicate seen in
+			-- another folder cannot shift its per-intake rate-limit attribution.
+			intake_id = COALESCE(email_message_tracking.intake_id, excluded.intake_id),
 			message_id = excluded.message_id,
 			in_reply_to = excluded.in_reply_to,
 			from_email = excluded.from_email,

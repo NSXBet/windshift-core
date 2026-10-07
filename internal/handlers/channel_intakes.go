@@ -313,6 +313,12 @@ func (h *ChannelHandler) DeleteChannelIntake(w http.ResponseWriter, r *http.Requ
 		respondInternalError(w, r, err)
 		return
 	}
+	// Deleting an intake is a write to its target, so it needs the same target
+	// permission create/update enforce.
+	if err := h.authorizeIntakeTarget(ctx, user.ID, existing.TargetType, existing.TargetID); err != nil {
+		h.respondIntakeError(w, r, err)
+		return
+	}
 	if err := repo.Delete(ctx, intakeID); err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			respondNotFound(w, r, "intake")

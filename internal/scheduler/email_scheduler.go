@@ -298,19 +298,28 @@ func (es *EmailScheduler) processChannel(ctx context.Context, ch channelInfo) bo
 	}
 	defer func() { _ = client.Close() }()
 
-	intakes, err := repository.NewIntakeRepository(es.db).ListEnabledForMailbox(ctx, ch.ID)
+	// A mailbox with any intake row is fully managed by those rows: a disabled
+	// intake must not fall back to the legacy routing config. Only a mailbox
+	// with no intake rows at all still uses the legacy config.
+	allIntakes, err := repository.NewIntakeRepository(es.db).ListByMailbox(ctx, ch.ID)
 	if err != nil {
 		slog.Error("failed to list intakes", "channel_id", ch.ID, "error", err)
 		es.recordError(ctx, ch.ID, err)
 		return false
 	}
-	if len(intakes) == 0 {
+	intakes := make([]models.Intake, 0, len(allIntakes))
+	for _, intake := range allIntakes {
+		if intake.Status == "enabled" {
+			intakes = append(intakes, intake)
+		}
+	}
+	if len(allIntakes) == 0 {
 		if legacy := legacyIntakeFromConfig(decryptedConfig); legacy != nil {
 			intakes = []models.Intake{*legacy}
 		}
 	}
 	if len(intakes) == 0 {
-		slog.Debug("email channel has no intake and no routing config; skipping", "channel_id", ch.ID)
+		slog.Debug("email channel has no enabled intake; skipping", "channel_id", ch.ID)
 		return true
 	}
 
@@ -562,15 +571,23 @@ func nextFailedMessageAttempt(failedUID int, failedUIDValidity uint32, failedCou
 
 // getOrCreateIntakeState gets or creates the per-folder watermark record.
 func (es *EmailScheduler) getOrCreateIntakeState(ctx context.Context, intakeID int) (*models.EmailIntakeState, error) {
-	var state models.EmailIntakeState
-	err := es.db.QueryRowContext(ctx, `
-		SELECT intake_id, last_uid, uid_validity,
-		       failed_message_uid, failed_message_uid_validity, failed_message_count
-		FROM email_intake_state WHERE intake_id = ?
-	`, intakeID).Scan(&state.IntakeID, &state.LastUID, &state.UIDValidity,
-		&state.FailedMessageUID, &state.FailedMessageUIDValidity, &state.FailedMessageCount)
-	if err == nil {
+	read := func() (*models.EmailIntakeState, error) {
+		var state models.EmailIntakeState
+		err := es.db.QueryRowContext(ctx, `
+			SELECT intake_id, last_uid, uid_validity,
+			       failed_message_uid, failed_message_uid_validity, failed_message_count
+			FROM email_intake_state WHERE intake_id = ?
+		`, intakeID).Scan(&state.IntakeID, &state.LastUID, &state.UIDValidity,
+			&state.FailedMessageUID, &state.FailedMessageUIDValidity, &state.FailedMessageCount)
+		if err != nil {
+			return nil, err
+		}
 		return &state, nil
+	}
+
+	state, err := read()
+	if err == nil {
+		return state, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return nil, err
@@ -582,7 +599,8 @@ func (es *EmailScheduler) getOrCreateIntakeState(ctx context.Context, intakeID i
 	`, intakeID); err != nil {
 		return nil, err
 	}
-	return &models.EmailIntakeState{IntakeID: intakeID}, nil
+	// Re-read so a row created by a concurrent caller is not reported as zero.
+	return read()
 }
 
 // updateIntakeState persists the per-folder cursor and poison tracker.

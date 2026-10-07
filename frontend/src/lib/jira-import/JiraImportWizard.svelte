@@ -276,14 +276,28 @@
     return mapping.action;
   }
 
-  function customFieldOptions() {
+  // Mirrors the backend's compatibility rule: text/textarea are
+  // interchangeable, every other type must match so the stored value keeps the
+  // shape the target field expects.
+  function customFieldTypesCompatible(targetType, sourceType) {
+    const canonical = (type) => (type === 'checkbox' ? 'boolean' : type);
+    const target = canonical(targetType);
+    const source = canonical(sourceType);
+    if (target === source) return true;
+    const textish = (type) => type === 'text' || type === 'textarea';
+    return textish(target) && textish(source);
+  }
+
+  function customFieldOptions(mapping) {
     return [
       { value: 'create', label: t('jiraImport.mapping.create') },
       { value: 'skip', label: t('jiraImport.mapping.skip') },
-      ...mappingTargets.custom_fields.map((field) => ({
-        value: `map:${field.id}`,
-        label: `${field.name} (${field.field_type})`,
-      })),
+      ...mappingTargets.custom_fields
+        .filter((field) => customFieldTypesCompatible(field.field_type, mapping.windshiftType))
+        .map((field) => ({
+          value: `map:${field.id}`,
+          label: `${field.name} (${field.field_type})`,
+        })),
     ];
   }
 
@@ -1050,7 +1064,7 @@
                           <Select
                             id={`jira-import-field-target-select-${mapping.jiraId}`}
                             value={customFieldChoiceValue(mapping)}
-                            options={customFieldOptions()}
+                            options={customFieldOptions(mapping)}
                             onchange={(value) => handleCustomFieldChoice(mapping, value)}
                             size="small"
                           />

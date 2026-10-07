@@ -264,11 +264,29 @@ func (s *EmailReplyService) handleCommentCreated(params HandleCommentParams, del
 }
 
 // resolveReplyToAddress returns the monitored inbound address that customer
-// replies should route back to for an item on the given channel. Empty when the
-// channel is not an email intake or carries no address; the transport then
-// omits Reply-To and falls back to From. Portal-originated items have a portal
-// channel here and resolve to empty until a default mailbox is wired.
+// replies should route back to for an item on the given channel. Empty when no
+// monitored mailbox applies; the transport then omits Reply-To and falls back
+// to From.
 func (s *EmailReplyService) resolveReplyToAddress(channelID int) (address, name string) {
+	if address, name = s.mailboxAddress(channelID); address != "" {
+		return address, name
+	}
+	// Portal-originated items carry a portal channel. Route replies back to the
+	// mailbox whose intake feeds that portal, picking the oldest enabled one so
+	// the choice is stable across sends.
+	var mailboxID int
+	if err := s.db.QueryRow(`
+		SELECT mailbox_id FROM intakes
+		WHERE target_type = 'portal' AND target_id = ? AND status = 'enabled'
+		ORDER BY id LIMIT 1
+	`, channelID).Scan(&mailboxID); err != nil {
+		return "", ""
+	}
+	return s.mailboxAddress(mailboxID)
+}
+
+// mailboxAddress resolves the monitored address of an email/imap channel.
+func (s *EmailReplyService) mailboxAddress(channelID int) (address, name string) {
 	var configJSON string
 	if err := s.db.QueryRow(
 		`SELECT COALESCE(config, '{}') FROM channels WHERE id = ? AND type IN ('email', 'imap')`,

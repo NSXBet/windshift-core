@@ -210,12 +210,15 @@ func (h *JiraImportHandler) validateJiraEntityMappings(req StartImportRequest) e
 		if mapping.Action != "map" || mapping.WindshiftID == nil {
 			continue
 		}
-		exists, err := h.imports.CustomFieldExists(*mapping.WindshiftID)
+		existingType, err := h.imports.CustomFieldTargetType(*mapping.WindshiftID)
 		if err != nil {
 			return fmt.Errorf("load mapped custom field for %s: %w", mapping.JiraName, err)
 		}
-		if !exists {
+		if existingType == "" {
 			return fmt.Errorf("jira field %s references a custom field that does not exist", mapping.JiraName)
+		}
+		if !jiraimport.CustomFieldTypesCompatible(existingType, mapping.WindshiftType) {
+			return fmt.Errorf("jira field %s (%s) cannot map to a %s custom field", mapping.JiraName, mapping.WindshiftType, existingType)
 		}
 	}
 	return nil

@@ -29,12 +29,6 @@ const NOTIFICATION_PAGE_SIZE = 100;
 // Load notifications from API
 let loadPromise = null;
 let pollerGeneration = 0;
-// The poller opens the stream before requesting the first snapshot, so that
-// snapshot already covers everything up to the subscription. Track that
-// ordering so the first healthy connection does not reconcile a second time.
-let streamOpened = false;
-let initialLoadIssuedAfterStreamOpen = false;
-let streamEverConnected = false;
 
 async function loadNotificationPages(generation) {
   const allNotifications = [];
@@ -321,17 +315,12 @@ function _startNotificationStream() {
   if (typeof EventSource === 'undefined' || _eventSource) return;
   const source = new EventSource(toExternal('/api/notifications/events'));
   _eventSource = source;
-  streamOpened = true;
   const markConnected = () => {
-    const firstConnection = !streamEverConnected;
-    streamEverConnected = true;
     _streamConnected = true;
     clearTimeout(_pollTimer);
     _pollTimer = null;
-    // The first snapshot was requested after this stream opened, so it already
-    // reflects every invalidation the stream would replay. Reconcile only on a
-    // reconnect (or when the snapshot predates the stream).
-    if (firstConnection && initialLoadIssuedAfterStreamOpen) return;
+    // The initial snapshot can be served before the stream is live, so every
+    // healthy connection reconciles.
     _scheduleStreamReconcile();
   };
   source.addEventListener('connected', markConnected);
@@ -375,7 +364,6 @@ async function _tick() {
 }
 
 function _loadInitialNotifications(generation) {
-  initialLoadIssuedAfterStreamOpen = streamOpened;
   loadNotifications().then(() => {
     if (!_pollerStarted || generation !== pollerGeneration) return;
     if (!_seeded) {
@@ -436,9 +424,6 @@ export function stopNotificationPoller() {
   _stopReconnectListener?.();
   _stopReconnectListener = null;
   loadPromise = null;
-  streamOpened = false;
-  initialLoadIssuedAfterStreamOpen = false;
-  streamEverConnected = false;
   _seeded = false;
   _seenIds.clear();
   notifications.set([]);

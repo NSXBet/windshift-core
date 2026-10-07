@@ -49,9 +49,8 @@ export function useCollectionEventStream(getScope, handlers = {}) {
     const es = new EventSource(url);
     es.addEventListener('connected', () => {
       connected = true;
-      // Callers subscribe before their initial snapshot, so the first healthy
-      // connection is already covered. Reconnect (or an error before the first
-      // connect) still reconciles.
+      // A snapshot served before the stream is live can miss changes, so every
+      // healthy connection reconciles.
       if (connectionTracker.markConnected()) schedule();
     });
     es.addEventListener('items', schedule);

@@ -70,8 +70,12 @@ func (e *InsertCannedResponseExecutor) Execute(node *models.ActionNode, ctx *mod
 	}
 
 	actor := ctx.EffectiveActorID
-	if err := e.api.AuthorizeWorkspaceMutation(actor, workspaceID, models.PermissionItemComment); err != nil {
-		return err
+	// Only an override actor can lose rights after the rule was written. A
+	// system-triggered execution has no actor to re-check and keeps running.
+	if actor > 0 {
+		if err := e.api.AuthorizeWorkspaceMutation(actor, workspaceID, models.PermissionItemComment); err != nil {
+			return err
+		}
 	}
 	rendered, isPrivate, err := e.canned.RenderForItem(workspaceID, config.CannedResponseID, itemID, true, AuditActor{UserID: actor})
 	if err != nil {
@@ -141,8 +145,10 @@ func (e *NotifyCustomerExecutor) Execute(node *models.ActionNode, ctx *models.Ex
 	if itemID <= 0 || workspaceID <= 0 {
 		return fmt.Errorf("notify_customer requires an item context")
 	}
-	if err := e.api.AuthorizeWorkspaceMutation(ctx.EffectiveActorID, workspaceID, models.PermissionItemComment); err != nil {
-		return err
+	if actor := ctx.EffectiveActorID; actor > 0 {
+		if err := e.api.AuthorizeWorkspaceMutation(actor, workspaceID, models.PermissionItemComment); err != nil {
+			return err
+		}
 	}
 
 	var config models.NotifyCustomerNodeConfig
