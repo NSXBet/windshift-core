@@ -13,17 +13,32 @@
   import StateDisplay from '../../components/StateDisplay.svelte';
   import WorkspaceSelector from '../../workspaces/WorkspaceSelector.svelte';
 
-  let {
-    channelId,
-    workspaces = [],
-    itemTypes = [],
-    portals = [],
-    onLoadItemTypes = () => {}
-  } = $props();
+  let { channelId, workspaces = [], portals = [] } = $props();
 
   let intakes = $state([]);
   let loading = $state(false);
   let editing = $state(null);
+  // Item types belong to the intake's chosen workspace, which may differ from
+  // the mailbox's legacy email_workspace_id, so this component owns the load.
+  let itemTypes = $state([]);
+  let itemTypeLoadSequence = 0;
+
+  async function loadItemTypesForWorkspace(workspaceId) {
+    const requestSequence = ++itemTypeLoadSequence;
+    itemTypes = [];
+    if (!workspaceId) {
+      return;
+    }
+    try {
+      const loaded = await api.workspaces.getItemTypes(workspaceId);
+      if (requestSequence === itemTypeLoadSequence) {
+        itemTypes = loaded;
+      }
+    } catch (err) {
+      console.error('Failed to load item types:', err);
+      if (requestSequence === itemTypeLoadSequence) itemTypes = [];
+    }
+  }
 
   function blankIntake() {
     return {
@@ -64,6 +79,10 @@
     // Svelte 5 rejects with props_invalid_value. Start from the blank defaults
     // so every bound field is defined.
     editing = { ...blankIntake(), ...intake };
+    // Refresh the item-type list for the workspace being edited.
+    if (editing.target_type === 'workspace' && editing.target_id) {
+      loadItemTypesForWorkspace(editing.target_id);
+    }
   }
 
   async function save() {
@@ -140,12 +159,22 @@
     { value: 'enabled', label: t('channel.intakeStatusEnabled') },
     { value: 'disabled', label: t('channel.intakeStatusDisabled') }
   ];
+
+  // The monitored address is a mailbox property; show it once above the list.
+  let mailboxAddress = $derived(intakes.find((intake) => intake.mailbox_address)?.mailbox_address || '');
 </script>
 
 <div class="pt-6 border-t space-y-4" style="border-color: var(--ds-border);">
   <div>
     <h4 class="text-sm font-semibold" style="color: var(--ds-text);">{t('channel.intakesTitle')}</h4>
     <DescriptionText>{t('channel.intakesHelp')}</DescriptionText>
+    {#if mailboxAddress}
+      <DescriptionText>
+        <span data-testid="channel-intake-mailbox-address">
+          {t('channel.intakesMailboxAddress', { address: mailboxAddress })}
+        </span>
+      </DescriptionText>
+    {/if}
   </div>
 
   {#if loading}
@@ -171,6 +200,16 @@
               {intake.target_type === 'portal'
                 ? t('channel.intakeFeedsPortal')
                 : t('channel.intakeFeedsWorkspace')}: {targetLabel(intake)}
+            </div>
+            <div class="text-xs mt-1 flex items-center gap-2" style="color: var(--ds-text-subtle);">
+              <span data-testid="channel-intake-watermark-{intake.id}">
+                {t('channel.intakeLastUID', { uid: intake.last_uid ?? 0 })}
+              </span>
+              {#if intake.rate_limited_count > 0}
+                <Lozenge color="orange" dataTestid="channel-intake-rate-limited-{intake.id}">
+                  {t('channel.intakeRateLimited', { count: intake.rate_limited_count })}
+                </Lozenge>
+              {/if}
             </div>
           </div>
           <div class="flex items-center gap-1 flex-shrink-0">
@@ -229,13 +268,14 @@
                 placeholder={t('channel.selectWorkspace')}
                 onSelect={() => {
                   editing.item_type_id = null;
-                  onLoadItemTypes(editing.target_id);
+                  loadItemTypesForWorkspace(editing.target_id);
                 }}
               />
             </div>
             <SelectField
               label={t('channel.itemType')}
               labelColor="default"
+              id="intake-item-type"
               disabled={!editing.target_id}
               options={[
                 { value: null, label: t('channel.selectItemType') },

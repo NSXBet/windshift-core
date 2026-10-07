@@ -127,8 +127,6 @@
 
   // Workspaces and item types for email configuration
   let workspaces = $state([]);
-  let itemTypes = $state([]);
-  let itemTypeLoadSequence = 0;
 
   const supportedWebhookEventIDs = new Set([
     'item.created',
@@ -258,7 +256,7 @@
           rate_limit_per_hour: config.email_rate_limit_per_hour ?? null,
           enabled: channel.status === 'enabled'
         };
-        loadWorkspacesAndItemTypes();
+        loadWorkspaces();
         loadConnectedPortalOptions();
       } else if (channel.type === 'smtp') {
         smtpFormData = {
@@ -289,12 +287,9 @@
     }
   });
 
-  async function loadWorkspacesAndItemTypes() {
+  async function loadWorkspaces() {
     try {
       workspaces = ((await workspacesStore.load()) || []).filter(w => !w.is_personal);
-      if (emailFormData.workspace_id) {
-        await loadItemTypesForWorkspace(emailFormData.workspace_id);
-      }
     } catch (error) {
       console.error('Failed to load workspaces:', error);
     }
@@ -322,23 +317,6 @@
     } catch (error) {
       console.error('Failed to load connected mailboxes:', error);
       connectedMailboxes = [];
-    }
-  }
-
-  async function loadItemTypesForWorkspace(workspaceId) {
-    const requestSequence = ++itemTypeLoadSequence;
-    itemTypes = [];
-    if (!workspaceId) {
-      return;
-    }
-    try {
-      const loaded = await api.workspaces.getItemTypes(workspaceId);
-      if (requestSequence === itemTypeLoadSequence && emailFormData.workspace_id === workspaceId) {
-        itemTypes = loaded;
-      }
-    } catch (error) {
-      console.error('Failed to load item types:', error);
-      if (requestSequence === itemTypeLoadSequence) itemTypes = [];
     }
   }
 
@@ -650,10 +628,8 @@
               channelId={channel.id}
               bind:formData={emailFormData}
               {workspaces}
-              {itemTypes}
               portals={portalOptions}
               bind:loading
-              onLoadItemTypes={loadItemTypesForWorkspace}
               onSaveBeforeOAuth={saveEmailBeforeOAuth}
               onOAuthStartFailed={restoreEmailAfterOAuthStartFailure}
             />

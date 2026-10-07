@@ -258,6 +258,9 @@ export default {
     intakesTitle: 'Intakes',
     intakesHelp:
       'Each intake reads one folder on this mailbox and routes it to a portal or workspace. One mailbox can feed several intakes, but only via distinct folders. Creating an intake requires managing both this mailbox and the target.',
+    intakesMailboxAddress: 'Monitoring {address}',
+    intakeLastUID: 'Last UID {uid}',
+    intakeRateLimited: '{count} held back',
     intakesEmpty: 'No intakes yet. Add one so this mailbox creates items.',
     intakeAdd: 'Add intake',
     intakeFolder: 'Folder',
@@ -355,6 +358,8 @@ export default {
       syncStatus: 'Sync Status',
       lastChecked: 'Last checked',
       never: 'Never',
+      intakeLastUID: 'Last UID {uid}',
+      intakeLastPolled: 'Polled {time}',
       errors: 'Errors',
       noErrors: 'No errors',
       from: 'From',

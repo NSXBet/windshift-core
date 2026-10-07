@@ -337,6 +337,32 @@
               {/if}
             </div>
           </div>
+          {#if data.state.intakes?.length}
+            <div class="mt-3 space-y-1" data-testid="email-log-intakes">
+              {#each data.state.intakes as intake (intake.intake_id)}
+                <div
+                  class="flex flex-wrap gap-x-4 gap-y-0.5 text-xs"
+                  style="color: var(--ds-text-subtle);"
+                  data-testid="email-log-intake-{intake.intake_id}"
+                >
+                  <span class="font-medium" style="color: var(--ds-text);">{intake.folder}</span>
+                  <span>{t('channel.emailLog.intakeLastUID', { uid: intake.last_uid })}</span>
+                  <span>
+                    {t('channel.emailLog.intakeLastPolled', {
+                      time: intake.last_polled_at
+                        ? formatTime(intake.last_polled_at)
+                        : t('channel.emailLog.never')
+                    })}
+                  </span>
+                  {#if intake.rate_limited_count > 0}
+                    <span style="color: var(--ds-text-warning, var(--ds-text));">
+                      {t('channel.emailLog.rateLimitedCount', { count: intake.rate_limited_count })}
+                    </span>
+                  {/if}
+                </div>
+              {/each}
+            </div>
+          {/if}
           {#if data.state.last_error}
             <div class="mt-2 text-xs rounded p-2" style="background: var(--ds-surface-danger, rgba(239, 68, 68, 0.1)); color: var(--ds-text-danger);">
               {data.state.last_error}

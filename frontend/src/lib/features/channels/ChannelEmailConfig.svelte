@@ -40,10 +40,8 @@
       enabled: false
     }),
     workspaces = [],
-    itemTypes = [],
     portals = [],
     loading = $bindable(false),
-    onLoadItemTypes = () => {},
     onSaveBeforeOAuth = async () => {},
     onOAuthStartFailed = async () => {}
   } = $props();
@@ -125,10 +123,12 @@
   }
 
   export function getConfig() {
-    // The channel config carries the connection only. Routing (folder, target,
-    // request/item type, rate limit, disposition) lives on intakes.
+    // The channel config carries the connection plus the mailbox-level
+    // post-processing default. Routing (folder, target, request/item type, rate
+    // limit) and per-intake disposition overrides live on intakes.
     const baseConfig = {
-      email_auth_method: formData.auth_method
+      email_auth_method: formData.auth_method,
+      email_processing_disposition: formData.processing_disposition || 'mark_read'
     };
 
     if (formData.auth_method === 'oauth') {
@@ -366,15 +366,25 @@
       </div>
     {/if}
 
+    <!-- Mailbox-level post-processing default; an intake may override it. -->
+    <div class="pt-4 border-t" style="border-color: var(--ds-border);">
+      <SelectField
+        label={t('channel.processingDisposition')}
+        labelColor="default"
+        id="email-processing-disposition"
+        options={[
+          { value: 'leave', label: t('channel.dispositionLeave') },
+          { value: 'mark_read', label: t('channel.dispositionMarkRead') },
+          { value: 'delete', label: t('channel.dispositionDelete') }
+        ]}
+        bind:value={formData.processing_disposition}
+      />
+      <DescriptionText>{t('channel.dispositionHelp')}</DescriptionText>
+    </div>
+
     <!-- Intakes: routing is separate from the connection. One mailbox can feed
          several intakes via distinct folders. -->
-    <ChannelIntakesSection
-      {channelId}
-      {workspaces}
-      {itemTypes}
-      {portals}
-      {onLoadItemTypes}
-    />
+    <ChannelIntakesSection {channelId} {workspaces} {portals} />
 
     <div class="flex items-center justify-between">
       <div>

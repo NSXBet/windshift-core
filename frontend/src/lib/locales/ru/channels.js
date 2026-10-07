@@ -254,6 +254,9 @@ export default {
     intakesTitle: 'Приёмы',
     intakesHelp:
       'Каждый приём читает одну папку этого ящика и направляет её в портал или рабочее пространство. Один ящик может обслуживать несколько приёмов, но только через разные папки. Создание приёма требует прав на этот ящик и на цель.',
+    intakesMailboxAddress: 'Отслеживается {address}',
+    intakeLastUID: 'Последний UID {uid}',
+    intakeRateLimited: 'Удержано: {count}',
     intakesEmpty: 'Приёмов пока нет. Добавьте приём, чтобы ящик создавал элементы.',
     intakeAdd: 'Добавить приём',
     intakeFolder: 'Папка',
@@ -343,6 +346,8 @@ export default {
       syncStatus: 'Статус синхронизации',
       lastChecked: 'Последняя проверка',
       never: 'Никогда',
+      intakeLastUID: 'Последний UID {uid}',
+      intakeLastPolled: 'Опрошен {time}',
       errors: 'Ошибки',
       noErrors: 'Ошибок нет',
       from: 'Отправитель',
