@@ -1,6 +1,7 @@
 <script>
   import { IconCheck } from '@tabler/icons-svelte-runes';
   import { t } from '../../stores/i18n.svelte.js';
+  import { errorToast } from '../../stores/toasts.svelte.js';
   import { api } from '../../api.js';
   import Button from '../../components/Button.svelte';
   import Label from '../../components/Label.svelte';
@@ -44,8 +45,7 @@
     loading = $bindable(false),
     onLoadItemTypes = () => {},
     onSaveBeforeOAuth = async () => {},
-    onOAuthStartFailed = async () => {},
-    onToast = () => {}
+    onOAuthStartFailed = async () => {}
   } = $props();
 
   // A missing key would crash the select's bind:value (undefined + fallback);
@@ -77,7 +77,7 @@
     if (!$isSystemAdmin || !channelId) return;
 
     if (!formData.oauth_client_id) {
-      onToast('Please enter OAuth client ID');
+      errorToast('Please enter OAuth client ID');
       return;
     }
 
@@ -98,7 +98,7 @@
         console.error('Failed to restore email channel after OAuth start failure:', restoreError);
       }
       console.error('Failed to start OAuth:', error);
-      onToast('Failed to start OAuth: ' + (error.message || error));
+      errorToast('Failed to start OAuth: ' + (error.message || error));
     } finally {
       loading = false;
     }
@@ -373,7 +373,6 @@
       {workspaces}
       {itemTypes}
       {portals}
-      {onToast}
       {onLoadItemTypes}
     />
 
@@ -388,7 +387,7 @@
             : t('channel.emailIsInactive', 'Email channel is currently disabled')}
         </div>
       </div>
-      <Toggle bind:checked={formData.enabled} />
+      <Toggle bind:checked={formData.enabled} dataTestid="channel-email-enable" />
     </div>
   </div>
 </div>

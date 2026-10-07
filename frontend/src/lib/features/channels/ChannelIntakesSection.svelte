@@ -3,6 +3,7 @@
   import { IconPlus, IconTrash, IconPencil } from '@tabler/icons-svelte-runes';
   import { api } from '../../api.js';
   import { t } from '../../stores/i18n.svelte.js';
+  import { errorToast, successToast } from '../../stores/toasts.svelte.js';
   import Button from '../../components/Button.svelte';
   import TextField from '../../components/TextField.svelte';
   import SelectField from '../../components/SelectField.svelte';
@@ -17,7 +18,6 @@
     workspaces = [],
     itemTypes = [],
     portals = [],
-    onToast = () => {},
     onLoadItemTypes = () => {}
   } = $props();
 
@@ -45,7 +45,7 @@
       intakes = (await api.channelIntakes.list(channelId)) ?? [];
     } catch (err) {
       console.error('Failed to load intakes:', err);
-      onToast(t('channel.intakeLoadFailed'));
+      errorToast(t('channel.intakeLoadFailed'));
     } finally {
       loading = false;
     }
@@ -63,15 +63,15 @@
 
   async function save() {
     if (!editing.folder?.trim()) {
-      onToast(t('channel.intakeFolderRequired'));
+      errorToast(t('channel.intakeFolderRequired'));
       return;
     }
     if (!editing.target_id) {
-      onToast(t('channel.intakeTargetRequired'));
+      errorToast(t('channel.intakeTargetRequired'));
       return;
     }
     if (editing.target_type === 'workspace' && !editing.item_type_id) {
-      onToast(t('channel.itemTypeRequired'));
+      errorToast(t('channel.itemTypeRequired'));
       return;
     }
     const payload = {
@@ -94,9 +94,9 @@
       }
       editing = null;
       await load();
-      onToast(t('channel.intakeSaved'));
+      successToast(t('channel.intakeSaved'));
     } catch (err) {
-      onToast(err?.message || t('channel.intakeSaveFailed'));
+      errorToast(err?.message || t('channel.intakeSaveFailed'));
     }
   }
 
@@ -104,9 +104,9 @@
     try {
       await api.channelIntakes.delete(channelId, intake.id);
       await load();
-      onToast(t('channel.intakeDeleted'));
+      successToast(t('channel.intakeDeleted'));
     } catch (err) {
-      onToast(err?.message || t('channel.intakeDeleteFailed'));
+      errorToast(err?.message || t('channel.intakeDeleteFailed'));
     }
   }
 

@@ -5,6 +5,7 @@
   import { workspacesStore } from '../stores/workspaces.svelte.js';
   import { channelCategoriesStore } from '../stores/channelCategories.js';
   import { t } from '../stores/i18n.svelte.js';
+  import { errorToast, successToast } from '../stores/toasts.svelte.js';
   import { isSystemAdmin } from '../stores/permissions.svelte.js';
   import Modal from './Modal.svelte';
   import Button from '../components/Button.svelte';
@@ -36,10 +37,6 @@
   let loading = $state(false);
   let configParseFailed = $state(false);
   let persistedStatus = $state('disabled');
-
-  // Toast state
-  let showToast = $state(false);
-  let toastMessage = $state('');
 
   // Config component references
   let portalConfigRef = $state(null);
@@ -193,8 +190,7 @@
       const config = parseChannelConfig(channel.config);
       if (config === null) {
         configParseFailed = true;
-        toastMessage = t('channel.channelConfigCorrupted');
-        showToast = true;
+        errorToast(t('channel.channelConfigCorrupted'));
         activeTab = 'configuration';
         return;
       }
@@ -454,8 +450,7 @@
 
     const validation = validateForm();
     if (!validation.valid) {
-      toastMessage = validation.message;
-      showToast = true;
+      errorToast(validation.message);
       return;
     }
 
@@ -514,13 +509,11 @@
         persistedStatus = updated?.status || 'enabled';
       }
 
-      toastMessage = t('channel.channelSavedSuccess');
-      showToast = true;
+      successToast(t('channel.channelSavedSuccess'));
       onSave();
     } catch (error) {
       console.error('Failed to save channel:', error);
-      toastMessage = t('channel.failedToSave') + ': ' + (error.message || error);
-      showToast = true;
+      errorToast(t('channel.failedToSave') + ': ' + (error.message || error));
     } finally {
       loading = false;
     }
@@ -528,13 +521,7 @@
 
   function handleClose() {
     activeTab = 'configuration';
-    showToast = false;
     onClose();
-  }
-
-  function handleToast(message) {
-    toastMessage = message;
-    showToast = true;
   }
 </script>
 
@@ -669,7 +656,6 @@
               onLoadItemTypes={loadItemTypesForWorkspace}
               onSaveBeforeOAuth={saveEmailBeforeOAuth}
               onOAuthStartFailed={restoreEmailAfterOAuthStartFailure}
-              onToast={handleToast}
             />
           {:else if channel.type === 'smtp'}
             <ChannelSMTPConfig
@@ -740,14 +726,3 @@
     </div>
   {/if}
 </Modal>
-
-<!-- Toast (simple inline for now) -->
-{#if showToast}
-  <div
-    data-testid="channel-config-toast"
-    class="fixed bottom-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg"
-    style="background-color: var(--ds-surface-raised); border: 1px solid var(--ds-border);"
-  >
-    <p class="text-sm" style="color: var(--ds-text);">{toastMessage}</p>
-  </div>
-{/if}
