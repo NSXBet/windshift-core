@@ -1,7 +1,6 @@
 <script>
   import { onMount, onDestroy } from 'svelte';
   import { api } from '../../api.js';
-  import Input from '../../components/Input.svelte';
   import { navigate } from '../../router.js';
   import LazyMilkdownEditor from '../../editors/LazyMilkdownEditor.svelte';
   import PagePermissionsDialog from './PagePermissionsDialog.svelte';
@@ -26,6 +25,7 @@
     IconEye as Eye,
   } from '@tabler/icons-svelte-runes';
   import { confirm } from '../../composables/useConfirm.js';
+  import { autoGrow } from '../../utils/autoGrowTextarea.js';
   import { t } from '../../stores/i18n.svelte.js';
   import { pagesTreeRefresh } from './pagesTreeRefresh.svelte.js';
   import { pagesFocusTitle } from './pagesFocusTitle.svelte.js';
@@ -787,18 +787,18 @@
               aria-hidden="true"
             />
           {/if}
-          <Input
+          <textarea
             id="page-title-input"
-            bind:inputRef={titleInputEl}
+            bind:this={titleInputEl}
             class="title-input"
-            variant="ghost"
-            type="text"
+            rows={1}
             value={draftTitle}
             oninput={onTitleInput}
             onkeydown={onTitleKeydown}
             placeholder={t('pages.titlePlaceholder')}
             disabled={!canEditPage}
-          />
+            use:autoGrow={draftTitle}
+          ></textarea>
         </div>
       </div>
       <div class="label-row" data-testid="page-label-row">
@@ -1054,17 +1054,25 @@
     width: 100%;
     min-width: 0;
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 0.625rem;
   }
 
   :global(.title-icon) {
     flex-shrink: 0;
+    /* Center the icon on the title's first line. */
+    margin-top: 0.35rem;
   }
 
-  :global(.title-input) {
+  /* The title wraps instead of scrolling inside a single-line field, so
+     long titles are never clipped in edit or read mode. autoGrow keeps the
+     textarea sized to its content. */
+  .title-input {
     flex: 1;
     min-width: 0;
+    width: 100%;
+    display: block;
+    font-family: inherit;
     font-size: 1.75rem;
     font-weight: 700;
     line-height: 1.2;
@@ -1073,6 +1081,9 @@
     color: var(--ds-text);
     outline: none;
     padding: 0;
+    resize: none;
+    overflow: hidden;
+    overflow-wrap: anywhere;
   }
 
   .actions {

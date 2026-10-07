@@ -7,7 +7,7 @@
   import { formatRelativeCompact } from '../utils/dateFormatter.js';
   import LazyMilkdownEditor from '../editors/LazyMilkdownEditor.svelte';
   import MobileHeader from './MobileHeader.svelte';
-  import { autoGrow, enterMovesFocus } from './autoGrowTextarea.js';
+  import { autoGrow, enterMovesFocus } from '../utils/autoGrowTextarea.js';
   import { pageAncestors, pageChildren } from './mobilePagesData.js';
   import { t } from '../stores/i18n.svelte.js';
 

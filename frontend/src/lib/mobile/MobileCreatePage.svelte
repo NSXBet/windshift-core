@@ -9,7 +9,7 @@
   import MobileEditorPage from './MobileEditorPage.svelte';
   import MobileConfirmSheet from './MobileConfirmSheet.svelte';
   import MobileOptionSheet from './MobileOptionSheet.svelte';
-  import { autoGrow, enterMovesFocus } from './autoGrowTextarea.js';
+  import { autoGrow, enterMovesFocus } from '../utils/autoGrowTextarea.js';
   import Avatar from '../components/Avatar.svelte';
   import {
     isCreateSystemFieldAutoManaged,

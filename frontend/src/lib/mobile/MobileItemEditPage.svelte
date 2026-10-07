@@ -5,7 +5,7 @@
   import { formatItemKey } from '../utils/itemKey.js';
   import MobileEditorPage from './MobileEditorPage.svelte';
   import MobileConfirmSheet from './MobileConfirmSheet.svelte';
-  import { autoGrow, enterMovesFocus } from './autoGrowTextarea.js';
+  import { autoGrow, enterMovesFocus } from '../utils/autoGrowTextarea.js';
   import { Loader } from '@lucide/svelte';
   import { t, translateError } from '../stores/i18n.svelte.js';
 
