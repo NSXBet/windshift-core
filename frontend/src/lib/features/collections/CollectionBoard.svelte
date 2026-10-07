@@ -1511,19 +1511,16 @@
     contentClass="flex h-full flex-col"
     testid="collection-board-background"
   >
-      <!-- Header with view tabs -->
-      <div
-        class="flex-shrink-0 border-b px-6 pb-3 pt-3"
-        style="border-color: var(--ctx-border, var(--ds-border));"
-        data-testid="board-header"
-      >
+      <!-- Header with view tabs. The chrome stays in normal flow above the
+           scrolling canvas so the toolbar never pans with the lanes. -->
+      <div class="flex-shrink-0 px-6 pt-6" data-testid="board-header">
         <ViewHeader
           workspaceName={workspace?.name || ''}
           collection={currentCollectionName === 'Default' ? t('common.default') : currentCollectionName}
           viewName={t('workspaceSettings.views.board')}
           itemCount={collectionStore.collectionTotal}
           shownCount={collectionStore.loading ? null : totalVisibleItems}
-          marginClass="mb-0"
+          marginClass="mb-6"
         >
           {#snippet actions()}
             <div class="flex flex-wrap items-center justify-end gap-3">
@@ -1615,19 +1612,16 @@
             </div>
           {/snippet}
         </ViewHeader>
-      </div>
 
-      <!-- Controls Bar -->
-      <div
-        class="flex flex-shrink-0 flex-wrap items-center gap-4 border-b px-6 pb-3 pt-1"
-        style="border-color: var(--ctx-border, var(--ds-border));"
-      >
-        <SearchInput
-          bind:value={searchQuery}
-          placeholder={t('common.search')}
-          dataTestid="board-search-input"
-        />
-        <SubFilterBar {workspaceId} showCompletionToggle={false} />
+        <!-- Controls Bar -->
+        <div class="flex flex-wrap items-center gap-4" data-testid="board-controls">
+          <SearchInput
+            bind:value={searchQuery}
+            placeholder={t('common.search')}
+            dataTestid="board-search-input"
+          />
+          <SubFilterBar {workspaceId} showCompletionToggle={false} />
+        </div>
       </div>
 
       <!-- Scrolling canvas: everything below the fixed chrome pans in both

@@ -713,6 +713,7 @@
   <StaticViewBackground
     backgroundStyle={styles.backgroundStyle}
     contextVars={styles.contextVars}
+    testid="backlog-view"
   >
     <!-- Content Container -->
       <!-- Header with view tabs -->
