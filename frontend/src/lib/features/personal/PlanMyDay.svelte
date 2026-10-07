@@ -10,6 +10,7 @@
   import Button from '../../components/Button.svelte';
   import Select from '../../components/Select.svelte';
   import DescriptionText from '../../components/DescriptionText.svelte';
+  import ItemKey from '../../components/ItemKey.svelte';
 
   let loading = $state(false);
   let scheduling = $state(false);
@@ -211,7 +212,7 @@
                 <!-- Content -->
                 <div class="flex-1 min-w-0 pb-1">
                   <div class="flex items-center gap-2 flex-wrap">
-                    <span class="text-xs font-mono px-1.5 py-0.5 rounded" style="background-color: var(--ds-surface-sunken); color: var(--ds-text-subtle);">{activity.item_key}</span>
+                    <ItemKey itemKey={activity.item_key} variant="badge" />
                     <span class="text-sm font-medium truncate" style="color: var(--ds-text);">{activity.title}</span>
                   </div>
                   {#if activity.reason}

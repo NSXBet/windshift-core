@@ -10,7 +10,7 @@
   import { api } from '../../api.js';
   import { objectDisplayName } from '../../utils/systemLabels.js';
   import { t } from '../../stores/i18n.svelte.js';
-  import ItemKey from './ItemKey.svelte';
+  import ItemKey from '../../components/ItemKey.svelte';
   import StatusBadge from '../../components/StatusBadge.svelte';
 
   let {

@@ -22,6 +22,7 @@
   import { Settings, ChevronLeft, ChevronRight, Diamond, ChevronDown, CalendarClock, RotateCcw } from '@lucide/svelte';
   import { getVisibleColor } from '../../utils/colorUtils.js';
   import ItemTypeIcon from '../../components/ItemTypeIcon.svelte';
+  import ItemKey from '../../components/ItemKey.svelte';
   import { SYSTEM_FIELDS } from '../../stores/fieldConfig.js';
   import Button from '../../components/Button.svelte';
   import LazyRender from '../../components/LazyRender.svelte';
@@ -1461,7 +1462,7 @@
 
                       <!-- Item key -->
                       {#if item.item_key}
-                        <span class="text-xs shrink-0" style="color: var(--ds-text-subtle);">{item.item_key}</span>
+                        <ItemKey itemKey={item.item_key} />
                       {/if}
 
                       <!-- Title -->

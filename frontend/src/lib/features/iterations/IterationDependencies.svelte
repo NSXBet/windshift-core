@@ -8,6 +8,7 @@
   import Button from '../../components/Button.svelte';
   import Select from '../../components/Select.svelte';
   import Lozenge from '../../components/Lozenge.svelte';
+  import ItemKey from '../../components/ItemKey.svelte';
   import { successToast, errorToast } from '../../stores/toasts.svelte.js';
   import ItemPicker from '../../pickers/ItemPicker.svelte';
   import DescriptionText from '../../components/DescriptionText.svelte';
@@ -314,9 +315,7 @@
                 <div class="flex-1 min-w-0 space-y-2">
                   <!-- Source item -->
                   <div class="flex items-center gap-2 flex-wrap">
-                    <span class="text-xs font-mono px-1.5 py-0.5 rounded" style="background-color: var(--ds-surface-sunken); color: var(--ds-text-subtle);">
-                      {suggestion.source_item_key}
-                    </span>
+                    <ItemKey itemKey={suggestion.source_item_key} variant="badge" />
                     <span class="text-sm font-medium truncate" style="color: var(--ds-text);">
                       {suggestion.source_item_title}
                     </span>
@@ -332,9 +331,7 @@
 
                   <!-- Target item -->
                   <div class="flex items-center gap-2 flex-wrap">
-                    <span class="text-xs font-mono px-1.5 py-0.5 rounded" style="background-color: var(--ds-surface-sunken); color: var(--ds-text-subtle);">
-                      {suggestion.target_item_key}
-                    </span>
+                    <ItemKey itemKey={suggestion.target_item_key} variant="badge" />
                     <span class="text-sm font-medium truncate" style="color: var(--ds-text);">
                       {suggestion.target_item_title}
                     </span>

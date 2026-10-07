@@ -33,7 +33,7 @@
   import BoardColumn from './BoardColumn.svelte';
   import BoardEmptyState from './BoardEmptyState.svelte';
   import BoardItemCard from './BoardItemCard.svelte';
-  import ItemKey from '../items/ItemKey.svelte';
+  import ItemKey from '../../components/ItemKey.svelte';
   import CollectionViewSwitcher from './CollectionViewSwitcher.svelte';
   import DropdownMenu from '../../layout/DropdownMenu.svelte';
   import { backlogStore, workspaceDataStore, workspacesStore, workspacePermissions } from '../../stores/index.js';

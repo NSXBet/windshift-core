@@ -4,6 +4,7 @@
   import { api } from '../api.js';
   import DueMark from './dashboard/DueMark.svelte';
   import WidgetState from './WidgetState.svelte';
+  import ItemKey from '../components/ItemKey.svelte';
   import { t } from '../stores/i18n.svelte.js';
 
   let { workspaceId = null, collectionFilter = null, maxItems = 8 } = $props();
@@ -107,7 +108,7 @@
           <div class="min-w-0 flex-1">
             <p class="truncate text-sm" style="color: var(--ds-text);">{task.title}</p>
             <p class="mt-0.5 flex items-center gap-1 text-xs" style="color: var(--ds-text-subtle);">
-              <span>{task.workspace_key}-{task.workspace_item_number}</span>
+              <ItemKey item={task} />
               {#if task.status_name}
                 <span aria-hidden="true">•</span>
                 <span>{task.status_name}</span>

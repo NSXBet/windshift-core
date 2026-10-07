@@ -1,5 +1,6 @@
 <script>
   import ItemTypeIcon from '../../components/ItemTypeIcon.svelte';
+  import ItemKey from '../../components/ItemKey.svelte';
   import { formatDateSimple } from '../../utils/dateFormatter.js';
   import ItemCard from './ItemCard.svelte';
   import Lozenge from '../../components/Lozenge.svelte';
@@ -39,12 +40,6 @@
   let editingStoryPoints = $state(false);
   let storyPointsEditValue = $state('');
   let storyPointsError = $state(false);
-
-  // Compute the display key - prefer item.workspace_key, fallback to workspace.key
-  const displayKey = $derived.by(() => {
-    const key = item.workspace_key || workspace?.key;
-    return key ? `${key}-${item.workspace_item_number}` : `ITEM-${item.workspace_item_number}`;
-  });
 
   // Look up the item type for icon and color
   const itemType = $derived(item.item_type_id ? itemTypes.find(t => t.id === item.item_type_id) : null);
@@ -158,9 +153,7 @@
 
       <!-- Item Key -->
       {#if showKey}
-        <span class="font-mono text-xs px-2 py-0.5 rounded flex-shrink-0" style="background-color: rgba(59, 130, 246, 0.1); color: var(--ds-text);">
-          {displayKey}
-        </span>
+        <ItemKey {item} {workspace} variant="badge" />
       {/if}
 
       <!-- Priority Badge -->

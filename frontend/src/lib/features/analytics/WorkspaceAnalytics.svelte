@@ -31,7 +31,7 @@
   import SectionHeader from '../../layout/SectionHeader.svelte';
   import Chart from '../../widgets/Chart.svelte';
   import StatCard from '../../widgets/StatCard.svelte';
-  import ItemKey from '../items/ItemKey.svelte';
+  import ItemKey from '../../components/ItemKey.svelte';
   import {
     defaultAnalyticsRange,
     formatDateOnly,

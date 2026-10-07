@@ -8,7 +8,7 @@
   import ItemPicker from '../../pickers/ItemPicker.svelte';
   import UserPicker from '../../pickers/UserPicker.svelte';
   import MilestoneCombobox from '../../pickers/MilestoneCombobox.svelte';
-  import ItemKey from '../items/ItemKey.svelte';
+  import ItemKey from '../../components/ItemKey.svelte';
   import ColorDot from '../../components/ColorDot.svelte';
   import Lozenge from '../../components/Lozenge.svelte';
   import Checkbox from '../../components/Checkbox.svelte';

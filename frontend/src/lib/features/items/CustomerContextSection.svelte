@@ -8,6 +8,7 @@
   import Spinner from '../../components/Spinner.svelte';
   import Lozenge from '../../components/Lozenge.svelte';
   import Text from '../../components/Text.svelte';
+  import ItemKey from '../../components/ItemKey.svelte';
   import { t } from '../../stores/i18n.svelte.js';
   import { api } from '../../api.js';
   import { itemUrl } from '../../utils/urls.js';
@@ -135,9 +136,7 @@
                     style="border-color: var(--ds-border); background: var(--ds-surface-raised);"
                   >
                     <div class="flex items-center justify-between gap-2">
-                      <span class="font-mono text-xs" style="color: var(--ds-text-subtle);">
-                        {ticket.workspace_key}-{ticket.workspace_item_number}
-                      </span>
+                      <ItemKey item={ticket} />
                       {#if ticket.status_name}
                         <Lozenge color="gray">{ticket.status_name}</Lozenge>
                       {/if}

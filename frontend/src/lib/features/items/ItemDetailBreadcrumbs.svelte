@@ -4,7 +4,7 @@
   import Input from '../../components/Input.svelte';
   import ItemTypeIcon from '../../components/ItemTypeIcon.svelte';
   import ItemDetailBreadcrumbLevel from './ItemDetailBreadcrumbLevel.svelte';
-  import ItemKey from '../items/ItemKey.svelte';
+  import ItemKey from '../../components/ItemKey.svelte';
   import { api } from '../../api.js';
   import { t } from '../../stores/i18n.svelte.js';
   import { errorToast } from '../../stores/toasts.svelte.js';

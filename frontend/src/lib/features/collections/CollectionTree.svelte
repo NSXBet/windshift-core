@@ -9,7 +9,7 @@
   import ViewHeader from '../../layout/ViewHeader.svelte';
   import StaticViewBackground from '../../layout/StaticViewBackground.svelte';
   import SubFilterBar from './SubFilterBar.svelte';
-  import ItemKey from '../items/ItemKey.svelte';
+  import ItemKey from '../../components/ItemKey.svelte';
   import ColorDot from '../../components/ColorDot.svelte';
   import LinkComponent from '../../components/Link.svelte';
   import TestCaseViewModal from '../../dialogs/TestCaseViewModal.svelte';

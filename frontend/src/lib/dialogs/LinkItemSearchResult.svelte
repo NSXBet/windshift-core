@@ -1,5 +1,5 @@
 <script>
-  import ItemKey from '../features/items/ItemKey.svelte';
+  import ItemKey from '../components/ItemKey.svelte';
   import ItemTypeIcon from '../components/ItemTypeIcon.svelte';
   import { t } from '../stores/i18n.svelte.js';
 

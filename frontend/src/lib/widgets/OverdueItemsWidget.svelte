@@ -4,6 +4,7 @@
   import { dateOnlyKey, formatDate, formatDueDate, getDaysOverdue } from '../utils/dateFormatter.js';
   import { serverNow } from '../utils/serverClock.js';
   import WidgetState from './WidgetState.svelte';
+  import ItemKey from '../components/ItemKey.svelte';
   import { t } from '../stores/i18n.svelte.js';
 
   let { workspaceId = null, collectionFilter = null } = $props();
@@ -140,7 +141,7 @@
               <div class="min-w-0">
                 <p class="text-sm truncate" style="color: var(--ds-text);">{item.title}</p>
                 <div class="flex flex-wrap items-center gap-3 text-xs mt-1" style="color: var(--ds-text-subtle);">
-                  <span class="font-mono">{getItemKey(item)}</span>
+                  <ItemKey itemKey={getItemKey(item)} />
                   <span class="font-medium" style="color: var(--ds-text-danger);">{formatDueDate(item.due_date)}</span>
                 </div>
               </div>

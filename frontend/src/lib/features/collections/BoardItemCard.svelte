@@ -5,7 +5,7 @@
   import DropdownMenu from '../../layout/DropdownMenu.svelte';
   import { formatDateOnly } from '../../utils/dateFormatter.js';
   import ItemTypeIcon from '../../components/ItemTypeIcon.svelte';
-  import ItemKey from '../items/ItemKey.svelte';
+  import ItemKey from '../../components/ItemKey.svelte';
   import CardFieldChip from './CardFieldChip.svelte';
   import DependencySummary from './DependencySummary.svelte';
   import SLABadge from '../sla/SLABadge.svelte';

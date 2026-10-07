@@ -12,6 +12,7 @@
   import Spinner from '../components/Spinner.svelte';
   import Lozenge from '../components/Lozenge.svelte';
   import DataTable from '../components/DataTable.svelte';
+  import ItemKey from '../components/ItemKey.svelte';
   import Select from '../components/Select.svelte';
   import Label from '../components/Label.svelte';
   import Checkbox from '../components/Checkbox.svelte';
@@ -460,16 +461,16 @@
               <div class="font-medium truncate text-sm" style="color: var(--ds-text);">
                 {item.title}
               </div>
-              <div class="text-xs" style="color: var(--ds-text-subtle);">
-                {item.workspace_key}-{item.workspace_item_number}
+              <div class="text-xs">
+                <ItemKey item={item} />
               </div>
             </a>
           {:else}
             <div class="font-medium truncate text-sm" style="color: var(--ds-text);">
               {item.title}
             </div>
-            <div class="text-xs" style="color: var(--ds-text-subtle);">
-              {item.workspace_key}-{item.workspace_item_number}
+            <div class="text-xs">
+              <ItemKey item={item} />
             </div>
           {/if}
         {/snippet}

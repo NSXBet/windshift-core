@@ -22,7 +22,7 @@
   import ItemDetail from '../items/ItemDetail.svelte';
   import { useCollectionEventStream } from '../../composables/useCollectionEventStream.svelte.js';
   import { infoToast, errorToast } from '../../stores/toasts.svelte.js';
-  import ItemKey from '../items/ItemKey.svelte';
+  import ItemKey from '../../components/ItemKey.svelte';
   import ItemCard from '../items/ItemCard.svelte';
   import Lozenge from '../../components/Lozenge.svelte';
   import { getStatusCategory } from '../../utils/statusColors.js';

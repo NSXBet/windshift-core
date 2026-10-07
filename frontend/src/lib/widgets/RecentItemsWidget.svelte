@@ -4,6 +4,7 @@
   import { homepageStore } from '../stores';
   import { formatRelativeCompact } from '../utils/dateFormatter.js';
   import WidgetState from './WidgetState.svelte';
+  import ItemKey from '../components/ItemKey.svelte';
   import { t } from '../stores/i18n.svelte.js';
 
   let { workspaceId = null, collectionFilter = null, maxItems = 10 } = $props();
@@ -128,8 +129,8 @@
           </div>
           <div class="min-w-0 flex-1">
             <p class="truncate text-sm font-medium" style="color: var(--ds-text);">{item.title}</p>
-            <p class="text-xs" style="color: var(--ds-text-subtle);">
-              {item.workspace_key}-{item.workspace_item_number}
+            <p class="text-xs">
+              <ItemKey item={item} />
             </p>
           </div>
           <div class="text-xs" style="color: var(--ds-text-subtlest);">
