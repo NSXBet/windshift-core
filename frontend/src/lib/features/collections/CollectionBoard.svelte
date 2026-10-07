@@ -14,6 +14,7 @@
     buildDisplayColumns,
     statusIdForBoardColumnMove,
   } from './boardColumns.js';
+  import { resolveBoardWorkspaces } from './boardWorkspaces.js';
   import { infoToast, successToast, warningToast } from '../../stores/toasts.svelte.js';
   import { Plus, ChevronDown, ChevronRight, MoreHorizontal, Layers, ArrowDownUp } from '@lucide/svelte';
   import ItemPicker from '../../pickers/ItemPicker.svelte';
@@ -123,11 +124,13 @@
     !collectionStore.boardCollection?.ql_query?.trim()
   );
   let availableWorkspaces = $derived(
-    !collectionStore.boardWorkspaceScopeLoaded
-      ? []
-      : collectionAllowsAllWorkspaces
-        ? workspaces
-        : workspaces.filter(workspace => collectionStore.boardWorkspaceIds.includes(workspace.id))
+    resolveBoardWorkspaces({
+      scopeLoaded: collectionStore.boardWorkspaceScopeLoaded,
+      allowsAllWorkspaces: collectionAllowsAllWorkspaces,
+      directoryWorkspaces: workspaces,
+      scopedIds: collectionStore.boardWorkspaceIds,
+      currentWorkspace: workspace,
+    })
   );
   // Quick-add needs item.create in the target workspace; a cross-workspace
   // board offers the affordance only while at least one target allows it, and
@@ -481,9 +484,15 @@
 
   // Reset dependency links when the viewed board changes.
   let viewSignature = $derived(`${collectionId ?? ''}|${workspaceId ?? ''}`);
+  // The route props can flip between string and number representations for the
+  // same board. Key the one-shot setup on the normalized view so that does not
+  // reset state and re-fetch the board's iterations a second time.
+  let setupViewSignature = null;
   $effect(() => {
     // Board configuration depends on the view, not the loaded item set.
-    viewSignature;
+    const view = viewSignature;
+    if (view === setupViewSignature) return;
+    setupViewSignature = view;
     dependencyLinksByItem = {};
     allIterations = [];
     iterationFilterId = null;
@@ -509,7 +518,7 @@
     }
     if (workspaceId) {
       untrack(() => {
-        loadWorkspaceBoardState(viewSignature, workspaceId);
+        loadWorkspaceBoardState(view, workspaceId);
       });
     }
   });
