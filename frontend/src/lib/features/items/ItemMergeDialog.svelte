@@ -2,56 +2,109 @@
   import Modal from '../../dialogs/Modal.svelte';
   import ModalHeader from '../../dialogs/ModalHeader.svelte';
   import DialogFooter from '../../dialogs/DialogFooter.svelte';
-  import TextField from '../../components/TextField.svelte';
+  import Label from '../../components/Label.svelte';
   import DescriptionText from '../../components/DescriptionText.svelte';
+  import ItemPicker from '../../pickers/ItemPicker.svelte';
   import { api } from '../../api.js';
   import { t } from '../../stores/i18n.svelte.js';
 
-  let { isOpen = $bindable(false), item = null, onMerged = null } = $props();
+  let { isOpen = $bindable(false), item = null, preselected = null, onMerged = null } = $props();
 
-  let duplicateKey = $state('');
+  let duplicateId = $state(null);
+  let selectedDuplicate = $state(null);
+  let options = $state([]);
+  let searchLoading = $state(false);
   let merging = $state(false);
   let error = $state('');
+  let searchVersion = 0;
 
+  // Seed the selection when the dialog opens (from the actions menu it is
+  // empty; from the duplicates panel the candidate is passed in) and clear
+  // everything on close.
+  let wasOpen = false;
   $effect(() => {
-    if (!isOpen) {
-      duplicateKey = '';
-      merging = false;
+    if (isOpen && !wasOpen) {
+      duplicateId = preselected?.id ?? null;
+      selectedDuplicate = preselected ?? null;
+      options = preselected ? [preselected] : [];
       error = '';
+      merging = false;
+      searchVersion += 1;
+    } else if (!isOpen && wasOpen) {
+      duplicateId = null;
+      selectedDuplicate = null;
+      options = [];
+      error = '';
+      merging = false;
+      searchVersion += 1;
     }
+    wasOpen = isOpen;
   });
+
+  const duplicatePickerConfig = {
+    primary: { text: (entry) => entry.title || '' },
+    secondary: {
+      text: (entry) => {
+        if (entry.workspace_key && entry.workspace_item_number) {
+          return `${entry.workspace_key}-${entry.workspace_item_number}`;
+        }
+        return entry.workspace_name || '';
+      }
+    },
+    getValue: (entry) => entry.id,
+    getLabel: (entry) => entry.title || ''
+  };
+
+  async function searchDuplicates(query) {
+    const trimmed = (query || '').trim();
+    const version = ++searchVersion;
+
+    if (trimmed.length < 2) {
+      options = selectedDuplicate ? [selectedDuplicate] : [];
+      searchLoading = false;
+      return;
+    }
+
+    searchLoading = true;
+    try {
+      const results = await api.links.search(trimmed, 'item', 20);
+      if (version !== searchVersion) return;
+      const list = (Array.isArray(results) ? results : []).filter(
+        (entry) => Number(entry.id) !== Number(item?.id)
+      );
+      const keepSelected =
+        selectedDuplicate &&
+        !list.some((entry) => Number(entry.id) === Number(selectedDuplicate.id));
+      options = keepSelected ? [selectedDuplicate, ...list] : list;
+    } catch {
+      if (version !== searchVersion) return;
+      options = selectedDuplicate ? [selectedDuplicate] : [];
+    } finally {
+      if (version === searchVersion) searchLoading = false;
+    }
+  }
+
+  function handleSelect(selected) {
+    if (selected && !Array.isArray(selected)) {
+      selectedDuplicate = selected;
+    } else if (selected == null) {
+      selectedDuplicate = null;
+    }
+  }
 
   function close() {
     isOpen = false;
   }
 
-  // Accepts "KEY-123" (any workspace the viewer can see) or a bare id.
-  async function resolveDuplicate(raw) {
-    const trimmed = (raw || '').trim();
-    if (!trimmed) {
-      throw new Error(t('items.mergeKeyRequired'));
-    }
-    const keyMatch = trimmed.match(/^([A-Za-z0-9]+)-(\d+)$/);
-    if (keyMatch) {
-      const resolved = await api.items.getByKey(keyMatch[1], Number(keyMatch[2]));
-      return resolved.id;
-    }
-    if (/^\d+$/.test(trimmed)) {
-      return Number(trimmed);
-    }
-    throw new Error(t('items.mergeKeyInvalid'));
-  }
-
   async function handleMerge() {
-    if (merging || !item) return;
+    if (merging || !item || duplicateId == null) return;
+    if (Number(duplicateId) === Number(item.id)) {
+      error = t('items.mergeSelfError');
+      return;
+    }
     try {
       merging = true;
       error = '';
-      const duplicateId = await resolveDuplicate(duplicateKey);
-      if (Number(duplicateId) === Number(item.id)) {
-        error = t('items.mergeSelfError');
-        return;
-      }
       const result = await api.items.mergeInto(item.id, [duplicateId]);
       close();
       onMerged?.(result);
@@ -63,7 +116,7 @@
   }
 </script>
 
-<Modal bind:isOpen onclose={close} maxWidth="max-w-md" onSubmit={handleMerge} submitDisabled={merging || !duplicateKey.trim()}>
+<Modal bind:isOpen onclose={close} maxWidth="max-w-md" dataTestid="item-merge-dialog" onSubmit={handleMerge} submitDisabled={merging || duplicateId == null}>
   {#snippet children(submitHint)}
   <ModalHeader
     title={t('items.mergeTitle')}
@@ -72,13 +125,18 @@
   />
   <div class="p-6 space-y-4">
     <div>
-      <TextField
-        label={t('items.mergeDuplicateLabel')}
-        labelColor="default"
-        placeholder="KEY-123"
-        bind:value={duplicateKey}
-        dataTestid="item-merge-duplicate-input"
-        onkeydown={(e) => { if (e.key === 'Enter') handleMerge(); }}
+      <Label color="default" class="mb-2">{t('items.mergeDuplicateLabel')}</Label>
+      <ItemPicker
+        bind:value={duplicateId}
+        items={options}
+        loading={searchLoading}
+        config={duplicatePickerConfig}
+        placeholder={t('placeholders.searchWorkItems')}
+        allowClear={true}
+        onSearchChange={searchDuplicates}
+        onSelect={handleSelect}
+        searchTestid="item-merge-duplicate-search"
+        optionTestid={(option) => `item-merge-duplicate-option-${option.value}`}
       />
       <DescriptionText>{t('items.mergeHelp')}</DescriptionText>
     </div>
@@ -94,7 +152,7 @@
     loadingLabel={t('items.mergeWorking')}
     confirmTestid="item-merge-confirm"
     cancelTestid="item-merge-cancel"
-    confirmDisabled={merging || !duplicateKey.trim()}
+    confirmDisabled={merging || duplicateId == null}
     loading={merging}
     showKeyboardHint={true}
     confirmKeyboardHint={submitHint}

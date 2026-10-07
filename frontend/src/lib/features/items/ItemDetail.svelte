@@ -132,6 +132,11 @@ import NativeSelect from '../../components/NativeSelect.svelte';
   // detail summary via the store; no extra request.
   let mergedInto = $derived(itemDetailStore.mergedIntoItemId);
 
+  function openMergeDialog(duplicate = null) {
+    mergePreselected = duplicate;
+    showMergeDialog = true;
+  }
+
   function handleMerged() {
     successToast(t('items.mergeSuccess'));
     // The moved comments land on this ticket; the comments tab listens for
@@ -170,6 +175,9 @@ import NativeSelect from '../../components/NativeSelect.svelte';
   // Ticket lifecycle (merge/split) state
   let showMergeDialog = $state(false);
   let showSplitDialog = $state(false);
+  // Candidate passed in when the merge dialog is opened from the duplicates
+  // panel; null when opened from the actions menu.
+  let mergePreselected = $state(null);
 
   // Item type change state
   let showTypeChangeModal = $state(false);
@@ -898,7 +906,7 @@ import NativeSelect from '../../components/NativeSelect.svelte';
           icon: GitMerge,
           testid: 'item-merge-open',
           title: t('items.mergeMenu'),
-          onClick: () => { showMergeDialog = true; }
+          onClick: () => openMergeDialog()
         },
         {
           id: 'split-subticket',
@@ -1408,6 +1416,7 @@ import NativeSelect from '../../components/NativeSelect.svelte';
     ondeleteWorklog={handleDeleteWorklog}
     onparentChanged={handleParentChanged}
     onitemtypechange={handleItemTypeChange}
+    onrequestmerge={openMergeDialog}
     onattachmentUpload={attachmentManager.handleUpload}
     onattachmentUploadFiles={attachmentManager.uploadFiles}
     onattachmentDelete={attachmentManager.handleDelete}
@@ -1552,6 +1561,7 @@ import NativeSelect from '../../components/NativeSelect.svelte';
 <ItemMergeDialog
   bind:isOpen={showMergeDialog}
   item={itemDetailStore.item}
+  preselected={mergePreselected}
   onMerged={handleMerged}
 />
 

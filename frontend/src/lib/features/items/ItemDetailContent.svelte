@@ -117,6 +117,7 @@
     oneditRecurrence = null,
     onapprovalsChanged = null,
     onitemtypechange = null,
+    onrequestmerge = null,
   } = $props();
 
   // Keep the editor bundle off the network until the user opens it.
@@ -499,6 +500,7 @@
             {recurrenceRule}
             onsetupRecurrence={onsetupRecurrence}
             oneditRecurrence={oneditRecurrence}
+            {onrequestmerge}
           />
         </div>
       </div>

@@ -143,6 +143,7 @@
     recurrenceRule = null,
     onsetupRecurrence = null,
     oneditRecurrence = null,
+    onrequestmerge = null,
   } = $props();
 
   // State for SCM Link modals
@@ -1366,7 +1367,7 @@
          WI-1548 duplicate-candidates panel belongs to the same customer
          context, so it shares the guard. -->
     {#if item?.id && isExternalRequest(item)}
-      <RequesterOpenTickets itemId={item.id} />
+      <RequesterOpenTickets itemId={item.id} {canEdit} {onrequestmerge} />
       <CustomerContextSection {item} />
     {/if}
 
