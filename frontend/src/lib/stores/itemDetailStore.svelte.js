@@ -203,9 +203,6 @@ class ItemDetailStore {
   showTimeLogModal = $state(false);
   editingWorklog = $state(null);
 
-  // Track changes
-  hasChanges = $state(false);
-
   // Animation state
   transitioning = $state(false);
 
@@ -919,7 +916,6 @@ class ItemDetailStore {
         // Status changes must use the transition endpoint for workflow validation.
         const updatedItem = await api.items.transition(this.item.id, newStatusId);
         this.item = { ...this.item, ...updatedItem };
-        this.hasChanges = true;
         this.cancelEditing('status');
         await this.refreshAvailableTransitions();
         return;
@@ -1084,7 +1080,6 @@ class ItemDetailStore {
         this.item = { ...this.item, iteration_name: iterationName };
       }
 
-      this.hasChanges = true;
       this.cancelEditing(field);
     } catch (err) {
       console.error('Failed to update item:', err);
@@ -1226,7 +1221,6 @@ class ItemDetailStore {
         await api.items.addWatch(this.item.id);
         this.isWatching = true;
       }
-      this.hasChanges = true;
     } catch (err) {
       console.error('Failed to toggle watch:', err);
       throw err;
@@ -1419,7 +1413,6 @@ class ItemDetailStore {
     this.selectedTestCaseId = null;
     this.showTimeLogModal = false;
     this.editingWorklog = null;
-    this.hasChanges = false;
     this.transitioning = false;
     this.dropdownItems = [];
   }

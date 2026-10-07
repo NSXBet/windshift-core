@@ -1150,14 +1150,9 @@
     }
   }
 
-  async function closeItemModal(event) {
+  function closeItemModal() {
     showItemModal = false;
     selectedItemId = null;
-
-    // If changes were made in the modal, reload data
-    if (event?.hasChanges) {
-      reloadCollection();
-    }
   }
 
   function registerBoardCard(element, [itemId, canDrag]) {

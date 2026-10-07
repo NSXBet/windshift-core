@@ -122,7 +122,7 @@ import NativeSelect from '../../components/NativeSelect.svelte';
     itemDetailStore.notFound = false;
     showDeletionFeedback();
     if (isModal && onclose) {
-      onclose({ hasChanges: false });
+      onclose();
     } else if (!isModal) {
       closeModal();
     }
@@ -209,7 +209,7 @@ import NativeSelect from '../../components/NativeSelect.svelte';
   // Modal control functions
   function closeModal() {
     if (isModal && onclose) {
-      onclose({ hasChanges: itemDetailStore.hasChanges });
+      onclose();
     } else if (!isModal) {
       const collectionId = $currentRoute.params?.collectionId;
       const url = collectionId
@@ -753,7 +753,6 @@ import NativeSelect from '../../components/NativeSelect.svelte';
         ...(targetStatusId ? { target_status_id: targetStatusId } : {})
       });
       itemDetailStore.item = { ...itemDetailStore.item, ...updated };
-      itemDetailStore.hasChanges = true;
       showTypeChangeModal = false;
       typeChangeAnalysis = null;
       typeChangeTarget = null;
@@ -806,6 +805,12 @@ import NativeSelect from '../../components/NativeSelect.svelte';
     itemDetailStore.reset();
     // Reparent navigation can reuse this component; allow its next item load.
     itemDetailStore.loading = false;
+    // In a modal, close in place instead of navigating away; the host view
+    // reconciles the deletion through its own event stream.
+    if (isModal && onclose) {
+      onclose();
+      return;
+    }
     const collectionId = $currentRoute.params?.collectionId;
     // Navigate based on deletion result
     if (result?.mode === 'reparent' && result?.newParentId) {

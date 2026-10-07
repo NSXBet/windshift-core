@@ -5,7 +5,7 @@
   import { navigate } from '../../router.js';
   import { t } from '../../stores/i18n.svelte.js';
   import { getCollection, checkItemVisibility } from '../collections/collectionService.js';
-  import { collectionStore, reloadCollection } from '../../stores/collectionContext.js';
+  import { collectionStore, refreshCollectionDeltas, reloadCollection } from '../../stores/collectionContext.js';
   import { workspaceDataStore, workspacesStore, capabilitiesStore } from '../../stores/index.js';
   import { useGradientStyles, loadWorkspaceGradient } from '../../stores/workspaceGradient.svelte.js';
   import { Plus, ChevronDown, ChevronRight, Home, MapPin, Settings } from '@lucide/svelte';
@@ -20,6 +20,7 @@
   import StaticViewBackground from '../../layout/StaticViewBackground.svelte';
   import SubFilterBar from './SubFilterBar.svelte';
   import ItemDetail from '../items/ItemDetail.svelte';
+  import { useCollectionEventStream } from '../../composables/useCollectionEventStream.svelte.js';
   import { infoToast, errorToast } from '../../stores/toasts.svelte.js';
   import ItemKey from '../items/ItemKey.svelte';
   import ItemCard from '../items/ItemCard.svelte';
@@ -189,6 +190,12 @@
       untrack(() => processMapItems(currentItems));
     }
   });
+
+  // Scoped SSE invalidations (WI-1624): any frame runs the existing delta fetch.
+  useCollectionEventStream(
+    () => (collectionId ? { kind: 'collection', id: collectionId } : { kind: 'workspace', id: workspaceId }),
+    { onInvalidate: () => refreshCollectionDeltas() }
+  );
 
   async function loadAllData() {
     loading = true;
@@ -678,14 +685,9 @@
     showItemModal = true;
   }
 
-  async function closeItemModal(event) {
+  function closeItemModal() {
     showItemModal = false;
     selectedItemId = null;
-
-    // If changes were made in the modal, reload data
-    if (event?.hasChanges) {
-      reloadCollection();
-    }
   }
 </script>
 

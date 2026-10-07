@@ -4,7 +4,7 @@
   import { t } from '../../stores/i18n.svelte.js';
   import { api } from '../../api.js';
   import { navigate } from '../../router.js';
-  import { collectionStore, reloadCollection, refreshCollectionItem } from '../../stores/collectionContext.js';
+  import { collectionStore, refreshCollectionDeltas, reloadCollection, refreshCollectionItem } from '../../stores/collectionContext.js';
   import { findOrphansByMissingParent, indexCollectionHierarchy, mergeAncestorContext } from './collectionHierarchy.js';
   import { useGradientStyles, loadWorkspaceGradient } from '../../stores/workspaceGradient.svelte.js';
   import { workspaceDataStore } from '../../stores/index.js';
@@ -16,6 +16,7 @@
   import Toggle from '../../components/Toggle.svelte';
   import ItemDetail from '../items/ItemDetail.svelte';
   import RoadmapItemPreview from './RoadmapItemPreview.svelte';
+  import { useCollectionEventStream } from '../../composables/useCollectionEventStream.svelte.js';
   import { buildHierarchyDatePatches, projectHierarchyDates } from './roadmapHierarchyDates.js';
   import { boardColumnsForSave } from '../../utils/workItemListColumns.js';
   import { Settings, ChevronLeft, ChevronRight, Diamond, ChevronDown, CalendarClock, RotateCcw } from '@lucide/svelte';
@@ -730,6 +731,12 @@
       untrack(() => loadLinksForItems(allItemsSorted));
     }
   });
+
+  // Scoped SSE invalidations (WI-1624): any frame runs the existing delta fetch.
+  useCollectionEventStream(
+    () => (collectionId ? { kind: 'collection', id: collectionId } : { kind: 'workspace', id: workspaceId }),
+    { onInvalidate: () => refreshCollectionDeltas() }
+  );
 
   // Load links for visible items in batched requests instead of one per item.
   async function loadLinksForItems(items) {
@@ -1723,10 +1730,8 @@
     itemId={selectedItemId}
     isModal={true}
     onclose={() => {
-      const id = selectedItemId;
       showItemModal = false;
       selectedItemId = null;
-      refreshCollectionItem(id);
     }}
   />
 {/if}
