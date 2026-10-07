@@ -385,7 +385,7 @@ export default {
     widthTwoThirds: 'ثلثان',
     widthFull: 'كامل',
     resizeAriaLabel: 'تغيير حجم الأداة',
-    resizeColumnsValue: '{count} من 12 عمود',
+    resizeColumnsValue: '{count} من {total} عمود',
     rowCount: 'عدد الصفوف',
     density: 'الكثافة',
     densityComfortable: 'مريح',

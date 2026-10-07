@@ -425,7 +425,7 @@ export default {
     "widthTwoThirds": "3분의 2",
     "widthFull": "전체",
     "resizeAriaLabel": "위젯 크기 조정",
-    "resizeColumnsValue": "12열 중 {count}열",
+    "resizeColumnsValue": "{total}열 중 {count}열",
     "rowCount": "행 수",
     "density": "밀도",
     "densityComfortable": "여유롭게",

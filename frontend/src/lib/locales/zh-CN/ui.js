@@ -319,7 +319,7 @@ export default {
     widthTwoThirds: '三分之二',
     widthFull: '满',
     resizeAriaLabel: '调整小部件大小',
-    resizeColumnsValue: '{count} / 12 列',
+    resizeColumnsValue: '{count} / {total} 列',
     rowCount: '行数',
     density: '密度',
     densityComfortable: '舒适',

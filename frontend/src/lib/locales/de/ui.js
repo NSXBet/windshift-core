@@ -383,7 +383,7 @@ export default {
     widthTwoThirds: 'Zwei Drittel',
     widthFull: 'Voll',
     resizeAriaLabel: 'Widget-Größe ändern',
-    resizeColumnsValue: '{count} von 12 Spalten',
+    resizeColumnsValue: '{count} von {total} Spalten',
     rowCount: 'Zeilenanzahl',
     density: 'Dichte',
     densityComfortable: 'Komfortabel',

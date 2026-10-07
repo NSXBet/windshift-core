@@ -440,7 +440,7 @@ export default {
     widthTwoThirds: 'Two-thirds',
     widthFull: 'Full',
     resizeAriaLabel: 'Resize widget',
-    resizeColumnsValue: '{count} of 12 columns',
+    resizeColumnsValue: '{count} of {total} columns',
     rowCount: 'Row count',
     density: 'Density',
     densityComfortable: 'Comfortable',

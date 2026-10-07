@@ -360,7 +360,7 @@ export default {
     widthTwoThirds: 'Две трети',
     widthFull: 'Полная',
     resizeAriaLabel: 'Изменить размер виджета',
-    resizeColumnsValue: '{count} из 12 столбцов',
+    resizeColumnsValue: '{count} из {total} столбцов',
     rowCount: 'Количество строк',
     density: 'Плотность',
     densityComfortable: 'Обычная',

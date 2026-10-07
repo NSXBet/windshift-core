@@ -432,7 +432,7 @@ export default {
     widthTwoThirds: 'Deux tiers',
     widthFull: 'Pleine largeur',
     resizeAriaLabel: 'Redimensionner le widget',
-    resizeColumnsValue: '{count} sur 12 colonnes',
+    resizeColumnsValue: '{count} sur {total} colonnes',
     rowCount: 'Nombre de lignes',
     density: 'Densité',
     densityComfortable: 'Aéré',
