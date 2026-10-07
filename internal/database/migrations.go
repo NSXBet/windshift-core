@@ -2550,6 +2550,14 @@ var Catalog = []Migration{
 		ApplySQLite:     applyIntakeSplitMigration,
 		ApplyPostgres:   applyIntakeSplitMigration,
 	},
+	{
+		Version:       "20261019_email_tracking_completed_at",
+		Name:          "Keep email dedup after an intake-created item is deleted (WI-1658)",
+		CheckSQLite:   sqliteColumnCheck("email_message_tracking", "completed_at"),
+		CheckPostgres: pgColumnCheck("email_message_tracking", "completed_at"),
+		SQLite:        `ALTER TABLE email_message_tracking ADD COLUMN completed_at DATETIME`,
+		Postgres:      `ALTER TABLE email_message_tracking ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ`,
+	},
 }
 
 // checkNotificationDigestLinksMigration reports the migration as already

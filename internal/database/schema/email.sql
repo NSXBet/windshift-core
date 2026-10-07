@@ -136,6 +136,12 @@ CREATE TABLE IF NOT EXISTS email_message_tracking (
 	-- rate_limited_at is set when per-sender flood protection declined to
 	-- create a ticket. The mail stays in the mailbox for operator requeue.
 	rate_limited_at DATETIME,
+	-- completed_at marks a message that finished processing. Unlike
+	-- item_id/comment_id it survives the item/comment being deleted (the FKs
+	-- below are ON DELETE SET NULL), so a deleted ticket is never recreated by
+	-- reprocessing the same email. It is only cleared when the channel is
+	-- deleted and cascades the tracking rows.
+	completed_at DATETIME,
 	processed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE CASCADE,
 	FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE SET NULL,

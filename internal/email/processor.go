@@ -862,6 +862,8 @@ const (
 // than the processing lease + request budget is atomically reclaimed. The
 // result distinguishes ownership from a completed duplicate and a live
 // unfinished claim so callers do not advance the mailbox watermark too early.
+// A finalized row is recognized by completed_at as well as item_id/comment_id,
+// so deleting the created ticket does not reopen it for reprocessing.
 // uid/uid_validity are stamped here so rate-limited rows can be requeued
 // surgically within the right IMAP epoch.
 func (p *Processor) preclaimTracking(
@@ -891,6 +893,7 @@ func (p *Processor) preclaimTracking(
 			processed_at = CURRENT_TIMESTAMP
 		WHERE email_message_tracking.item_id IS NULL
 		  AND email_message_tracking.comment_id IS NULL
+		  AND email_message_tracking.completed_at IS NULL
 		  AND email_message_tracking.processed_at < ?
 	`,
 		channelID,
@@ -917,17 +920,20 @@ func (p *Processor) preclaimTracking(
 	}
 
 	var itemID, commentID sql.NullInt64
+	var completedAt sql.NullTime
 	if err := p.db.QueryRowContext(ctx, `
-		SELECT item_id, comment_id
+		SELECT item_id, comment_id, completed_at
 		FROM email_message_tracking
 		WHERE channel_id = ? AND dedup_key = ?
-	`, channelID, dedupKey).Scan(&itemID, &commentID); err != nil {
+	`, channelID, dedupKey).Scan(&itemID, &commentID, &completedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return trackingClaimInProgress, nil
 		}
 		return trackingClaimInProgress, err
 	}
-	if itemID.Valid || commentID.Valid {
+	// completed_at survives the created item/comment being deleted, so a
+	// deleted ticket stays deduplicated even though its FKs are nulled.
+	if itemID.Valid || commentID.Valid || completedAt.Valid {
 		return trackingClaimCompleted, nil
 	}
 	return trackingClaimInProgress, nil
@@ -941,6 +947,7 @@ func (p *Processor) releaseTrackingClaim(ctx context.Context, channelID int, ded
 	if _, err := p.db.ExecWriteContext(ctx, `
 		DELETE FROM email_message_tracking
 		WHERE channel_id = ? AND dedup_key = ? AND item_id IS NULL AND comment_id IS NULL
+		  AND completed_at IS NULL
 	`, channelID, dedupKey); err != nil {
 		slog.Warn("failed to release tracking claim", "error", err, "channel_id", channelID, "dedup_key", dedupKey)
 	}
@@ -958,7 +965,7 @@ func (p *Processor) finalizeTrackingClaim(
 ) error {
 	_, err := p.db.ExecWriteContext(ctx, `
 		UPDATE email_message_tracking
-		SET item_id = ?, comment_id = ?, rate_limited_at = NULL
+		SET item_id = ?, comment_id = ?, rate_limited_at = NULL, completed_at = CURRENT_TIMESTAMP
 		WHERE channel_id = ? AND dedup_key = ? AND item_id IS NULL AND comment_id IS NULL
 	`, itemID, commentID, channelID, dedupKey)
 	return err
