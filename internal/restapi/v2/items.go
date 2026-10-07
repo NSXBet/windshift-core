@@ -293,6 +293,7 @@ type itemMergeRequest struct {
 type itemSplitRequest struct {
 	Title            string `json:"title"`
 	Description      string `json:"description"`
+	ItemTypeID       *int   `json:"item_type_id"`
 	CommentIDs       []int  `json:"comment_ids"`
 	AttachmentIDs    []int  `json:"attachment_ids"`
 	AssigneeID       *int   `json:"assignee_id"`
@@ -327,6 +328,7 @@ func registerItemLifecycleRoutes(builder *routeBuilder, lifecycle *services.Item
 		result, err := lifecycle.Split(r.Context(), services.ItemSplitInput{
 			ActorUserID: user.ID, ActorUsername: user.Username,
 			SourceItemID: id, Title: input.Title, Description: input.Description,
+			ItemTypeID: input.ItemTypeID,
 			CommentIDs: input.CommentIDs, AttachmentIDs: input.AttachmentIDs,
 			AssigneeID: input.AssigneeID, PortalCustomerID: input.PortalCustomerID,
 		})

@@ -1553,6 +1553,7 @@ import NativeSelect from '../../components/NativeSelect.svelte';
 <ItemSplitDialog
   bind:isOpen={showSplitDialog}
   item={itemDetailStore.item}
+  itemTypes={itemDetailStore.availableSubIssueTypes}
   onSplit={handleSplit}
 />
 

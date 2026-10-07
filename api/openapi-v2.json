@@ -78250,6 +78250,11 @@
             "description": "The description value.",
             "type": "string"
           },
+          "item_type_id": {
+            "description": "The item type id value.",
+            "nullable": true,
+            "type": "integer"
+          },
           "portal_customer_id": {
             "description": "The portal customer id value.",
             "nullable": true,

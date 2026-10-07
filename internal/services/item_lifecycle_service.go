@@ -407,13 +407,15 @@ func (s *ItemLifecycleService) Merge(ctx context.Context, input ItemMergeInput) 
 }
 
 // ItemSplitInput carves a subticket out of a source ticket with explicit
-// customer/agent ownership.
+// customer/agent ownership. ItemTypeID is optional: when nil the child type
+// is derived from the source type's hierarchy.
 type ItemSplitInput struct {
 	ActorUserID      int
 	ActorUsername    string
 	SourceItemID     int
 	Title            string
 	Description      string
+	ItemTypeID       *int
 	CommentIDs       []int
 	AttachmentIDs    []int
 	AssigneeID       *int
@@ -427,6 +429,86 @@ type ItemSplitResult struct {
 	SplitItemID      int          `json:"split_item_id"`
 	MovedComments    int          `json:"moved_comments"`
 	MovedAttachments int          `json:"moved_attachments"`
+}
+
+// resolveSplitChildType picks the item type for a split child. An explicit
+// request is honored only when it is a legal child of the source type — the
+// next hierarchy level down or the generic sub-task sentinel. When the caller
+// omits a type, the first next-level type in catalog order is used, falling
+// back to the generic sub-task. Copying the source type is deliberately not a
+// fallback: a regular type may not parent its own level, so an Initiative's
+// subticket is an Epic, never another Initiative.
+func resolveSplitChildType(db database.Database, source *models.Item, requested *int) (*int, error) {
+	if source.ItemTypeID == nil {
+		return nil, &validation.ValidationError{Field: "item_type_id", Message: "Source item has no item type"}
+	}
+	// The source type may predate the workspace's config-set binding (for
+	// example the global default), so resolve the hierarchy from the full
+	// catalog and only constrain the child candidates to workspace-allowed
+	// types.
+	types, err := repository.NewItemTypeRepository(db).List(nil)
+	if err != nil {
+		return nil, fmt.Errorf("resolve split child type: %w", err)
+	}
+
+	findType := func(id int) *models.ItemType {
+		for i := range types {
+			if types[i].ID == id {
+				return &types[i]
+			}
+		}
+		return nil
+	}
+
+	sourceType := findType(*source.ItemTypeID)
+	if sourceType == nil {
+		return nil, &validation.ValidationError{Field: "item_type_id", Message: "Source item type was not found"}
+	}
+	if sourceType.HierarchyLevel == models.HierarchyLevelGenericSubtask {
+		return nil, &validation.ValidationError{Field: "item_type_id", Message: "Generic sub-tasks are terminal and cannot have child items"}
+	}
+
+	allowed := func(id int) bool {
+		ok, err := IsItemTypeAllowedInWorkspace(db, source.WorkspaceID, id)
+		return err == nil && ok
+	}
+
+	var nextLevel, generic *int
+	for i := range types {
+		switch types[i].HierarchyLevel {
+		case sourceType.HierarchyLevel + 1:
+			if nextLevel == nil && allowed(types[i].ID) {
+				nextLevel = &types[i].ID
+			}
+		case models.HierarchyLevelGenericSubtask:
+			if generic == nil && allowed(types[i].ID) {
+				generic = &types[i].ID
+			}
+		}
+	}
+
+	if requested != nil {
+		requestedType := findType(*requested)
+		if requestedType == nil {
+			return nil, &validation.ValidationError{Field: "item_type_id", Message: "Item type was not found"}
+		}
+		legal := requestedType.HierarchyLevel == sourceType.HierarchyLevel+1 ||
+			requestedType.HierarchyLevel == models.HierarchyLevelGenericSubtask
+		if !legal {
+			return nil, &validation.ValidationError{Field: "item_type_id", Message: "Item type is not a valid child of the source item type"}
+		}
+		if !allowed(*requested) {
+			return nil, &validation.ValidationError{Field: "item_type_id", Message: "Item type is not allowed in this workspace"}
+		}
+		return requested, nil
+	}
+	if nextLevel != nil {
+		return nextLevel, nil
+	}
+	if generic != nil {
+		return generic, nil
+	}
+	return nil, &validation.ValidationError{Field: "item_type_id", Message: "No child item type is available for this item type"}
 }
 
 // Split creates a child ticket of the source and moves exactly the selected
@@ -446,6 +528,10 @@ func (s *ItemLifecycleService) Split(ctx context.Context, input ItemSplitInput) 
 	if len(input.CommentIDs) == 0 && len(input.AttachmentIDs) == 0 {
 		return nil, &validation.ValidationError{Field: "comment_ids", Message: "Select at least one comment or attachment to split out"}
 	}
+	childTypeID, err := resolveSplitChildType(s.db, source, input.ItemTypeID)
+	if err != nil {
+		return nil, err
+	}
 
 	// The moved counts are reported after commit, so they live outside the
 	// transaction closure.
@@ -455,7 +541,7 @@ func (s *ItemLifecycleService) Split(ctx context.Context, input ItemSplitInput) 
 			WorkspaceID:             source.WorkspaceID,
 			Title:                   strings.TrimSpace(input.Title),
 			Description:             input.Description,
-			ItemTypeID:              source.ItemTypeID,
+			ItemTypeID:              childTypeID,
 			ParentID:                &source.ID,
 			AssigneeID:              input.AssigneeID,
 			CreatorID:               &input.ActorUserID,
