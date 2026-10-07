@@ -1129,7 +1129,7 @@ func (s *SyncService) upsertItemSCMLink(ctx context.Context, itemID, repoID int,
 		if err == nil {
 			// Live-update publish (WI-484): a webhook/poll detected an external
 			// PR/branch/commit for this item; refresh its SCM-links section.
-			services.PublishItemChange(itemID, services.ItemChangeLink)
+			services.PublishItemChange(itemID)
 		}
 		return err
 	}
@@ -1149,7 +1149,7 @@ func (s *SyncService) upsertItemSCMLink(ctx context.Context, itemID, repoID int,
 	if err == nil {
 		// Live-update publish (WI-484): an external link changed state (e.g. PR
 		// merged/closed) — a visible SCM-section change.
-		services.PublishItemChange(itemID, services.ItemChangeLink)
+		services.PublishItemChange(itemID)
 	}
 
 	return err
@@ -1221,7 +1221,7 @@ func (s *SyncService) upsertPullRequestSCMLink(
 	if err := tx.Commit(); err != nil {
 		return false, false, fmt.Errorf("commit PR link observation: %w", err)
 	}
-	services.PublishItemChange(itemID, services.ItemChangeLink)
+	services.PublishItemChange(itemID)
 	return created, becameMerged, nil
 }
 

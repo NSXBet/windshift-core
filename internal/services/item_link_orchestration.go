@@ -404,7 +404,7 @@ func (s *ItemLinkService) finishHydratedCreatedLink(userID int, params CreateIte
 // would otherwise never refresh its linked-items section.
 func publishItemLinkChanges(links ...CreateItemLinkParams) {
 	for _, itemID := range linkedItemIDs(links) {
-		PublishItemChange(itemID, ItemChangeLink)
+		PublishItemChange(itemID)
 	}
 }
 

@@ -380,9 +380,9 @@ func (c *itemCreation) finish(itemID int) {
 	if p.SkipPublish {
 		return
 	}
-	PublishItemChange(itemID, ItemChangeCreated)
-	PublishWorkspaceChange(p.WorkspaceID, WorkspaceChangeItems)
+	PublishItemChange(itemID)
+	PublishWorkspaceChange(p.WorkspaceID)
 	if p.ParentID != nil {
-		PublishItemChange(*p.ParentID, ItemChangeUpdated)
+		PublishItemChange(*p.ParentID)
 	}
 }

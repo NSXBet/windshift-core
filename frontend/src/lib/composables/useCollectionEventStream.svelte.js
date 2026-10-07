@@ -49,12 +49,12 @@ export function useCollectionEventStream(getScope, handlers = {}) {
     const es = new EventSource(url);
     es.addEventListener('connected', () => {
       connected = true;
-      // A snapshot served before the stream is live can miss changes, so every
-      // healthy connection reconciles.
+      // Callers subscribe before their initial snapshot, so the first healthy
+      // connection is already covered. Reconnect (or an error before the first
+      // connect) still reconciles.
       if (connectionTracker.markConnected()) schedule();
     });
-    es.addEventListener('items', schedule);
-    es.addEventListener('reload', schedule);
+    es.addEventListener('changed', schedule);
     // The browser auto-reconnects; until it does, mark disconnected so the
     // poller resumes as the fallback.
     es.onerror = () => {

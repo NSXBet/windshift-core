@@ -394,7 +394,7 @@ func (s *CommentService) UpdateImported(params UpdateImportedCommentParams) erro
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit imported comment update: %w", err)
 	}
-	PublishItemChange(params.ItemID, ItemChangeUpdated)
+	PublishItemChange(params.ItemID)
 	return nil
 }
 
@@ -744,7 +744,7 @@ func (s *CommentService) create(params CreateCommentParams) (*CreateCommentResul
 
 	// Live-update publish (WI-483): the comment row is committed. Refresh the
 	// item's comment list for anyone viewing it.
-	PublishItemChange(params.ItemID, ItemChangeComment)
+	PublishItemChange(params.ItemID)
 
 	if s.issueSync != nil && !params.IsPrivate && !params.SuppressNotifications && params.AuthorID > 0 {
 		go func() {
@@ -1172,7 +1172,7 @@ func (s *CommentService) Update(commentID int, content string, userID int) (*mod
 	}
 
 	// Live-update publish (WI-483): the comment edit committed.
-	PublishItemChange(comment.ItemID, ItemChangeComment)
+	PublishItemChange(comment.ItemID)
 
 	return &comment, nil
 }
@@ -1253,7 +1253,7 @@ func (s *CommentService) Delete(commentID int) error {
 	}
 
 	// Live-update publish (WI-483): the delete committed.
-	PublishItemChange(itemID, ItemChangeComment)
+	PublishItemChange(itemID)
 
 	return nil
 }

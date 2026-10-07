@@ -153,7 +153,7 @@ func (s *ItemCRUDService) deleteSingleWithAuthorization(itemID int, metadata ite
 	for _, child := range children {
 		childIDs = append(childIDs, child.ID)
 		repository.InvalidateItemListCountCache(s.db, child.WorkspaceID)
-		PublishItemChange(child.ID, ItemChangeUpdated)
+		PublishItemChange(child.ID)
 	}
 	return childIDs, nil
 }
@@ -235,7 +235,7 @@ func (s *ItemCRUDService) deleteWithAuthorization(itemID int, metadata itemevent
 		s.finishItemDeletion(item.WorkspaceID, []int{item.ID}, nil)
 	}
 	if result.AffectedParent != nil {
-		PublishItemChange(*result.AffectedParent, ItemChangeUpdated)
+		PublishItemChange(*result.AffectedParent)
 	}
 	return &result, nil
 }
@@ -258,12 +258,12 @@ func (s *ItemCRUDService) deleteItemRelationsTx(tx database.Tx, itemID int) erro
 
 func (s *ItemCRUDService) finishItemDeletion(workspaceID int, itemIDs []int, parentID *int) {
 	repository.InvalidateItemListCountCache(s.db, workspaceID)
-	PublishWorkspaceChange(workspaceID, WorkspaceChangeItems)
+	PublishWorkspaceChange(workspaceID)
 	for _, id := range itemIDs {
 		PublishItemDeletion(id, workspaceID)
 	}
 	if parentID != nil {
-		PublishItemChange(*parentID, ItemChangeUpdated)
+		PublishItemChange(*parentID)
 	}
 }
 
@@ -348,13 +348,13 @@ func (s *ItemCRUDService) Copy(itemID int, opts CopyOptions) (*CopyResult, error
 
 	// Live-update publish (WI-483): the copy committed. Announce the new item and
 	// refresh the destination parent's child list.
-	PublishItemChange(newID, ItemChangeCreated)
+	PublishItemChange(newID)
 	effectiveParent := opts.NewParentID
 	if effectiveParent == nil {
 		effectiveParent = source.ParentID
 	}
 	if effectiveParent != nil {
-		PublishItemChange(*effectiveParent, ItemChangeUpdated)
+		PublishItemChange(*effectiveParent)
 	}
 
 	return &CopyResult{NewItemID: newID, CopyCount: 1}, nil

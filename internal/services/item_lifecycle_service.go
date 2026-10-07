@@ -542,9 +542,9 @@ func (s *ItemLifecycleService) Split(ctx context.Context, input ItemSplitInput) 
 		return nil, err
 	}
 
-	PublishItemChange(childID, ItemChangeCreated)
-	PublishItemChange(source.ID, ItemChangeUpdated)
-	PublishWorkspaceChange(source.WorkspaceID, WorkspaceChangeItems)
+	PublishItemChange(childID)
+	PublishItemChange(source.ID)
+	PublishWorkspaceChange(source.WorkspaceID)
 	repository.InvalidateItemListCountCache(s.db, source.WorkspaceID)
 	if s.emitter != nil {
 		s.emitter.EmitItemCreated(child, input.ActorUserID, input.ActorUsername)
@@ -658,9 +658,9 @@ func (s *ItemLifecycleService) sourceItemLinks(tx database.Tx, itemID int) ([]so
 
 func (s *ItemLifecycleService) invalidateAfterMutation(workspaceID int, itemIDs []int) {
 	repository.InvalidateItemListCountCache(s.db, workspaceID)
-	PublishWorkspaceChange(workspaceID, WorkspaceChangeItems)
+	PublishWorkspaceChange(workspaceID)
 	for _, id := range itemIDs {
-		PublishItemChange(id, ItemChangeUpdated)
+		PublishItemChange(id)
 	}
 }
 

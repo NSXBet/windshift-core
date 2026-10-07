@@ -355,10 +355,10 @@ func (rs *RecurrenceScheduler) createInstance(rule *models.RecurrenceRule, templ
 
 	// Live-update publish (WI-483): the recurrence instance committed. Announce
 	// the new item and refresh the template parent's child list if any.
-	services.PublishItemChange(itemID, services.ItemChangeCreated)
-	services.PublishWorkspaceChange(item.WorkspaceID, services.WorkspaceChangeItems)
+	services.PublishItemChange(itemID)
+	services.PublishWorkspaceChange(item.WorkspaceID)
 	if item.ParentID != nil {
-		services.PublishItemChange(*item.ParentID, services.ItemChangeUpdated)
+		services.PublishItemChange(*item.ParentID)
 	}
 	return nil
 }

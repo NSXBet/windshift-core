@@ -103,7 +103,7 @@ func (h *ItemHandler) Events(w http.ResponseWriter, r *http.Request) {
 	for {
 		select {
 		case ev := <-sub.Events():
-			if ev.Kind == services.ItemChangeDeleted {
+			if ev.Deleted {
 				// Deletion carries the final workspace; the item row is already gone.
 				if !authorized(ev.WorkspaceID) {
 					return

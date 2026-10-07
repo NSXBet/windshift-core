@@ -689,7 +689,7 @@ func (s *IssueSyncService) syncComments(ctx context.Context, provider IssueProvi
 	// Live-update publish (WI-483): GitHub-sourced comments committed; refresh
 	// the item's comment list for anyone viewing it.
 	if commentsChanged {
-		services.PublishItemChange(itemID, services.ItemChangeComment)
+		services.PublishItemChange(itemID)
 	}
 }
 

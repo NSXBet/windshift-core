@@ -17,7 +17,6 @@
   import BacklogIterationSection from './BacklogIterationSection.svelte';
   import ItemPicker from '../../pickers/ItemPicker.svelte';
   import { backlogStore, workspaceDataStore } from '../../stores/index.js';
-  import { useWorkItemPoller } from '../../composables/useWorkItemPoller.svelte.js';
   import { useCollectionEventStream } from '../../composables/useCollectionEventStream.svelte.js';
   import { errorToast, successToast, warningToast } from '../../stores/toasts.svelte.js';
   import { getIncompleteIterationItems } from './iterationCompletion.js';
@@ -307,16 +306,12 @@
     backlogStore.setCount(workspaceId, backlogTotal);
   });
 
-  // Scoped SSE invalidations (WI-1624) replace the 30s poll while the stream is
-  // healthy; the poller stays as the reconnect/unsupported fallback.
-  const collectionStream = useCollectionEventStream(
+  // Scoped SSE invalidations (WI-1624): any frame runs the existing delta fetch,
+  // and a reconnect reconciles. No polling fallback.
+  useCollectionEventStream(
     () => (collectionId ? { kind: 'collection', id: collectionId } : { kind: 'workspace', id: workspaceId }),
     { onInvalidate: () => refreshCollectionDeltas() }
   );
-  // Adaptive polling for backlog items: use cheap deltas, falling back to full refresh only when needed.
-  const poller = useWorkItemPoller(() => refreshCollectionDeltas(), {
-    enabled: () => !collectionStream.connected,
-  });
 
   function openItem(itemId, event) {
     // Don't open item if we're dragging

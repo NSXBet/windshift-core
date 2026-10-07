@@ -246,7 +246,7 @@ func (u *itemUpdateOperation) result() (*UpdateItemResult, error) {
 		)
 	}
 	if u.opts.publish {
-		publishUpdatedItem(u.original, updatedItem, statusChanged)
+		publishUpdatedItem(u.original, updatedItem)
 	}
 	return &UpdateItemResult{
 		OriginalItem: u.original, Item: updatedItem,
@@ -254,13 +254,9 @@ func (u *itemUpdateOperation) result() (*UpdateItemResult, error) {
 	}, nil
 }
 
-func publishUpdatedItem(original, updated *models.Item, statusChanged bool) {
-	changeKind := ItemChangeUpdated
-	if statusChanged {
-		changeKind = ItemChangeStatus
-	}
-	PublishItemChange(updated.ID, changeKind)
-	PublishWorkspaceChange(updated.WorkspaceID, WorkspaceChangeItems)
+func publishUpdatedItem(original, updated *models.Item) {
+	PublishItemChange(updated.ID)
+	PublishWorkspaceChange(updated.WorkspaceID)
 	oldParent, newParent := original.ParentID, updated.ParentID
 	reparented := (oldParent == nil) != (newParent == nil) ||
 		(oldParent != nil && newParent != nil && *oldParent != *newParent)
@@ -268,9 +264,9 @@ func publishUpdatedItem(original, updated *models.Item, statusChanged bool) {
 		return
 	}
 	if oldParent != nil {
-		PublishItemChange(*oldParent, ItemChangeUpdated)
+		PublishItemChange(*oldParent)
 	}
 	if newParent != nil {
-		PublishItemChange(*newParent, ItemChangeUpdated)
+		PublishItemChange(*newParent)
 	}
 }

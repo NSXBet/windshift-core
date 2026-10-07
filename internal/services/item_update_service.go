@@ -176,8 +176,8 @@ func (s *ItemUpdateService) AddMilestone(req UpdateItemRequest, milestoneID int)
 	if err != nil {
 		return nil, false, fmt.Errorf("failed to load updated item: %w", err)
 	}
-	PublishItemChange(updatedItem.ID, ItemChangeUpdated)
-	PublishWorkspaceChange(updatedItem.WorkspaceID, WorkspaceChangeItems)
+	PublishItemChange(updatedItem.ID)
+	PublishWorkspaceChange(updatedItem.WorkspaceID)
 	return &UpdateItemResult{
 		OriginalItem: originalItem,
 		Item:         updatedItem,

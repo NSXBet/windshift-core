@@ -36,7 +36,6 @@
   import CollectionViewSwitcher from './CollectionViewSwitcher.svelte';
   import DropdownMenu from '../../layout/DropdownMenu.svelte';
   import { backlogStore, workspaceDataStore, workspacesStore, workspacePermissions } from '../../stores/index.js';
-  import { useWorkItemPoller } from '../../composables/useWorkItemPoller.svelte.js';
   import { useCollectionEventStream } from '../../composables/useCollectionEventStream.svelte.js';
   import { invalidateSLAState } from '../sla/slaState.js';
   import { agentRuns } from '../../stores/agentRuns.svelte.js';
@@ -574,16 +573,12 @@
     }
   }
 
-  // Scoped SSE invalidations (WI-1624) replace the 30s poll while the stream is
-  // healthy; the poller stays as the reconnect/unsupported fallback.
-  const collectionStream = useCollectionEventStream(
+  // Scoped SSE invalidations (WI-1624): any frame runs the existing delta fetch,
+  // and a reconnect reconciles. No polling fallback.
+  useCollectionEventStream(
     () => (collectionId ? { kind: 'collection', id: collectionId } : { kind: 'workspace', id: workspaceId }),
     { onInvalidate: () => refreshCollectionDeltas() }
   );
-  // Adaptive polling for board items: use cheap deltas, falling back to full refresh only when needed.
-  const poller = useWorkItemPoller(() => refreshCollectionDeltas(), {
-    enabled: () => !collectionStream.connected,
-  });
 
   // SLA badges ride a board-level cadence instead of the SSE stream. Coupling
   // them to per-change events would scale with board activity and do work for
