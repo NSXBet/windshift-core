@@ -32,7 +32,7 @@
       target_type: 'workspace',
       target_id: null,
       item_type_id: null,
-      rate_limit_per_hour: null,
+      rate_limit_per_hour: '',
       processing_disposition: '',
       status: 'enabled'
     };
@@ -58,7 +58,12 @@
   }
 
   function startEdit(intake) {
-    editing = { ...intake };
+    // The API omits empty optionals (rate_limit_per_hour, item_type_id,
+    // processing_disposition) via `omitempty`. Binding an absent key directly
+    // hands `undefined` to a component prop that has a fallback value, which
+    // Svelte 5 rejects with props_invalid_value. Start from the blank defaults
+    // so every bound field is defined.
+    editing = { ...blankIntake(), ...intake };
   }
 
   async function save() {
@@ -262,6 +267,7 @@
             type="number"
             min="0"
             placeholder="100"
+            dataTestid="channel-intake-rate-limit"
             bind:value={editing.rate_limit_per_hour}
           />
           <SelectField
