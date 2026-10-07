@@ -338,6 +338,7 @@
         </button>
       {/if}
       <button
+        data-testid="item-detail-details-tab"
         class="flex items-center gap-2 px-4 py-3 text-sm font-medium transition-all relative"
         style="{tab === 'details' ? 'background-color: var(--ds-surface-raised); color: var(--ds-interactive); margin-bottom: -1px; border-bottom: 2px solid var(--ds-interactive);' : 'color: var(--ds-text-subtle);'}"
         onclick={() => switchTab('details')}

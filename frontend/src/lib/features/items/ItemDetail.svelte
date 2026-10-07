@@ -414,6 +414,10 @@ import NativeSelect from '../../components/NativeSelect.svelte';
         console.error('Failed to load time entries:', error);
       });
     }
+    // The modal is mounted on top of a board/list route; navigating to the item
+    // route here would replace it with the full-page view. Only the full-page
+    // detail needs to mirror the active tab into the URL.
+    if (isModal) return;
     const url = `/workspaces/${workspaceId}/items/${itemId}${tab !== 'comments' ? `?tab=${tab}` : ''}`;
     navigate(url);
   }
@@ -1424,6 +1428,7 @@ import NativeSelect from '../../components/NativeSelect.svelte';
     isOpen={true}
     maxWidth={'max-w-6xl'}
     autoFocus={false}
+    dataTestid="item-detail-modal"
     onclose={closeModal}
     onKeydown={handleItemDetailShortcuts}
   >
