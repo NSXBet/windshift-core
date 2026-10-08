@@ -8,6 +8,7 @@
   import { navigate } from '../../router.js';
   import { confirm } from '../../composables/useConfirm.js';
   import { ArrowLeft, ArrowRight, EyeOff, MoreHorizontal, Pencil, Plus, Trash2 } from '@lucide/svelte';
+  import Badge from '../../components/Badge.svelte';
   import Button from '../../components/Button.svelte';
   import Input from '../../components/Input.svelte';
   import Modal from '../../dialogs/Modal.svelte';
@@ -560,7 +561,7 @@
           <div
             class="flex items-center rounded-md border transition-colors"
             style={queueRef(entry) === activeRef
-              ? 'color: var(--ctx-active-text, var(--ds-accent-blue)); background-color: var(--ctx-active-bg, var(--ds-accent-blue-subtler)); border-color: var(--ctx-border, var(--ds-border)); backdrop-filter: var(--ctx-backdrop, none);'
+              ? 'color: var(--ctx-active-text, var(--ds-interactive)); background-color: var(--ctx-active-bg, var(--ds-interactive-subtle)); border-color: var(--ctx-border, var(--ds-border)); backdrop-filter: var(--ctx-backdrop, none);'
               : 'color: var(--ctx-text-subtle, var(--ds-text-subtle)); background-color: transparent; border-color: var(--ctx-border, var(--ds-border)); backdrop-filter: var(--ctx-backdrop, none);'}
           >
             <button
@@ -572,13 +573,15 @@
               onclick={() => selectQueue(queueRef(entry))}
             >
               {entry.name}
-              <span
-                class="ml-1.5 inline-block rounded-full text-xs px-1.5"
-                style="background-color: var(--ctx-surface-overlay, var(--ds-surface-overlay)); color: var(--ds-text); backdrop-filter: var(--ctx-backdrop, none);"
+              <Badge
+                size="xs"
+                variant="neutral"
+                class="ml-1.5"
+                style="background-color: var(--ctx-badge-bg, var(--ds-background-neutral)); color: var(--ds-text); backdrop-filter: var(--ctx-backdrop, none);"
                 data-testid={`support-queue-count-${queueRef(entry)}`}
               >
                 {entry.count}
-              </span>
+              </Badge>
             </button>
             {#if canManage && queueRef(entry) === activeRef}
               <DropdownMenu
