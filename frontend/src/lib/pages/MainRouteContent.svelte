@@ -80,6 +80,9 @@
       />
     {/snippet}
   </PermissionGuard>
+{:else if view === 'delegated-admin'}
+  <!-- The shell owns its own full-height layout and per-surface guards. -->
+  {@render lazyLoadedComponent(view, routeProps)}
 {:else if view === 'workspace-actions'}
   <div class="h-full" style="background-color: var(--ds-surface); height: calc(100vh - 56px);">
     {@render lazyLoadedComponent(view, routeProps)}

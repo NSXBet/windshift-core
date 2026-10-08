@@ -10,7 +10,7 @@
   let displayMessage = $derived(message || t('errors.INSUFFICIENT_PERMISSION'));
 </script>
 
-<div class="min-h-screen flex flex-col justify-center py-12 sm:px-6 lg:px-8" style="background-color: var(--ds-surface);">
+<div class="min-h-screen flex flex-col justify-center py-12 sm:px-6 lg:px-8" style="background-color: var(--ds-surface);" data-testid="unauthorized-access">
   <div class="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
     <Card shadow padding="none" rounded="none" class="py-8 px-4 sm:rounded sm:px-10">
       <div class="text-center">

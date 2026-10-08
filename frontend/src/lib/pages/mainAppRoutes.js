@@ -40,7 +40,7 @@ export const MAIN_APP_COMPONENT_LOADERS = {
   assets: () => import('../features/assets/AssetBrowser.svelte'),
   'asset-detail': () => import('../features/assets/AssetBrowser.svelte'),
   'asset-settings': () => import('../features/assets/AssetManager.svelte'),
-  'channel-manager': () => import('../features/channels/ManagerChannels.svelte'),
+  'delegated-admin': () => import('./DelegatedAdmin.svelte'),
   'workspace-queue': () => import('../features/support/SupportQueue.svelte'),
   'workspace-nav-config': () => import('../workspaces/NavigationConfigPage.svelte'),
   'workspace-board': () => import('../features/collections/CollectionBoard.svelte'),
@@ -251,8 +251,8 @@ export const MAIN_APP_ROUTE_CONFIG = {
     }
   ),
   assets: route('Loading Assets...', 'Failed to load Assets', { wrapper: 'surface-full' }),
-  'channel-manager': route('Loading Channels...', 'Failed to load Channels', {
-    wrapper: 'surface-padded',
+  'delegated-admin': route('Loading Delegated Admin...', 'Failed to load Delegated Admin', {
+    wrapper: 'none',
   }),
   'asset-detail': route('Loading Asset...', 'Failed to load Asset', {
     wrapper: 'surface-full',

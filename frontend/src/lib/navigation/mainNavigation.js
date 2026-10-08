@@ -4,7 +4,6 @@ import {
   IconClock,
   IconFlag,
   IconFolderSearch,
-  IconLifebuoy,
   IconMessage2Plus,
   IconPackage,
   IconPhoneCheck,
@@ -67,14 +66,6 @@ export const mainNavItems = [
     href: '/assets',
     activeViews: ['assets', 'asset-detail'],
     permission: 'canAccessAssets',
-  },
-  {
-    id: 'channel-management',
-    icon: IconLifebuoy,
-    labelKey: 'nav.channels',
-    href: '/manage/channels',
-    activeViews: ['channel-manager'],
-    permission: 'canManageChannels',
   },
   {
     id: 'portal-hub',

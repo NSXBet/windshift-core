@@ -6,6 +6,7 @@
   import { themeStore } from '../stores/theme.svelte.js';
   import { t } from '../stores/i18n.svelte.js';
   import { api } from '../api';
+  import { hasDelegatedAdmin } from '../navigation/delegatedAdminNavigation.js';
   import { installAvailable, requestInstall } from '../mobile/installClient.js';
 
   let {
@@ -149,7 +150,18 @@
       subtitle: t('components.userAvatar.securitySubtitle'),
       onClick: () => navigate('/security')
     },
-    { type: 'divider' }] : []),
+    { type: 'divider' },
+    ...($hasDelegatedAdmin ? [{
+      id: 'delegated-admin',
+      testid: 'delegated-admin-menu-item',
+      type: 'regular',
+      icon: Settings,
+      iconColor: '#3b82f6',
+      title: t('nav.delegatedAdmin'),
+      subtitle: t('nav.delegatedAdminSubtitle'),
+      onClick: () => navigate('/manage')
+    },
+    { type: 'divider' }] : [])] : []),
     ...(minimal
       ? [
           {
