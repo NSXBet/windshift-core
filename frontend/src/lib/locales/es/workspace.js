@@ -516,7 +516,7 @@ export default {
     queryColumn: 'Consulta',
     created: 'Creado',
     actions: 'Acciones',
-    public: 'Público',
+    public: 'Público', private: 'Privada', shared: 'Compartida',
     workspaceFilter: 'Filtro de espacio de trabajo',
     allWorkspaces: 'Todos los espacios de trabajo',
     noCollectionsTitle: 'No se encontraron colecciones.',

@@ -495,7 +495,7 @@ export default {
     queryColumn: 'Abfrage',
     created: 'Erstellt',
     actions: 'Aktionen',
-    public: 'Öffentlich',
+    public: 'Öffentlich', private: 'Privat', shared: 'Geteilt',
     workspaceFilter: 'Arbeitsbereich-Filter',
     allWorkspaces: 'Alle Arbeitsbereiche',
     noCollectionsTitle: 'Keine Sammlungen gefunden.',

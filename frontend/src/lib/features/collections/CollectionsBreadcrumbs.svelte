@@ -1,7 +1,7 @@
 <script>
   import { navigate } from '../../router.js';
   import { t } from '../../stores/i18n.svelte.js';
-  import { IconLayoutKanban as SquareKanban, IconDeviceFloppy as Save, IconTag as Tag, IconWorld } from '@tabler/icons-svelte-runes';
+  import { IconLayoutKanban as SquareKanban, IconDeviceFloppy as Save, IconTag as Tag, IconWorld, IconLock, IconLockOpen2 } from '@tabler/icons-svelte-runes';
   import Button from '../../components/Button.svelte';
   import Input from '../../components/Input.svelte';
   import Select from '../../components/Select.svelte';
@@ -26,6 +26,9 @@
     saving = false,
     slugSaved = false,
     showPublicBoard = false,
+    isPrivate = false,
+    showPrivacyToggle = false,
+    onprivacytoggle = null,
   } = $props();
 
   // Computed: is this a global collection (no workspace)?
@@ -134,6 +137,18 @@
     <!-- Action buttons -->
     <div class="flex items-center gap-2">
       {#if isEditing && collection}
+        {#if showPrivacyToggle}
+          <Button
+            dataTestid="collection-privacy-toggle"
+            onclick={() => onprivacytoggle?.()}
+            variant={isPrivate ? 'selected' : 'default'}
+            size="sm"
+            icon={isPrivate ? IconLock : IconLockOpen2}
+          >
+            {isPrivate ? t('collections.private') : t('collections.shared')}
+          </Button>
+        {/if}
+
         {#if showPublicBoard}
           <Button
             dataTestid="public-board-button"
@@ -142,7 +157,7 @@
             size="sm"
             icon={IconWorld}
           >
-            {isPublic ? 'Shared' : 'Share'}
+            {isPublic ? 'Public' : 'Publish'}
           </Button>
         {/if}
 

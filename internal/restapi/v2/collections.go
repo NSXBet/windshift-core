@@ -40,6 +40,7 @@ type collectionPatchRequest struct {
 	WorkspaceID Optional[int]    `json:"workspace_id"`
 	CategoryID  Optional[int]    `json:"category_id"`
 	IsPublic    Optional[bool]   `json:"is_public"`
+	IsPrivate   Optional[bool]   `json:"is_private"`
 	PublicSlug  Optional[string] `json:"public_slug"`
 }
 
@@ -213,6 +214,7 @@ func updateCollection(collections collectionApplication) jsonOperation[collectio
 			WorkspaceIDSet: input.WorkspaceID.Set, WorkspaceID: optionalInt(input.WorkspaceID),
 			CategoryIDSet: input.CategoryID.Set, CategoryID: optionalInt(input.CategoryID),
 			IsPublicSet: input.IsPublic.Set, IsPublic: input.IsPublic.Value,
+			IsPrivateSet: input.IsPrivate.Set, IsPrivate: input.IsPrivate.Value,
 			PublicSlugSet: input.PublicSlug.Set, PublicSlug: optionalString(input.PublicSlug),
 		})
 		if updated == nil {

@@ -521,7 +521,7 @@ export default {
     queryColumn: '查询',
     created: '创建时间',
     actions: '操作',
-    public: '公开',
+    public: '公开', private: '私有', shared: '共享',
     workspaceFilter: '工作区筛选',
     allWorkspaces: '所有工作区',
     noCollectionsTitle: '未找到集合。',

@@ -22,6 +22,7 @@ type CollectionRecord struct {
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 	IsPublic    bool
+	IsPrivate   bool
 	CreatedBy   *int
 }
 
@@ -40,7 +41,7 @@ func NewCollectionRepository(db database.Database) *CollectionRepository {
 }
 
 const collectionModelSelect = `SELECT c.id, c.name, COALESCE(c.description, ''), COALESCE(c.ql_query, ''),
-       c.filter_state, c.is_public, c.workspace_id, c.category_id, c.created_by,
+       c.filter_state, c.is_public, c.is_private, c.workspace_id, c.category_id, c.created_by,
        c.public_slug, c.created_at, c.updated_at,
        COALESCE(u.first_name || ' ' || u.last_name, ''), COALESCE(u.email, ''),
        COALESCE(cc.name, ''), COALESCE(cc.color, '')
@@ -58,7 +59,7 @@ func scanCollectionModel(scanner collectionModelScanner) (models.Collection, err
 	var publicSlug, filterState sql.NullString
 	err := scanner.Scan(
 		&collection.ID, &collection.Name, &collection.Description, &collection.QLQuery,
-		&filterState, &collection.IsPublic, &workspaceID, &categoryID, &createdBy,
+		&filterState, &collection.IsPublic, &collection.IsPrivate, &workspaceID, &categoryID, &createdBy,
 		&publicSlug, &collection.CreatedAt, &collection.UpdatedAt,
 		&collection.CreatorName, &collection.CreatorEmail,
 		&collection.CategoryName, &collection.CategoryColor,
@@ -94,10 +95,12 @@ type CollectionListFilter struct {
 	CategoryID  *int
 }
 
-// ListVisibleModels returns public collections plus collections owned by the
-// caller, newest first.
+// ListVisibleModels returns candidate collections for the caller: shared
+// collections plus private collections they own. Shared workspace-linked rows
+// still need the caller's workspace access, which this layer has no context
+// for; the service narrows them.
 func (r *CollectionRepository) ListVisibleModels(filter CollectionListFilter) ([]models.Collection, error) {
-	query := collectionModelSelect + "\nWHERE (c.is_public = true OR c.created_by = ?)"
+	query := collectionModelSelect + "\nWHERE (c.is_private = false OR c.created_by = ?)"
 	args := []any{filter.UserID}
 	if filter.WorkspaceID != nil {
 		query += " AND c.workspace_id = ?"
@@ -129,10 +132,11 @@ func (r *CollectionRepository) ListVisibleModels(filter CollectionListFilter) ([
 	return collections, nil
 }
 
-// GetVisibleModel returns a collection only when it is public or caller-owned.
+// GetVisibleModel returns a shared collection or a private one owned by the
+// caller. Workspace permission is enforced by the service.
 func (r *CollectionRepository) GetVisibleModel(id, userID int) (*models.Collection, error) {
 	collection, err := scanCollectionModel(r.db.QueryRow(
-		collectionModelSelect+"\nWHERE c.id = ? AND (c.is_public = true OR c.created_by = ?)", id, userID,
+		collectionModelSelect+"\nWHERE c.id = ? AND (c.is_private = false OR c.created_by = ?)", id, userID,
 	))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -175,10 +179,10 @@ func (r *CollectionRepository) CreateForImport(collection *models.Collection, us
 	var id int64
 	err := r.db.QueryRow(`
 		INSERT INTO collections
-			(name, description, ql_query, filter_state, is_public, workspace_id, category_id, created_by, public_slug, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) RETURNING id
+			(name, description, ql_query, filter_state, is_public, is_private, workspace_id, category_id, created_by, public_slug, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) RETURNING id
 	`, collection.Name, collection.Description, collection.QLQuery, collection.FilterState,
-		collection.IsPublic, collection.WorkspaceID, collection.CategoryID, userID, collection.PublicSlug).Scan(&id)
+		collection.IsPublic, collection.IsPrivate, collection.WorkspaceID, collection.CategoryID, userID, collection.PublicSlug).Scan(&id)
 	if err != nil {
 		return fmt.Errorf("create imported collection: %w", err)
 	}
@@ -218,10 +222,10 @@ func (r *CollectionRepository) CategoryExists(id int) (bool, error) {
 func (r *CollectionRepository) Create(collection *models.Collection, userID int) error {
 	var id int64
 	err := r.db.QueryRow(`
-		INSERT INTO collections (name, description, ql_query, filter_state, is_public, workspace_id, category_id, created_by, public_slug, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) RETURNING id
+		INSERT INTO collections (name, description, ql_query, filter_state, is_public, is_private, workspace_id, category_id, created_by, public_slug, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) RETURNING id
 	`, collection.Name, collection.Description, collection.QLQuery, collection.FilterState,
-		collection.IsPublic, collection.WorkspaceID, collection.CategoryID, userID, collection.PublicSlug).Scan(&id)
+		collection.IsPublic, collection.IsPrivate, collection.WorkspaceID, collection.CategoryID, userID, collection.PublicSlug).Scan(&id)
 	if err != nil {
 		return fmt.Errorf("create collection: %w", err)
 	}
@@ -258,10 +262,10 @@ func (r *CollectionRepository) Update(id int, collection *models.Collection) err
 		}
 		if _, err := tx.Exec(`
 			UPDATE collections
-			SET name = ?, description = ?, ql_query = ?, filter_state = ?, is_public = ?, workspace_id = ?, category_id = ?, public_slug = ?, updated_at = CURRENT_TIMESTAMP
+			SET name = ?, description = ?, ql_query = ?, filter_state = ?, is_public = ?, is_private = ?, workspace_id = ?, category_id = ?, public_slug = ?, updated_at = CURRENT_TIMESTAMP
 			WHERE id = ?
 		`, collection.Name, collection.Description, collection.QLQuery, collection.FilterState,
-			collection.IsPublic, collection.WorkspaceID, collection.CategoryID, collection.PublicSlug, id); err != nil {
+			collection.IsPublic, collection.IsPrivate, collection.WorkspaceID, collection.CategoryID, collection.PublicSlug, id); err != nil {
 			return err
 		}
 		if collection.WorkspaceID != nil {
@@ -307,13 +311,13 @@ func (r *CollectionRepository) GetByID(id int) (*CollectionRecord, error) {
 	var createdBy sql.NullInt64
 	var slug sql.NullString
 	err := r.db.QueryRow(`
-		SELECT id, name, COALESCE(description, ''), COALESCE(ql_query, ''), workspace_id, is_public, created_by,
+		SELECT id, name, COALESCE(description, ''), COALESCE(ql_query, ''), workspace_id, is_public, is_private, created_by,
 		       public_slug, created_at, updated_at
 		FROM collections
 		WHERE id = ?
 	`, id).Scan(
 		&rec.ID, &rec.Name, &rec.Description, &rec.QLQuery,
-		&workspaceID, &rec.IsPublic, &createdBy,
+		&workspaceID, &rec.IsPublic, &rec.IsPrivate, &createdBy,
 		&slug, &rec.CreatedAt, &rec.UpdatedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -335,12 +339,12 @@ func (r *CollectionRepository) GetBySlug(slug string) (*CollectionRecord, error)
 	var workspaceID sql.NullInt64
 	var createdBy sql.NullInt64
 	err := r.db.QueryRow(`
-		SELECT id, name, COALESCE(description, ''), workspace_id, is_public, created_by, created_at, updated_at
+		SELECT id, name, COALESCE(description, ''), workspace_id, is_public, is_private, created_by, created_at, updated_at
 		FROM collections
 		WHERE public_slug = ? AND public_slug IS NOT NULL
 	`, slug).Scan(
 		&rec.ID, &rec.Name, &rec.Description,
-		&workspaceID, &rec.IsPublic, &createdBy,
+		&workspaceID, &rec.IsPublic, &rec.IsPrivate, &createdBy,
 		&rec.CreatedAt, &rec.UpdatedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -359,7 +363,7 @@ func (r *CollectionRepository) GetBySlug(slug string) (*CollectionRecord, error)
 func (r *CollectionRepository) SearchByName(q string, limit int) ([]CollectionRecord, error) {
 	pattern := "%" + strings.ToLower(q) + "%"
 	rows, err := r.db.Query(`
-		SELECT id, name, COALESCE(description, ''), workspace_id, is_public, created_by,
+		SELECT id, name, COALESCE(description, ''), workspace_id, is_public, is_private, created_by,
 		       COALESCE(public_slug, ''), created_at, updated_at
 		FROM collections
 		WHERE LOWER(name) LIKE ?
@@ -378,7 +382,7 @@ func (r *CollectionRepository) SearchByName(q string, limit int) ([]CollectionRe
 		var createdBy sql.NullInt64
 		if err := rows.Scan(
 			&rec.ID, &rec.Name, &rec.Description,
-			&workspaceID, &rec.IsPublic, &createdBy,
+			&workspaceID, &rec.IsPublic, &rec.IsPrivate, &createdBy,
 			&rec.Slug, &rec.CreatedAt, &rec.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan collection: %w", err)

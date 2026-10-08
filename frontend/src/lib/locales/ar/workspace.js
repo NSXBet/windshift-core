@@ -516,7 +516,7 @@ export default {
     queryColumn: 'استعلام',
     created: 'تاريخ الإنشاء',
     actions: 'الإجراءات',
-    public: 'عام',
+    public: 'عام', private: 'خاصة', shared: 'مشتركة',
     workspaceFilter: 'فلتر مساحة العمل',
     allWorkspaces: 'جميع مساحات العمل',
     noCollectionsTitle: 'لم يتم العثور على مجموعات.',

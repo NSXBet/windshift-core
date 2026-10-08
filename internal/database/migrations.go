@@ -2588,6 +2588,14 @@ var Catalog = []Migration{
 		       OR comment_id IS NOT NULL
 		       OR processed_at < NOW() - INTERVAL '1 hour')`,
 	},
+	{
+		Version:       "20261021_collections_private",
+		Name:          "Add opt-out privacy flag to collections",
+		CheckSQLite:   sqliteColumnCheck("collections", "is_private"),
+		CheckPostgres: pgColumnCheck("collections", "is_private"),
+		SQLite:        `ALTER TABLE collections ADD COLUMN is_private BOOLEAN NOT NULL DEFAULT false`,
+		Postgres:      `ALTER TABLE collections ADD COLUMN IF NOT EXISTS is_private BOOLEAN NOT NULL DEFAULT false`,
+	},
 }
 
 // checkEmailTrackingCompletedBackfill reports whether the completed_at backfill

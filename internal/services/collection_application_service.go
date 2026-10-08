@@ -53,6 +53,8 @@ type CollectionUpdate struct {
 	CategoryID     *int
 	IsPublicSet    bool
 	IsPublic       bool
+	IsPrivateSet   bool
+	IsPrivate      bool
 	PublicSlugSet  bool
 	PublicSlug     *string
 }
@@ -309,6 +311,9 @@ func (s *CollectionApplicationService) Update(actor AuditActor, id int, update C
 	}
 	if update.IsPublicSet {
 		collection.IsPublic = update.IsPublic
+	}
+	if update.IsPrivateSet {
+		collection.IsPrivate = update.IsPrivate
 	}
 	if update.PublicSlugSet {
 		collection.PublicSlug = update.PublicSlug
@@ -751,7 +756,16 @@ func (s *CollectionApplicationService) authorizeBoardRead(userID int, scope Boar
 	if err != nil {
 		return boardRepositoryError(err)
 	}
-	if !collection.IsPublic && (collection.CreatedBy == nil || *collection.CreatedBy != userID) {
+	if collection.WorkspaceID != nil {
+		allowed, err := s.permissions.HasWorkspacePermission(userID, *collection.WorkspaceID, models.PermissionItemView)
+		if err != nil {
+			return err
+		}
+		if !allowed {
+			return ErrCollectionNotFound
+		}
+	}
+	if collection.IsPrivate && (collection.CreatedBy == nil || *collection.CreatedBy != userID) {
 		return ErrCollectionNotFound
 	}
 	return nil

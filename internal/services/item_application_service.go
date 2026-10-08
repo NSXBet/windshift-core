@@ -296,13 +296,10 @@ func (s *ItemApplicationService) requireCollectionRead(userID, collectionID int,
 	if err != nil {
 		return err
 	}
-	if collection.WorkspaceID != nil {
-		if !slices.Contains(workspaceIDs, *collection.WorkspaceID) {
-			return ErrCollectionNotFound
-		}
-		return nil
+	if collection.IsPrivate && (collection.CreatedBy == nil || *collection.CreatedBy != userID) {
+		return ErrCollectionNotFound
 	}
-	if !collection.IsPublic && (collection.CreatedBy == nil || *collection.CreatedBy != userID) {
+	if collection.WorkspaceID != nil && !slices.Contains(workspaceIDs, *collection.WorkspaceID) {
 		return ErrCollectionNotFound
 	}
 	return nil

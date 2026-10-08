@@ -6556,6 +6556,10 @@
                 "description": "The id value.",
                 "type": "integer"
               },
+              "is_private": {
+                "description": "The is private value.",
+                "type": "boolean"
+              },
               "is_public": {
                 "description": "The is public value.",
                 "type": "boolean"
@@ -6587,6 +6591,7 @@
               "created_at",
               "description",
               "id",
+              "is_private",
               "is_public",
               "name",
               "ql_query",
@@ -6862,6 +6867,10 @@
                   "description": "The id value.",
                   "type": "integer"
                 },
+                "is_private": {
+                  "description": "The is private value.",
+                  "type": "boolean"
+                },
                 "is_public": {
                   "description": "The is public value.",
                   "type": "boolean"
@@ -6893,6 +6902,7 @@
                 "created_at",
                 "description",
                 "id",
+                "is_private",
                 "is_public",
                 "name",
                 "ql_query",
@@ -52489,6 +52499,11 @@
             "nullable": true,
             "type": "string"
           },
+          "is_private": {
+            "description": "The is private value.",
+            "nullable": true,
+            "type": "boolean"
+          },
           "is_public": {
             "description": "The is public value.",
             "nullable": true,
@@ -52566,6 +52581,10 @@
                 "description": "The id value.",
                 "type": "integer"
               },
+              "is_private": {
+                "description": "The is private value.",
+                "type": "boolean"
+              },
               "is_public": {
                 "description": "The is public value.",
                 "type": "boolean"
@@ -52597,6 +52616,7 @@
               "created_at",
               "description",
               "id",
+              "is_private",
               "is_public",
               "name",
               "ql_query",
@@ -52675,6 +52695,10 @@
                 "description": "The id value.",
                 "type": "integer"
               },
+              "is_private": {
+                "description": "The is private value.",
+                "type": "boolean"
+              },
               "is_public": {
                 "description": "The is public value.",
                 "type": "boolean"
@@ -52706,6 +52730,7 @@
               "created_at",
               "description",
               "id",
+              "is_private",
               "is_public",
               "name",
               "ql_query",
@@ -64653,6 +64678,10 @@
             "description": "The id value.",
             "type": "integer"
           },
+          "is_private": {
+            "description": "The is private value.",
+            "type": "boolean"
+          },
           "is_public": {
             "description": "The is public value.",
             "type": "boolean"
@@ -64684,6 +64713,7 @@
           "created_at",
           "description",
           "id",
+          "is_private",
           "is_public",
           "name",
           "ql_query",
@@ -64740,6 +64770,10 @@
                 "description": "The id value.",
                 "type": "integer"
               },
+              "is_private": {
+                "description": "The is private value.",
+                "type": "boolean"
+              },
               "is_public": {
                 "description": "The is public value.",
                 "type": "boolean"
@@ -64771,6 +64805,7 @@
               "created_at",
               "description",
               "id",
+              "is_private",
               "is_public",
               "name",
               "ql_query",

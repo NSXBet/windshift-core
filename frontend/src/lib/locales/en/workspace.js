@@ -795,7 +795,7 @@ export default {
     queryColumn: 'Query',
     created: 'Created',
     actions: 'Actions',
-    public: 'Public',
+    public: 'Public', private: 'Private', shared: 'Shared',
     workspaceFilter: 'Workspace Filter',
     allWorkspaces: 'All workspaces',
     noCollectionsTitle: 'No collections found.',

@@ -71,13 +71,14 @@
   let listStatusCategories = $derived(workspaceDataStore.statusCategories);
   let listPriorities = $derived(workspaceDataStore.priorities);
   let customFieldDefinitions = $derived(workspaceDataStore.customFieldDefinitions);
-  let canConfigureColumns = $derived(
+  let canManageCollection = $derived(
     Boolean(
       currentCollection &&
         authStore.currentUser?.id != null &&
         String(currentCollection.created_by) === String(authStore.currentUser.id),
     ),
   );
+  let canConfigureColumns = $derived(canManageCollection);
 
   // Workspace / sharing modals
   let returnWorkspaceId = $state(null);
@@ -290,8 +291,21 @@
       filter_state: rawMode ? null : serializeFilterState(),
       workspace_id: currentCollection.workspace_id ?? null,
       category_id: currentCollection.category_id ?? null,
+      is_private: currentCollection.is_private ?? false,
       ...overrides,
     };
+  }
+
+  async function handlePrivacyToggle() {
+    if (!currentCollection) return;
+    const next = !currentCollection.is_private;
+    try {
+      await api.collections.update(currentCollection.id, buildCollectionUpdate({ is_private: next }));
+      currentCollection = { ...currentCollection, is_private: next };
+    } catch (error) {
+      console.error('Failed to update collection privacy:', error);
+      errorToast(t('dialogs.alerts.failedToUpdate', { error: error.message || error }));
+    }
   }
 
   async function handlePublicSharingSave({ isPublic, publicSlug }) {
@@ -447,6 +461,9 @@
       {slugSaved}
       saving={savingPublicSharing}
       onpublicsave={handlePublicSharingSave}
+      isPrivate={currentCollection?.is_private || false}
+      showPrivacyToggle={canManageCollection}
+      onprivacytoggle={handlePrivacyToggle}
     />
 
     <QlQueryBar

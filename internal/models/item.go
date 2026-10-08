@@ -435,6 +435,7 @@ type Collection struct {
 	QLQuery     string  `json:"ql_query"`
 	FilterState *string `json:"filter_state"`
 	IsPublic    bool    `json:"is_public"`
+	IsPrivate   bool    `json:"is_private"`
 	WorkspaceID *int    `json:"workspace_id"`
 	CategoryID  *int    `json:"category_id,omitempty"`
 	CreatedBy   *int    `json:"created_by"`

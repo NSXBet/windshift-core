@@ -658,7 +658,7 @@ export default {
     queryColumn: 'Requête',
     created: 'Créé',
     actions: 'Actions',
-    public: 'Public',
+    public: 'Public', private: 'Privée', shared: 'Partagée',
     workspaceFilter: 'Filtre d’espace de travail',
     allWorkspaces: 'Tous les espaces de travail',
     noCollectionsTitle: 'Aucune collection trouvée.',
