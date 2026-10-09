@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS request_types (
 	config TEXT DEFAULT NULL,
 	visibility_group_ids JSONB DEFAULT NULL,
 	visibility_org_ids JSONB DEFAULT NULL,
-	workspace_id INTEGER NOT NULL,
+	workspace_id INTEGER DEFAULT NULL,
 	title_template TEXT NOT NULL DEFAULT '',
 	kind TEXT NOT NULL DEFAULT '', -- System intake role: '' for admin-created, 'email' for the per-portal system Email request type (WI-1644)
 	created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,

@@ -2601,24 +2601,192 @@ var Catalog = []Migration{
 	},
 	{
 		Version: "20261022_request_types_workspace_pinned",
-		Name:    "Pin request-type workspaces and cascade them with the workspace (WI-1695)",
-		CheckSQLite: `SELECT COUNT(*) FROM pragma_table_info('request_types')
-			WHERE name='workspace_id' AND "notnull"=1`,
-		CheckPostgres: `SELECT COUNT(*) FROM information_schema.columns
-			WHERE table_schema=current_schema() AND table_name='request_types'
-				AND column_name='workspace_id' AND is_nullable='NO'`,
-		SQLite:        "applyRequestTypeWorkspacePinned:v1",
-		Postgres:      "applyRequestTypeWorkspacePinned:v1",
+		Name:    "Cascade request-type workspaces with the workspace (WI-1695)",
+		// A fresh schema already cascades; an upgraded database still nulls the
+		// route when its workspace is deleted.
+		CheckSQLite:   `SELECT COUNT(*) FROM pragma_foreign_key_list('request_types') WHERE "from"='workspace_id' AND on_delete='CASCADE'`,
+		CheckPostgres: `SELECT COUNT(*) FROM pg_constraint WHERE conrelid='request_types'::regclass AND contype='f' AND confdeltype='c' AND pg_get_constraintdef(oid) LIKE '%workspace_id%'`,
+		SQLite:        "applyRequestTypeWorkspacePinned:v2",
+		Postgres:      "applyRequestTypeWorkspacePinned:v2",
+		Superseded:    []string{"6e5f5a942b5d7465e3a07d67c7f3872bed659b2ac644106147693e7619072944"},
 		ApplySQLite:   applyRequestTypeWorkspacePinned,
 		ApplyPostgres: applyRequestTypeWorkspacePinned,
 	},
+	{
+		Version:       "20261023_asset_reports_workspace_pinned",
+		Name:          "Pin form-mode asset report workspaces and cascade them with the workspace (WI-1697)",
+		CheckSQLite:   `SELECT COUNT(*) FROM pragma_foreign_key_list('asset_reports') WHERE "from"='workspace_id' AND on_delete='CASCADE'`,
+		CheckPostgres: `SELECT COUNT(*) FROM pg_constraint WHERE conrelid='asset_reports'::regclass AND contype='f' AND confdeltype='c' AND pg_get_constraintdef(oid) LIKE '%workspace_id%'`,
+		SQLite:        "applyAssetReportsWorkspacePinned:v1",
+		Postgres:      "applyAssetReportsWorkspacePinned:v1",
+		ApplySQLite:   applyAssetReportsWorkspacePinned,
+		ApplyPostgres: applyAssetReportsWorkspacePinned,
+	},
+}
+
+// applyAssetReportsWorkspacePinned backfills form-mode asset reports that have
+// no workspace and changes the asset_reports FKs so a workspace delete removes
+// the report (CASCADE) and an item-type delete is refused (RESTRICT) instead of
+// silently unpinning the report.
+func applyAssetReportsWorkspacePinned(db Database) error {
+	if err := backfillAssetReportWorkspaces(db); err != nil {
+		return err
+	}
+	if db.GetDriverName() == driverPostgres {
+		for _, constraint := range []string{"asset_reports_item_type_id_fkey", "asset_reports_workspace_id_fkey"} {
+			if _, err := db.Exec(fmt.Sprintf("ALTER TABLE asset_reports DROP CONSTRAINT IF EXISTS %q", constraint)); err != nil {
+				return fmt.Errorf("drop asset_reports constraint %s: %w", constraint, err)
+			}
+		}
+		if _, err := db.Exec(`
+			ALTER TABLE asset_reports
+				ADD CONSTRAINT asset_reports_item_type_id_fkey FOREIGN KEY (item_type_id) REFERENCES item_types(id) ON DELETE RESTRICT,
+				ADD CONSTRAINT asset_reports_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE`); err != nil {
+			return fmt.Errorf("pin asset_reports FKs: %w", err)
+		}
+		return nil
+	}
+	return rebuildAssetReportsWorkspacePinned(db)
+}
+
+// backfillAssetReportWorkspaces pins every form-mode asset report that has no
+// workspace to the portal's first served workspace. A report whose channel
+// serves no workspace stays NULL and is rejected at runtime rather than
+// deleted.
+func backfillAssetReportWorkspaces(db Database) error {
+	rows, err := db.Query(`
+		SELECT ar.id, COALESCE(c.config, '{}')
+		FROM asset_reports ar
+		JOIN channels c ON c.id = ar.channel_id
+		WHERE ar.run_mode = 'form' AND ar.workspace_id IS NULL
+	`)
+	if err != nil {
+		return fmt.Errorf("list unpinned asset reports: %w", err)
+	}
+	type unpinned struct {
+		id         int
+		configJSON string
+	}
+	var pending []unpinned
+	for rows.Next() {
+		var row unpinned
+		if err := rows.Scan(&row.id, &row.configJSON); err != nil {
+			_ = rows.Close()
+			return fmt.Errorf("scan unpinned asset report: %w", err)
+		}
+		pending = append(pending, row)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return fmt.Errorf("iterate unpinned asset reports: %w", err)
+	}
+	_ = rows.Close()
+
+	for _, row := range pending {
+		var cfg struct {
+			PortalWorkspaceIDs []int `json:"portal_workspace_ids"`
+		}
+		if err := json.Unmarshal([]byte(row.configJSON), &cfg); err != nil {
+			return fmt.Errorf("parse channel config for asset report %d: %w", row.id, err)
+		}
+		if len(cfg.PortalWorkspaceIDs) == 0 {
+			slog.Warn("asset report has no workspace to pin; leaving it unpinned",
+				"component", "migrations", "asset_report_id", row.id)
+			continue
+		}
+		if _, err := db.ExecWrite(`UPDATE asset_reports SET workspace_id = ? WHERE id = ?`, cfg.PortalWorkspaceIDs[0], row.id); err != nil {
+			return fmt.Errorf("pin asset report %d: %w", row.id, err)
+		}
+	}
+	return nil
+}
+
+// rebuildAssetReportsWorkspacePinned rebuilds asset_reports for SQLite, which
+// cannot alter a foreign-key action in place.
+func rebuildAssetReportsWorkspacePinned(db Database) (retErr error) {
+	sqliteDB, ok := db.(*SQLiteDB)
+	if !ok {
+		return fmt.Errorf("expected SQLite database, got %T", db)
+	}
+
+	ctx := context.Background()
+	conn, err := sqliteDB.writeConn.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("acquire SQLite write connection: %w", err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	var foreignKeysEnabled bool
+	if err := conn.QueryRowContext(ctx, "PRAGMA foreign_keys").Scan(&foreignKeysEnabled); err != nil {
+		return fmt.Errorf("read foreign_keys pragma: %w", err)
+	}
+	if foreignKeysEnabled {
+		if _, err := conn.ExecContext(ctx, "PRAGMA foreign_keys=OFF"); err != nil {
+			return fmt.Errorf("disable foreign keys: %w", err)
+		}
+		defer func() {
+			if _, err := conn.ExecContext(ctx, "PRAGMA foreign_keys=ON"); retErr == nil && err != nil {
+				retErr = fmt.Errorf("restore foreign keys: %w", err)
+			}
+		}()
+	}
+
+	tx, err := conn.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin asset_reports rebuild: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	statements := []string{
+		`CREATE TABLE asset_reports_migration (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			channel_id INTEGER NOT NULL,
+			asset_set_id INTEGER NOT NULL,
+			name TEXT NOT NULL,
+			description TEXT DEFAULT '',
+			cql_query TEXT DEFAULT '',
+			icon TEXT DEFAULT 'Table2',
+			color TEXT DEFAULT '#6b7280',
+			display_order INTEGER DEFAULT 0,
+			is_active BOOLEAN DEFAULT TRUE,
+			column_config TEXT DEFAULT NULL,
+			visibility_group_ids TEXT DEFAULT NULL,
+			visibility_org_ids TEXT DEFAULT NULL,
+			run_mode TEXT NOT NULL DEFAULT 'direct',
+			item_type_id INTEGER DEFAULT NULL,
+			workspace_id INTEGER DEFAULT NULL,
+			config TEXT DEFAULT NULL,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE CASCADE,
+			FOREIGN KEY (asset_set_id) REFERENCES asset_management_sets(id) ON DELETE CASCADE,
+			FOREIGN KEY (item_type_id) REFERENCES item_types(id) ON DELETE RESTRICT,
+			FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
+		)`,
+		`INSERT INTO asset_reports_migration (id, channel_id, asset_set_id, name, description, cql_query, icon, color, display_order, is_active, column_config, visibility_group_ids, visibility_org_ids, run_mode, item_type_id, workspace_id, config, created_at, updated_at)
+			SELECT id, channel_id, asset_set_id, name, description, cql_query, icon, color, display_order, is_active, column_config, visibility_group_ids, visibility_org_ids, run_mode, item_type_id, workspace_id, config, created_at, updated_at FROM asset_reports`,
+		`DROP TABLE asset_reports`,
+		`ALTER TABLE asset_reports_migration RENAME TO asset_reports`,
+		`CREATE INDEX IF NOT EXISTS idx_asset_reports_channel_id ON asset_reports(channel_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_asset_reports_asset_set_id ON asset_reports(asset_set_id)`,
+	}
+	for _, statement := range statements {
+		if _, err := tx.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("rebuild asset_reports: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit asset_reports rebuild: %w", err)
+	}
+	return nil
 }
 
 // applyRequestTypeWorkspacePinned removes the implicit "first served
 // workspace" fallback for request types. It backfills legacy NULL routes from
-// the channel's configured workspaces, makes workspace_id NOT NULL, and changes
-// the workspace FK from ON DELETE SET NULL to ON DELETE CASCADE so deleting a
-// workspace can never leave a route unpinned.
+// the channel's configured workspaces and changes the workspace FK from
+// ON DELETE SET NULL to ON DELETE CASCADE so deleting a workspace can never
+// leave a route unpinned. A route whose channel serves no workspace is left
+// NULL and rejected at runtime rather than deleted.
 func applyRequestTypeWorkspacePinned(db Database) error {
 	if err := backfillRequestTypeWorkspaces(db); err != nil {
 		return err
@@ -2631,20 +2799,14 @@ func applyRequestTypeWorkspacePinned(db Database) error {
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return fmt.Errorf("find request_types workspace constraint: %w", err)
 		}
-		statements := []string{
-			`ALTER TABLE request_types ALTER COLUMN workspace_id SET NOT NULL`,
-		}
 		if constraintName != "" {
-			statements = append(statements, fmt.Sprintf("ALTER TABLE request_types DROP CONSTRAINT %q", constraintName))
-		}
-		statements = append(statements,
-			`ALTER TABLE request_types ADD CONSTRAINT request_types_workspace_id_fkey
-				FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE`,
-		)
-		for _, statement := range statements {
-			if _, err := db.Exec(statement); err != nil {
-				return fmt.Errorf("pin request_types.workspace_id: %w", err)
+			if _, err := db.Exec(fmt.Sprintf("ALTER TABLE request_types DROP CONSTRAINT %q", constraintName)); err != nil {
+				return fmt.Errorf("drop request_types workspace constraint: %w", err)
 			}
+		}
+		if _, err := db.Exec(`ALTER TABLE request_types ADD CONSTRAINT request_types_workspace_id_fkey
+			FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE`); err != nil {
+			return fmt.Errorf("cascade request_types workspace: %w", err)
 		}
 		return nil
 	}
@@ -2652,9 +2814,10 @@ func applyRequestTypeWorkspacePinned(db Database) error {
 }
 
 // backfillRequestTypeWorkspaces assigns a concrete workspace to every legacy
-// NULL route. A single-workspace channel is unambiguous; a multi-workspace
-// channel keeps today's behavior by pinning the first configured workspace.
-// A route whose channel serves no workspace is unreachable and is removed.
+// NULL route that can have one. A single-workspace channel is unambiguous; a
+// multi-workspace channel keeps today's behavior by pinning the first
+// configured workspace. A route whose channel serves no workspace stays NULL
+// and is rejected at runtime instead of being deleted.
 func backfillRequestTypeWorkspaces(db Database) error {
 	rows, err := db.Query(`
 		SELECT rt.id, c.type, COALESCE(c.config, '{}')
@@ -2698,11 +2861,8 @@ func backfillRequestTypeWorkspaces(db Database) error {
 			served = cfg.FormWorkspaceIDs
 		}
 		if len(served) == 0 {
-			slog.Warn("removing request type whose channel serves no workspace",
+			slog.Warn("request type has no workspace to pin; leaving it unpinned",
 				"component", "migrations", "request_type_id", row.id)
-			if _, err := db.ExecWrite(`DELETE FROM request_types WHERE id = ?`, row.id); err != nil {
-				return fmt.Errorf("delete unpinnable request type %d: %w", row.id, err)
-			}
 			continue
 		}
 		if _, err := db.ExecWrite(`UPDATE request_types SET workspace_id = ? WHERE id = ?`, served[0], row.id); err != nil {
@@ -2713,7 +2873,7 @@ func backfillRequestTypeWorkspaces(db Database) error {
 }
 
 // rebuildRequestTypesWorkspacePinned rebuilds request_types for SQLite, which
-// cannot alter a column's nullability or foreign-key action in place.
+// cannot alter a foreign-key action in place.
 func rebuildRequestTypesWorkspacePinned(db Database) (retErr error) {
 	sqliteDB, ok := db.(*SQLiteDB)
 	if !ok {
@@ -2762,7 +2922,7 @@ func rebuildRequestTypesWorkspacePinned(db Database) (retErr error) {
 			config TEXT DEFAULT NULL,
 			visibility_group_ids TEXT DEFAULT NULL,
 			visibility_org_ids TEXT DEFAULT NULL,
-			workspace_id INTEGER NOT NULL,
+			workspace_id INTEGER DEFAULT NULL,
 			title_template TEXT NOT NULL DEFAULT '',
 			kind TEXT NOT NULL DEFAULT '',
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
