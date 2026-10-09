@@ -815,7 +815,7 @@ func calendarForCycle(config *compiledConfig, cycle *models.ItemSLACycle) (*busi
 		}
 		return nil, err
 	}
-	if cycle.CalendarID != nil {
+	if cycle.CalendarID != nil && config != nil {
 		if compiled, ok := config.calendars[*cycle.CalendarID]; ok {
 			return compiled.compiled, nil
 		}
