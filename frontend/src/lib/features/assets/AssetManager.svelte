@@ -423,9 +423,23 @@
 
   async function handleCategorySubmit() {
     await saveConfiguration(
-      () => editingCategory
-        ? api.assetCategories.update(editingCategory.id, categoryFormData)
-        : api.assetCategories.create(selectedSetId, categoryFormData),
+      async () => {
+        if (!editingCategory) {
+          return api.assetCategories.create(selectedSetId, categoryFormData);
+        }
+        // The v2 PATCH body only accepts name/description; parent changes go
+        // through the dedicated move endpoint.
+        const updated = await api.assetCategories.update(editingCategory.id, {
+          name: categoryFormData.name,
+          description: categoryFormData.description,
+        });
+        const nextParent = categoryFormData.parent_id ?? null;
+        const currentParent = editingCategory.parent_id ?? null;
+        if (nextParent !== currentParent) {
+          await api.assetCategories.move(editingCategory.id, { parent_id: nextParent });
+        }
+        return updated;
+      },
       loadAssetCategories,
       () => showCategoryForm = false,
       'save category',
@@ -649,7 +663,11 @@
           triggerTestid="asset-manager-set-actions"
           items={[
             { id: 'edit', title: t('assets.editSet'), icon: IconEdit, testid: 'asset-manager-edit-set', onClick: () => showEditSetForm(selectedSet) },
-            { id: 'delete', title: t('assets.deleteSet'), icon: IconTrash, color: 'var(--ds-text-danger)', onClick: () => deleteSet(selectedSetId) }
+            // Deleting a set requires system administration; hide the
+            // destructive action from delegated set administrators.
+            ...($isSystemAdmin
+              ? [{ id: 'delete', title: t('assets.deleteSet'), icon: IconTrash, color: 'var(--ds-text-danger)', testid: 'asset-manager-delete-set', onClick: () => deleteSet(selectedSetId) }]
+              : [])
           ]}
         />
       {/if}
@@ -794,7 +812,7 @@
                   <Button variant="ghost" size="sm" onclick={() => showAddCategoryForm(category.id)} title="Add subcategory">
                     <IconPlus class="w-4 h-4" />
                   </Button>
-                  <Button variant="ghost" size="sm" onclick={() => showEditCategoryForm(category)}>
+                  <Button variant="ghost" size="sm" dataTestid={`asset-manager-edit-category-${category.id}`} onclick={() => showEditCategoryForm(category)}>
                     <IconEdit class="w-4 h-4" />
                   </Button>
                   <Button variant="ghost" size="sm" onclick={() => deleteCategory(category.id)}>
@@ -1010,6 +1028,7 @@
       </div>
       <div>
         <SelectField
+          id="asset-manager-category-parent"
           label={t('assets.parentCategory')}
           labelColor="default"
           options={[{ value: null, label: t('assets.noParent') }, ...flatCategories.filter(c => c.id !== editingCategory?.id).map(cat => ({ value: cat.id, label: '  '.repeat(cat.level) + cat.name }))]}
