@@ -1428,7 +1428,8 @@ func (h *JiraImportHandler) importJiraIssueSubresources(ctx context.Context, im 
 	// Import attachments for this issue before comments/description media
 	// linking so the Jira attachment ids are mapped to Windshift attachments,
 	// letting ADF media nodes reference the imported files.
-	mediaRefs, err := h.importAttachments(ctx, im.jobID, int(itemID), issue, im.userMap, im.client, im.progress)
+	internalAttachmentIDs := jiraInternalAttachmentIDs(issue, rawDescription, im.jsmImport != nil)
+	mediaRefs, err := h.importAttachments(ctx, im.jobID, int(itemID), issue, im.userMap, im.client, internalAttachmentIDs, im.progress)
 	if err != nil {
 		return fmt.Errorf("import Jira attachments: %w", err)
 	}
@@ -2022,11 +2023,43 @@ func (h *JiraImportHandler) importWorklogs(jobID string, itemID int, issue *jira
 // Phase 7: Attachment Import
 // ================================================================
 
+// jiraInternalAttachmentIDs returns the Jira attachment ids that must be
+// hidden from portal customers. JSM lets agents attach files to internal
+// notes, but the issue payload carries no visibility flag on the file itself,
+// so an attachment is treated as customer-visible only when it is referenced
+// from a body the customer can see: the request description or a public
+// comment. Non-JSM imports have no portal exposure and stay visible.
+func jiraInternalAttachmentIDs(issue *jira.JiraIssue, rawDescription any, serviceDeskImport bool) map[string]bool {
+	if !serviceDeskImport || issue == nil {
+		return nil
+	}
+	visible := jira.CollectADFMediaIDs(rawDescription)
+	if issue.Fields.Comment != nil {
+		for _, comment := range issue.Fields.Comment.Comments {
+			if comment.ServiceDeskPublic != nil && !*comment.ServiceDeskPublic {
+				continue
+			}
+			for id := range jira.CollectADFMediaIDs(comment.Body) {
+				visible[id] = true
+			}
+		}
+	}
+	internal := make(map[string]bool)
+	for _, attachment := range issue.Fields.Attachment {
+		if attachment.ID != "" && !visible[attachment.ID] {
+			internal[attachment.ID] = true
+		}
+	}
+	return internal
+}
+
 // importAttachments downloads and stores attachments from a Jira issue. It
 // returns a map from Jira attachment id → the Windshift attachment reference
 // (id, mime type, original filename) so ADF media nodes can be linked to the
-// imported attachment instead of left as a placeholder.
-func (h *JiraImportHandler) importAttachments(ctx context.Context, jobID string, itemID int, issue *jira.JiraIssue, userMap map[string]int, client jira.Client, progress *ImportProgress) (map[string]jira.MediaAttachment, error) {
+// imported attachment instead of left as a placeholder. Attachments listed in
+// internalIDs are stored as internal so portal customers cannot list or
+// download them.
+func (h *JiraImportHandler) importAttachments(ctx context.Context, jobID string, itemID int, issue *jira.JiraIssue, userMap map[string]int, client jira.Client, internalIDs map[string]bool, progress *ImportProgress) (map[string]jira.MediaAttachment, error) {
 	if len(issue.Fields.Attachment) == 0 {
 		return nil, nil
 	}
@@ -2061,7 +2094,7 @@ func (h *JiraImportHandler) importAttachments(ctx context.Context, jobID string,
 			previousMapping = nil
 		}
 		if previousMapping != nil {
-			mimeType, originalFilename, exists := h.imports.ReassignAttachment(previousMapping.WindshiftID, itemID)
+			mimeType, originalFilename, exists := h.imports.ReassignAttachment(previousMapping.WindshiftID, itemID, internalIDs[attachment.ID])
 			if !exists {
 				previousMapping = nil
 			} else {
@@ -2153,6 +2186,7 @@ func (h *JiraImportHandler) importAttachments(ctx context.Context, jobID string,
 			MimeType:         mimeType,
 			FileSize:         fileSize,
 			UploadedBy:       uploadedBy,
+			IsInternal:       internalIDs[attachment.ID],
 		})
 		if err != nil {
 			slog.Error("Failed to insert attachment record",

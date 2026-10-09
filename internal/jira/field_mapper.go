@@ -711,6 +711,35 @@ func convertADFMedia(nodeMap map[string]any, mediaResolver MediaResolver) string
 	return "[media: " + alt + "]"
 }
 
+// CollectADFMediaIDs returns every Jira attachment id referenced by `media`
+// nodes in an ADF document. Callers use it to decide which imported
+// attachments are linked from a body a portal customer can see.
+func CollectADFMediaIDs(adf any) map[string]bool {
+	ids := make(map[string]bool)
+	collectADFMediaIDs(adf, ids)
+	return ids
+}
+
+func collectADFMediaIDs(node any, ids map[string]bool) {
+	switch typed := node.(type) {
+	case []any:
+		for _, child := range typed {
+			collectADFMediaIDs(child, ids)
+		}
+	case map[string]any:
+		if nodeType, _ := typed["type"].(string); nodeType == "media" {
+			if attrs, ok := typed["attrs"].(map[string]any); ok {
+				if id, _ := attrs["id"].(string); id != "" {
+					ids[id] = true
+				}
+			}
+		}
+		if content, ok := typed["content"].([]any); ok {
+			collectADFMediaIDs(content, ids)
+		}
+	}
+}
+
 func convertADFExpand(nodeMap map[string]any, mentionResolver MentionResolver, mediaResolver MediaResolver) string {
 	title := "Details"
 	if attrs, ok := nodeMap["attrs"].(map[string]any); ok {

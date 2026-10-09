@@ -2622,6 +2622,14 @@ var Catalog = []Migration{
 		ApplySQLite:   applyAssetReportsWorkspacePinned,
 		ApplyPostgres: applyAssetReportsWorkspacePinned,
 	},
+	{
+		Version:       "20261024_attachments_internal_visibility",
+		Name:          "Hide internal attachments from portal customers (WI-1700)",
+		CheckSQLite:   sqliteColumnCheck("attachments", "is_internal"),
+		CheckPostgres: pgColumnCheck("attachments", "is_internal"),
+		SQLite:        `ALTER TABLE attachments ADD COLUMN is_internal BOOLEAN NOT NULL DEFAULT false;`,
+		Postgres:      `ALTER TABLE attachments ADD COLUMN IF NOT EXISTS is_internal BOOLEAN NOT NULL DEFAULT false;`,
+	},
 }
 
 // applyAssetReportsWorkspacePinned backfills form-mode asset reports that have
