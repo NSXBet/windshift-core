@@ -100,6 +100,11 @@ type CollectionApplicationService struct {
 	boards      *repository.BoardConfigurationRepository
 	items       *ItemCRUDService
 	workspaces  *WorkspaceService
+
+	// beforePublicSharingWrite runs between scope authorization and the
+	// conditional write. Tests use it to reproduce a concurrent query edit
+	// deterministically; it is nil in production.
+	beforePublicSharingWrite func()
 }
 
 func NewCollectionApplicationService(db database.Database, permissions *PermissionService) *CollectionApplicationService {
@@ -375,11 +380,21 @@ func (s *CollectionApplicationService) UpdateSharing(actor AuditActor, id int, u
 			return nil, err
 		}
 	}
-	if err := s.repository.UpdatePublicSharing(id, update.IsPublic, update.PublicSlug); err != nil {
+	if s.beforePublicSharingWrite != nil {
+		s.beforePublicSharingWrite()
+	}
+	// Publishing is conditional on the authorized scope still being current, so
+	// a query edit between authorization and this write cannot make an
+	// unauthorized scope anonymously readable.
+	updated, err := s.repository.UpdatePublicSharing(id, update.IsPublic, update.PublicSlug, collection.QLQuery, collection.WorkspaceID)
+	if err != nil {
 		if database.IsUniqueConstraintError(err) {
 			return nil, ErrCollectionConflict
 		}
 		return nil, err
+	}
+	if !updated {
+		return nil, fmt.Errorf("%w: collection query changed before it could be published", ErrCollectionConflict)
 	}
 	emitServiceAudit(s.db, actor, logger.ActionCollectionUpdate, logger.ResourceCollection, &id, collection.Name, nil)
 	return s.repository.GetModel(id)

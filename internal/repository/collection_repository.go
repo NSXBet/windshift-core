@@ -284,16 +284,27 @@ func (r *CollectionRepository) Update(id int, collection *models.Collection) err
 	return nil
 }
 
-// UpdatePublicSharing updates only public-board visibility fields.
-func (r *CollectionRepository) UpdatePublicSharing(id int, isPublic bool, publicSlug *string) error {
-	_, err := r.db.ExecWrite(
-		"UPDATE collections SET is_public = ?, public_slug = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-		isPublic, publicSlug, id,
-	)
-	if err != nil {
-		return fmt.Errorf("update collection %d public sharing: %w", id, err)
+// UpdatePublicSharing updates only public-board visibility fields. When
+// publishing, the update applies only while the stored scope still matches
+// expectedQuery and expectedWorkspaceID, so a concurrent query edit cannot
+// publish a scope that was never authorized. The bool reports whether the row
+// still matched.
+func (r *CollectionRepository) UpdatePublicSharing(id int, isPublic bool, publicSlug *string, expectedQuery string, expectedWorkspaceID *int) (bool, error) {
+	query := "UPDATE collections SET is_public = ?, public_slug = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+	args := []any{isPublic, publicSlug, id}
+	if isPublic {
+		query += " AND COALESCE(ql_query, '') = ? AND COALESCE(workspace_id, 0) = COALESCE(?, 0)"
+		args = append(args, expectedQuery, expectedWorkspaceID)
 	}
-	return nil
+	result, err := r.db.ExecWrite(query, args...)
+	if err != nil {
+		return false, fmt.Errorf("update collection %d public sharing: %w", id, err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("read collection %d public sharing rows: %w", id, err)
+	}
+	return affected > 0, nil
 }
 
 // Delete removes a collection.
