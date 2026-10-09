@@ -335,6 +335,14 @@ var WorkspaceNavItemIDs = append(slices.Clone(BoardViewIDs),
 	"queue", "agents", "iterations", "milestones", "analytics", "actions", "pages",
 )
 
+// DefaultWorkspaceNavItemIDs is the workspace-scope nav set a workspace gets
+// when it has no explicit enabled-views override. It is WorkspaceNavItemIDs
+// without the support queue: the queue is opt-in and enabled by the helpdesk
+// pack. A workspace admin can still toggle any id, queue included.
+var DefaultWorkspaceNavItemIDs = slices.DeleteFunc(slices.Clone(WorkspaceNavItemIDs), func(id string) bool {
+	return id == "queue"
+})
+
 // IsWorkspaceNavID reports whether id is a workspace-scope nav item.
 func IsWorkspaceNavID(id string) bool {
 	return slices.Contains(WorkspaceNavItemIDs, id)

@@ -214,7 +214,9 @@ func (s *PackApplyService) applyWorkspaceStages(ctx context.Context, req PackApp
 				fmt.Sprintf("content bundle reported %d failed entity(ies): %s", len(failed), strings.Join(failed, "; ")))
 		}
 		s.appendStage(report, PackStageContent, PackStageStatusOK,
-			fmt.Sprintf("pages %d, items %d, links %d", result.PagesImported, result.ItemsImported, result.ItemLinksImported))
+			fmt.Sprintf("pages %d, items %d, links %d, calendars %d, metrics %d, views %t",
+				result.PagesImported, result.ItemsImported, result.ItemLinksImported,
+				result.CalendarsImported, result.MetricsImported, result.ViewsApplied))
 	} else {
 		s.appendStage(report, PackStageContent, PackStageStatusSkipped, "pack declares no content bundle")
 	}

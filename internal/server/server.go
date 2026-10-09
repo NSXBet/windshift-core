@@ -1803,11 +1803,14 @@ func (s *Server) initialize() error {
 		repository.NewConfigurationSetRepository(s.db),
 		repository.NewItemTypeRepository(s.db),
 		repository.NewLabelRepository(s.db),
+		repository.NewBoardConfigurationRepository(s.db),
 		pageApplication,
 		pageLabelService,
 		itemHandler.ItemCreationService(),
 		itemLinkService,
 		permService,
+		services.NewSLACalendarService(s.db, s.slaEngine),
+		services.NewSLAMetricService(s.db, s.slaEngine),
 	)
 	packApplyService := services.NewPackApplyService(
 		s.db,

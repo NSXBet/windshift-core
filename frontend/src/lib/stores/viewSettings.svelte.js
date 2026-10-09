@@ -6,15 +6,20 @@ import { workspaceOnlyViews, workspaceViewItems } from '../navigation/workspaceN
 const ALL_VIEW_IDS = workspaceViewItems.map((view) => view.id);
 
 // Every toggleable workspace nav item (views plus the workspace-only tools
-// entries), used as the workspace-scope fallback. The ids mirror
-// models.WorkspaceNavItemIDs on the backend; test-management entries are
-// not toggleable and stay gated by module and permission only.
+// entries). The ids mirror models.WorkspaceNavItemIDs on the backend;
+// test-management entries are not toggleable and stay gated by module and
+// permission only.
 export const ALL_NAV_IDS = [...ALL_VIEW_IDS, ...workspaceOnlyViews.map((view) => view.id)];
+
+// Workspace-scope fallback when a scope has no explicit enabled-views setting:
+// everything except the support queue, which is opt-in via the helpdesk pack.
+// Mirrors models.DefaultWorkspaceNavItemIDs on the backend.
+export const DEFAULT_NAV_IDS = ALL_NAV_IDS.filter((id) => id !== 'queue');
 
 /** @typedef {{ views: string[], inherited: boolean, loaded: boolean }} ViewSettingsEntry */
 
 /** @type {ViewSettingsEntry} */
-const DEFAULT_ENTRY = { views: ALL_NAV_IDS, inherited: true, loaded: false };
+const DEFAULT_ENTRY = { views: DEFAULT_NAV_IDS, inherited: true, loaded: false };
 
 function createViewSettingsStore() {
   /** @type {Record<string, ViewSettingsEntry>} */
@@ -27,9 +32,10 @@ function createViewSettingsStore() {
 
   /**
    * Loads the effective enabled views for a scope. Missing or invalid
-   * settings resolve to every view enabled; failures are cached as the
-   * default so navigation never blocks on the lookup. Writes to the store
-   * happen exactly once per load so effects reading entries settle.
+   * settings resolve to the workspace default (queue off); failures are
+   * cached as the default so navigation never blocks on the lookup. Writes
+   * to the store happen exactly once per load so effects reading entries
+   * settle.
    */
   async function load(workspaceId, collectionId = null) {
     const key = scopeKey(workspaceId, collectionId);
@@ -44,9 +50,9 @@ function createViewSettingsStore() {
         const config = await api.collections.getBoardConfiguration(collectionId, workspaceId);
         const enabled = config?.view_settings?.enabled_views;
         entry = {
-          // Missing or empty settings mean "everything enabled" — tools
-          // entries included — matching the backend's storage default.
-          views: Array.isArray(enabled) && enabled.length > 0 ? enabled : ALL_NAV_IDS,
+          // Missing or empty settings mean the workspace default (everything
+          // except the queue) — tools entries included.
+          views: Array.isArray(enabled) && enabled.length > 0 ? enabled : DEFAULT_NAV_IDS,
           inherited: Boolean(config?.view_settings_inherited),
           loaded: true,
         };
@@ -64,19 +70,19 @@ function createViewSettingsStore() {
     }
   }
 
-  /** Enabled view ids for a scope; everything enabled while unloaded. */
+  /** Enabled view ids for a scope; the workspace default while unloaded. */
   function enabledViewIds(workspaceId, collectionId = null) {
-    return entries[scopeKey(workspaceId, collectionId)]?.views ?? ALL_NAV_IDS;
+    return entries[scopeKey(workspaceId, collectionId)]?.views ?? DEFAULT_NAV_IDS;
   }
 
   /**
    * Effective workspace nav ids (views plus tools/test entries) for the
    * workspace default context. Only the workspace scope can toggle the
-   * non-view entries, so collection scopes are never consulted here.
-   * Everything enabled while unloaded.
+   * non-view entries, so collection scopes are never consulted here. The
+   * workspace default applies while unloaded.
    */
   function enabledNavIds(workspaceId) {
-    return entries[scopeKey(workspaceId, null)]?.views ?? ALL_NAV_IDS;
+    return entries[scopeKey(workspaceId, null)]?.views ?? DEFAULT_NAV_IDS;
   }
 
   /** The raw scope entry (reactive), or null before the first load. */
@@ -110,7 +116,7 @@ function createViewSettingsStore() {
     invalidate,
     invalidateWorkspace,
     allViewIds: ALL_VIEW_IDS,
-    allNavIds: ALL_NAV_IDS,
+    allNavIds: DEFAULT_NAV_IDS,
   };
 }
 
