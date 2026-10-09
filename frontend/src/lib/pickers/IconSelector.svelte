@@ -104,6 +104,7 @@
     {#if colorOnly}
       <button
         use:melt={$trigger}
+        data-testid={dataTestid ? `${dataTestid}-trigger` : undefined}
         type="button"
         class="color-swatch-trigger"
         style="background-color: {selectedColor}; border: 1px solid var(--ds-border);"
