@@ -1750,13 +1750,25 @@ func (c *cloudClient) searchCurrentObjects(ctx context.Context, opts ObjectSearc
 		StartAt              int                    `json:"startAt"`
 		Total                int                    `json:"total"`
 		IsLast               bool                   `json:"isLast"`
-		HasMoreResults       bool                   `json:"hasMoreResults"`
+		HasMoreResults       *bool                  `json:"hasMoreResults"`
 		Last                 bool                   `json:"last"`
 	}
 	if err := jiraRequestJSON(ctx, c, http.MethodPost, c.assetsURL+"/object/aql?"+query.Encode(), reqBody, &current); err != nil {
 		return nil, err
 	}
 	normalizeAssetDefaultTypes(current.ObjectTypeAttributes)
+
+	// hasMoreResults is optional in the Assets response. Treat an absent flag
+	// as unknown rather than "no more": negating a missing field previously
+	// forced IsLast and silently truncated imports after the first page.
+	isLast := current.IsLast || current.Last
+	if current.HasMoreResults != nil && !*current.HasMoreResults {
+		isLast = true
+	}
+	if current.Total > 0 && current.StartAt+len(current.Values) >= current.Total {
+		isLast = true
+	}
+
 	return &ObjectSearchResult{
 		ObjectEntries:        current.Values,
 		ObjectTypeAttributes: current.ObjectTypeAttributes,
@@ -1765,7 +1777,7 @@ func (c *cloudClient) searchCurrentObjects(ctx context.Context, opts ObjectSearc
 		TotalFilterCount:     current.Total,
 		StartIndex:           current.StartAt,
 		ToIndex:              current.StartAt + len(current.Values),
-		IsLast:               current.IsLast || current.Last || !current.HasMoreResults,
+		IsLast:               isLast,
 	}, nil
 }
 
