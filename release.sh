@@ -884,7 +884,7 @@ write_release_provenance() {
             echo ""
             echo "Resolved base image digests at build time"
             echo "-----------------------------------------"
-            for image in node:24.18.0-alpine golang:1.27.0-alpine golang:1.27.0-bookworm node:lts-slim; do
+            for image in node:24.18.0-alpine golang:1.27.2-alpine golang:1.27.2-bookworm node:lts-slim; do
                 docker buildx imagetools inspect "$image" 2>/dev/null | grep -E 'Name:|Digest:' || true
             done
         fi

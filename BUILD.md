@@ -127,12 +127,12 @@ make build-windows-arm64
 ## Build Requirements
 
 ### For Server + Frontend
-- **Go 1.27.0** - Exact version declared in `go.mod`
+- **Go 1.27.2** - Exact version declared in `go.mod`
 - **Node.js 24.18.0** - Exact version pinned in `.nvmrc` and `frontend/package.json`
 - **npm 11.16.0** - Exact version pinned in `frontend/package.json`
 
 ### For WS Client Only
-- **Go 1.27.0** - Exact version declared in `go.mod`
+- **Go 1.27.2** - Exact version declared in `go.mod`
 
 ### For Cross-Compilation (release.sh)
 - **Docker + Buildx** - Multi-arch Docker images
