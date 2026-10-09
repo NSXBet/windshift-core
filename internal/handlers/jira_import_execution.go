@@ -1050,7 +1050,7 @@ func (h *JiraImportHandler) jiraImportFidelityFindings(jobID string) []jiraImpor
 			Code:        "jira_datetime_editing_lossy",
 			Severity:    "warning",
 			Disposition: "lossy",
-			Summary:     "Jira datetime values retain their timestamp text, but Windshift currently edits them through a date-only field model.",
+			Summary:     "Jira datetime values are stored as calendar dates and their original timestamp text is retained in item metadata, but Windshift edits them through a date-only field model.",
 			Count:       dateTimeCount,
 		})
 	}

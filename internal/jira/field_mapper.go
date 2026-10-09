@@ -187,7 +187,7 @@ func MapJiraFieldToWindshift(field JiraCustomField) FieldMappingSuggestion {
 		}
 		if jiraFieldIsDateTime(field) {
 			suggestion.Notes = strings.TrimSpace(suggestion.Notes +
-				" Jira datetime values retain their RFC3339 timestamp in storage, but Windshift's date field renders calendar-date semantics; time-of-day editing is lossy.")
+				" Jira datetime values are stored in the date field as a calendar date; the original RFC3339 timestamp is retained in the item's Jira custom-field metadata, but time-of-day editing in the date field is lossy.")
 		}
 		return suggestion
 	}
@@ -203,7 +203,7 @@ func MapJiraFieldToWindshift(field JiraCustomField) FieldMappingSuggestion {
 			suggestion.Notes = "Inferred from Jira schema type number."
 		case "date", "datetime":
 			suggestion.WindshiftFieldType = FieldTypeDate
-			suggestion.Notes = "Inferred from Jira schema; datetime precision may be reduced by Windshift date rendering."
+			suggestion.Notes = "Inferred from Jira schema; a datetime is stored as a calendar date and its original timestamp is retained in item metadata."
 		case "user":
 			suggestion.WindshiftFieldType = FieldTypeUser
 			suggestion.Notes = "Inferred from Jira schema type user."
@@ -238,7 +238,7 @@ func MapJiraFieldToWindshift(field JiraCustomField) FieldMappingSuggestion {
 		addJiraChoiceMappingNote(&suggestion)
 		if jiraFieldIsDateTime(field) {
 			suggestion.Notes = strings.TrimSpace(suggestion.Notes +
-				" Jira datetime values retain their RFC3339 timestamp in storage, but Windshift's date field renders calendar-date semantics; time-of-day editing is lossy.")
+				" Jira datetime values are stored in the date field as a calendar date; the original RFC3339 timestamp is retained in the item's Jira custom-field metadata, but time-of-day editing in the date field is lossy.")
 		}
 		return suggestion
 	}

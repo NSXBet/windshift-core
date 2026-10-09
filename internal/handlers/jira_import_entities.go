@@ -583,6 +583,22 @@ func unresolvedJiraCustomFieldRawValue(
 	typedValueResolved bool,
 	choiceOptionIDs map[string]int,
 ) (any, bool) {
+	// A datetime mapped to a Windshift date resolves to a calendar date but
+	// drops time-of-day and offset. Preserve the original Jira timestamp text
+	// in item metadata so the source precision is retained separately and the
+	// import-time loss is reportable.
+	if typedValueResolved && mapping.WindshiftType == "date" && jiraMappingIsDateTime(mapping) {
+		if mapping.Action == "skip" || mapping.PreserveRaw {
+			return nil, false
+		}
+		if fields == nil || fields.CustomFields == nil {
+			return nil, false
+		}
+		if raw, exists := fields.CustomFields[mapping.JiraID]; exists && raw != nil {
+			return raw, true
+		}
+		return nil, false
+	}
 	if typedValueResolved && mapping.WindshiftType != "multiselect" {
 		return nil, false
 	}
@@ -611,6 +627,13 @@ func unresolvedJiraCustomFieldRawValue(
 		}
 	}
 	return nil, false
+}
+
+// jiraMappingIsDateTime reports whether a Jira custom field carries a
+// datetime value, which a Windshift date field can only store as a calendar
+// date.
+func jiraMappingIsDateTime(mapping CustomFieldMapping) bool {
+	return strings.Contains(strings.ToLower(mapping.JiraType), "datetime")
 }
 
 func preserveUnresolvedJiraCustomField(
