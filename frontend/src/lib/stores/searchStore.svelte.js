@@ -184,18 +184,25 @@ export function createWorkItemSearchStore({ allowEmptyQuery = false } = {}) {
   }
 
   // ===== Search execution =====
+  // Only the most recent request may update results, pagination, error, and
+  // loading state; an earlier response that resolves late is discarded.
+  let searchGeneration = 0;
+
   async function executeSearch({ page = 1, limit = 50 } = {}) {
+    const generation = ++searchGeneration;
     const finalQl = get(qlQuery);
     if (!allowEmptyQuery && !finalQl?.trim()) {
       workItems.set([]);
       pagination.set(null);
       qlError.set(null);
+      loadingItems.set(false);
       return;
     }
     loadingItems.set(true);
     qlError.set(null);
     try {
       const response = await api.items.getAll({ ql: finalQl, page, limit });
+      if (generation !== searchGeneration) return;
       if (response?.data) {
         workItems.set(response.data);
         pagination.set(response.pagination || null);
@@ -204,12 +211,13 @@ export function createWorkItemSearchStore({ allowEmptyQuery = false } = {}) {
         pagination.set(null);
       }
     } catch (err) {
+      if (generation !== searchGeneration) return;
       console.error('Search failed:', err);
       qlError.set(err.message || 'Search failed');
       workItems.set([]);
       pagination.set(null);
     } finally {
-      loadingItems.set(false);
+      if (generation === searchGeneration) loadingItems.set(false);
     }
   }
 
