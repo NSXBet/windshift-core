@@ -159,6 +159,7 @@ type RequestTypeBasic struct {
 	Icon          string
 	Color         string
 	TitleTemplate string
+	Kind          string
 }
 
 // GetBasicForChannel returns the editable-field snapshot for a request_type
@@ -166,9 +167,9 @@ type RequestTypeBasic struct {
 func (r *RequestTypeRepository) GetBasicForChannel(id, channelID int) (*RequestTypeBasic, error) {
 	var b RequestTypeBasic
 	err := r.db.QueryRow(
-		`SELECT name, item_type_id, icon, color, title_template FROM request_types WHERE id = ? AND channel_id = ?`,
+		`SELECT name, item_type_id, icon, color, title_template, kind FROM request_types WHERE id = ? AND channel_id = ?`,
 		id, channelID,
-	).Scan(&b.Name, &b.ItemTypeID, &b.Icon, &b.Color, &b.TitleTemplate)
+	).Scan(&b.Name, &b.ItemTypeID, &b.Icon, &b.Color, &b.TitleTemplate, &b.Kind)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -289,17 +290,18 @@ func (r *RequestTypeRepository) Create(rt *models.RequestType) (int64, error) {
 // It intentionally does not write visibility_group_ids / visibility_org_ids —
 // those are managed exclusively by UpdateVisibility so that routine edits
 // (rename, icon, title template, etc.) can never accidentally wipe access
-// controls by omitting them from the request body.
+// controls by omitting them from the request body. workspace_id is fixed at
+// creation and is never rewritten; the handler rejects attempts to change it.
 // Returns ErrNotFound when no row matches and ErrDuplicateEntry on
 // (name, channel_id) collision.
 func (r *RequestTypeRepository) Update(id, channelID int, rt *models.RequestType) error {
 	res, err := r.db.ExecWrite(`
 		UPDATE request_types
 		SET name = ?, description = ?, item_type_id = ?, icon = ?, color = ?, display_order = ?, is_active = ?,
-		    workspace_id = ?, title_template = ?, updated_at = ?
+		    title_template = ?, updated_at = ?
 		WHERE id = ? AND channel_id = ?
 	`, rt.Name, rt.Description, rt.ItemTypeID, rt.Icon, rt.Color, rt.DisplayOrder, rt.IsActive,
-		rt.WorkspaceID, rt.TitleTemplate, time.Now(), id, channelID,
+		rt.TitleTemplate, time.Now(), id, channelID,
 	)
 	if err != nil {
 		if database.IsUniqueConstraintError(err) {

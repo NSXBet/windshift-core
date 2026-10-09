@@ -141,6 +141,7 @@ export default {
   "portal": {
     "selectWorkspace": "Arbeitsbereich auswählen",
     "workspaceFieldResolution": "Arbeitsbereichsfeld Lösung",
+    "bindingLocked": "Nach der Erstellung festgelegt. Löschen und erstellen Sie den Anfragetyp neu, um ihn zu ändern.",
     "notFound": "Portal nicht gefunden",
     "createAssetReport": "Asset-Bericht erstellen",
     "editAssetReport": "Asset-Bericht bearbeiten",

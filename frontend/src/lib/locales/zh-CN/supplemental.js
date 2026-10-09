@@ -177,6 +177,7 @@ export default {
   "portal": {
     "selectWorkspace": "选择工作区",
     "workspaceFieldResolution": "工作区字段解析",
+    "bindingLocked": "创建后固定。如需更改，请删除并重新创建请求类型。",
     "notFound": "找不到门户",
     "createAssetReport": "创建资产报告",
     "editAssetReport": "编辑资产报告",

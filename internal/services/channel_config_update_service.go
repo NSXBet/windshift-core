@@ -812,12 +812,11 @@ func (s *ChannelConfigUpdateService) validateRequestTypeRoutes(channelID int, ch
 	}
 	invalid := make([]string, 0)
 	for _, route := range routes {
-		workspaceID, routable := requestTypeWorkspace(served, route.WorkspaceID)
-		if !routable || !containsChannelConfigID(served, workspaceID) {
+		if route.WorkspaceID == nil || !containsChannelConfigID(served, *route.WorkspaceID) {
 			invalid = append(invalid, route.Name)
 			continue
 		}
-		allowed, err := s.channels.ItemTypeAllowedInWorkspace(workspaceID, route.ItemTypeID)
+		allowed, err := s.channels.ItemTypeAllowedInWorkspace(*route.WorkspaceID, route.ItemTypeID)
 		if err != nil {
 			return err
 		}
@@ -826,7 +825,7 @@ func (s *ChannelConfigUpdateService) validateRequestTypeRoutes(channelID int, ch
 		}
 	}
 	if len(invalid) > 0 {
-		return channelConfigInvalid(fmt.Sprintf("Request types have missing or incompatible workspace routes: %s. Retarget or update them first.", strings.Join(invalid, ", ")))
+		return channelConfigInvalid(fmt.Sprintf("Request types are pinned to workspaces this channel does not serve: %s. Delete them before removing the workspace.", strings.Join(invalid, ", ")))
 	}
 	return nil
 }
@@ -867,16 +866,6 @@ func validateEnabledChannel(channel *models.Channel, config *models.ChannelConfi
 func validBareEmail(value string) bool {
 	parsed, err := mail.ParseAddress(value)
 	return err == nil && parsed.Address == value
-}
-
-func requestTypeWorkspace(served []int, routeWorkspaceID *int) (int, bool) {
-	if routeWorkspaceID != nil {
-		return *routeWorkspaceID, true
-	}
-	if len(served) == 0 {
-		return 0, false
-	}
-	return served[0], true
 }
 
 func containsChannelConfigID(values []int, target int) bool {

@@ -403,6 +403,7 @@ export default {
     portalTitle: 'Portal Title',
     selectWorkspace: 'Select workspace',
     workspaceFieldResolution: 'Workspace field resolution',
+    bindingLocked: 'Fixed after creation. Delete and recreate the request type to change it.',
 
     // Magic link authentication
     signInTitle: 'Sign in to your account',

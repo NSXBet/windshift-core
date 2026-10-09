@@ -115,18 +115,6 @@ func channelSupportsAssetReports(channel *models.Channel) bool {
 	return channel != nil && channel.Direction == "inbound" && channel.Type == "portal"
 }
 
-// effectiveRequestTypeWorkspace preserves the legacy first-served-workspace
-// fallback so validation matches runtime routing.
-func effectiveRequestTypeWorkspace(served []int, pinned *int) (int, bool) {
-	if pinned != nil {
-		return *pinned, true
-	}
-	if len(served) == 0 {
-		return 0, false
-	}
-	return served[0], true
-}
-
 // GetAllForChannel returns a channel's request types.
 func (h *RequestTypeHandler) GetAllForChannel(w http.ResponseWriter, r *http.Request) {
 	channelID, ok := requireIDParam(w, r, "channel_id")
@@ -221,22 +209,12 @@ func (h *RequestTypeHandler) channelServedWorkspaceIDs(ctx context.Context, chan
 	}
 }
 
-func (h *RequestTypeHandler) availableFieldsForRequestType(ctx context.Context, rt *models.RequestType) ([]AvailableField, error) {
-	workspaceID := rt.WorkspaceID
-	if workspaceID == nil {
-		served, err := h.channelServedWorkspaceIDs(ctx, rt.ChannelID)
-		if err != nil {
-			return nil, err
-		}
-		if effective, ok := effectiveRequestTypeWorkspace(served, nil); ok {
-			workspaceID = &effective
-		}
-	}
-	return availableCreateFields(h.screenRepo, workspaceID, rt.ItemTypeID)
+func (h *RequestTypeHandler) availableFieldsForRequestType(rt *models.RequestType) ([]AvailableField, error) {
+	return availableCreateFields(h.screenRepo, rt.WorkspaceID, rt.ItemTypeID)
 }
 
-// validateRequestTypeRouting requires an inbound portal/form channel, a served
-// workspace, and an item type allowed there; nil keeps the legacy fallback.
+// validateRequestTypeRouting requires an inbound portal/form channel, a pinned
+// workspace served by that channel, and an item type allowed there.
 func (h *RequestTypeHandler) validateRequestTypeRouting(w http.ResponseWriter, r *http.Request, channelID int, rt *models.RequestType) bool {
 	served, err := h.channelServedWorkspaceIDs(r.Context(), channelID)
 	if err != nil {
@@ -250,12 +228,12 @@ func (h *RequestTypeHandler) validateRequestTypeRouting(w http.ResponseWriter, r
 		}
 		return false
 	}
-	effectiveWorkspaceID, routable := effectiveRequestTypeWorkspace(served, rt.WorkspaceID)
-	if !routable {
-		respondValidationError(w, r, "Channel has no workspace for this request type")
+	if rt.WorkspaceID == nil {
+		respondValidationError(w, r, "Workspace is required for this request type")
 		return false
 	}
-	if !containsID(served, effectiveWorkspaceID) {
+	workspaceID := *rt.WorkspaceID
+	if !containsID(served, workspaceID) {
 		respondValidationError(w, r, "Workspace is not served by this channel")
 		return false
 	}
@@ -263,7 +241,7 @@ func (h *RequestTypeHandler) validateRequestTypeRouting(w http.ResponseWriter, r
 	if !ok {
 		return false
 	}
-	canConnect, err := h.channelService.UserCanConnectWorkspace(user.ID, effectiveWorkspaceID)
+	canConnect, err := h.channelService.UserCanConnectWorkspace(user.ID, workspaceID)
 	if err != nil {
 		respondInternalError(w, r, err)
 		return false
@@ -272,7 +250,7 @@ func (h *RequestTypeHandler) validateRequestTypeRouting(w http.ResponseWriter, r
 		respondForbidden(w, r)
 		return false
 	}
-	allowed, err := h.repo.ItemTypeAllowedInWorkspace(effectiveWorkspaceID, rt.ItemTypeID)
+	allowed, err := h.repo.ItemTypeAllowedInWorkspace(workspaceID, rt.ItemTypeID)
 	if err != nil {
 		respondInternalError(w, r, err)
 		return false
@@ -389,9 +367,10 @@ func (h *RequestTypeHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}{rt, warnings})
 }
 
-// Update changes a request type within its URL-scoped channel. Omitted
-// workspace_id preserves routing; a supplied workspace must be served and allow
-// the item type.
+// Update changes a request type within its URL-scoped channel. The workspace
+// and item type are fixed at creation; omitted values preserve the existing
+// binding and any change is rejected. System Email intake rows may still change
+// their item type.
 func (h *RequestTypeHandler) Update(w http.ResponseWriter, r *http.Request) {
 	channelID, ok := requireIDParam(w, r, "channel_id")
 	if !ok {
@@ -418,18 +397,30 @@ func (h *RequestTypeHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	warnings := sanitizeRequestType(&rt)
 
-	if !h.validateRequestTypeBasics(w, r, &rt) {
+	_, existingWorkspaceID, err := h.repo.GetItemTypeAndWorkspace(id)
+	if err != nil {
+		respondInternalError(w, r, err)
 		return
 	}
 
-	// Preserve routing when callers omit the mutable workspace_id.
+	// workspace_id and item_type_id are fixed at creation: changing either
+	// invalidates the fields configured against them. Omitted values preserve
+	// the existing binding.
 	if rt.WorkspaceID == nil {
-		_, existingWorkspaceID, err := h.repo.GetItemTypeAndWorkspace(id)
-		if err != nil && !errors.Is(err, repository.ErrNotFound) {
-			respondInternalError(w, r, err)
-			return
-		}
 		rt.WorkspaceID = existingWorkspaceID
+	} else if existingWorkspaceID == nil || *rt.WorkspaceID != *existingWorkspaceID {
+		respondValidationError(w, r, "Request type workspace cannot be changed after creation")
+		return
+	}
+	if rt.ItemTypeID == 0 {
+		rt.ItemTypeID = old.ItemTypeID
+	} else if rt.ItemTypeID != old.ItemTypeID && old.Kind != models.RequestTypeKindEmail {
+		respondValidationError(w, r, "Request type item type cannot be changed after creation")
+		return
+	}
+
+	if !h.validateRequestTypeBasics(w, r, &rt) {
+		return
 	}
 	if !h.validateRequestTypeRouting(w, r, channelID, &rt) {
 		return
@@ -608,7 +599,7 @@ func (h *RequestTypeHandler) UpdateFields(w http.ResponseWriter, r *http.Request
 	}
 	// The legacy GetFields response cannot surface sanitization warnings.
 	_ = sanitizeRequestTypeFields(fields)
-	available, err := h.availableFieldsForRequestType(r.Context(), rt)
+	available, err := h.availableFieldsForRequestType(rt)
 	if err != nil {
 		respondInternalError(w, r, err)
 		return
@@ -667,7 +658,7 @@ func (h *RequestTypeHandler) GetAvailableFields(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	fields, err := h.availableFieldsForRequestType(r.Context(), rt)
+	fields, err := h.availableFieldsForRequestType(rt)
 	if err != nil {
 		respondInternalError(w, r, err)
 		return

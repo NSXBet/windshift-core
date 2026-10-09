@@ -3,9 +3,12 @@ package database
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 )
 
@@ -2596,6 +2599,194 @@ var Catalog = []Migration{
 		SQLite:        `ALTER TABLE collections ADD COLUMN is_private BOOLEAN NOT NULL DEFAULT false`,
 		Postgres:      `ALTER TABLE collections ADD COLUMN IF NOT EXISTS is_private BOOLEAN NOT NULL DEFAULT false`,
 	},
+	{
+		Version: "20261022_request_types_workspace_pinned",
+		Name:    "Pin request-type workspaces and cascade them with the workspace (WI-1695)",
+		CheckSQLite: `SELECT COUNT(*) FROM pragma_table_info('request_types')
+			WHERE name='workspace_id' AND "notnull"=1`,
+		CheckPostgres: `SELECT COUNT(*) FROM information_schema.columns
+			WHERE table_schema=current_schema() AND table_name='request_types'
+				AND column_name='workspace_id' AND is_nullable='NO'`,
+		SQLite:        "applyRequestTypeWorkspacePinned:v1",
+		Postgres:      "applyRequestTypeWorkspacePinned:v1",
+		ApplySQLite:   applyRequestTypeWorkspacePinned,
+		ApplyPostgres: applyRequestTypeWorkspacePinned,
+	},
+}
+
+// applyRequestTypeWorkspacePinned removes the implicit "first served
+// workspace" fallback for request types. It backfills legacy NULL routes from
+// the channel's configured workspaces, makes workspace_id NOT NULL, and changes
+// the workspace FK from ON DELETE SET NULL to ON DELETE CASCADE so deleting a
+// workspace can never leave a route unpinned.
+func applyRequestTypeWorkspacePinned(db Database) error {
+	if err := backfillRequestTypeWorkspaces(db); err != nil {
+		return err
+	}
+	if db.GetDriverName() == driverPostgres {
+		var constraintName string
+		err := db.QueryRow(`SELECT conname FROM pg_constraint
+			WHERE conrelid = 'request_types'::regclass AND contype = 'f'
+				AND pg_get_constraintdef(oid) LIKE '%workspace_id%'`).Scan(&constraintName)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("find request_types workspace constraint: %w", err)
+		}
+		statements := []string{
+			`ALTER TABLE request_types ALTER COLUMN workspace_id SET NOT NULL`,
+		}
+		if constraintName != "" {
+			statements = append(statements, fmt.Sprintf("ALTER TABLE request_types DROP CONSTRAINT %q", constraintName))
+		}
+		statements = append(statements,
+			`ALTER TABLE request_types ADD CONSTRAINT request_types_workspace_id_fkey
+				FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE`,
+		)
+		for _, statement := range statements {
+			if _, err := db.Exec(statement); err != nil {
+				return fmt.Errorf("pin request_types.workspace_id: %w", err)
+			}
+		}
+		return nil
+	}
+	return rebuildRequestTypesWorkspacePinned(db)
+}
+
+// backfillRequestTypeWorkspaces assigns a concrete workspace to every legacy
+// NULL route. A single-workspace channel is unambiguous; a multi-workspace
+// channel keeps today's behavior by pinning the first configured workspace.
+// A route whose channel serves no workspace is unreachable and is removed.
+func backfillRequestTypeWorkspaces(db Database) error {
+	rows, err := db.Query(`
+		SELECT rt.id, c.type, COALESCE(c.config, '{}')
+		FROM request_types rt
+		JOIN channels c ON c.id = rt.channel_id
+		WHERE rt.workspace_id IS NULL
+	`)
+	if err != nil {
+		return fmt.Errorf("list unpinned request types: %w", err)
+	}
+	type unpinned struct {
+		id          int
+		channelType string
+		configJSON  string
+	}
+	var pending []unpinned
+	for rows.Next() {
+		var row unpinned
+		if err := rows.Scan(&row.id, &row.channelType, &row.configJSON); err != nil {
+			_ = rows.Close()
+			return fmt.Errorf("scan unpinned request type: %w", err)
+		}
+		pending = append(pending, row)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return fmt.Errorf("iterate unpinned request types: %w", err)
+	}
+	_ = rows.Close()
+
+	for _, row := range pending {
+		var cfg struct {
+			PortalWorkspaceIDs []int `json:"portal_workspace_ids"`
+			FormWorkspaceIDs   []int `json:"form_workspace_ids"`
+		}
+		if err := json.Unmarshal([]byte(row.configJSON), &cfg); err != nil {
+			return fmt.Errorf("parse channel config for request type %d: %w", row.id, err)
+		}
+		served := cfg.PortalWorkspaceIDs
+		if row.channelType == "form" {
+			served = cfg.FormWorkspaceIDs
+		}
+		if len(served) == 0 {
+			slog.Warn("removing request type whose channel serves no workspace",
+				"component", "migrations", "request_type_id", row.id)
+			if _, err := db.ExecWrite(`DELETE FROM request_types WHERE id = ?`, row.id); err != nil {
+				return fmt.Errorf("delete unpinnable request type %d: %w", row.id, err)
+			}
+			continue
+		}
+		if _, err := db.ExecWrite(`UPDATE request_types SET workspace_id = ? WHERE id = ?`, served[0], row.id); err != nil {
+			return fmt.Errorf("pin request type %d: %w", row.id, err)
+		}
+	}
+	return nil
+}
+
+// rebuildRequestTypesWorkspacePinned rebuilds request_types for SQLite, which
+// cannot alter a column's nullability or foreign-key action in place.
+func rebuildRequestTypesWorkspacePinned(db Database) (retErr error) {
+	sqliteDB, ok := db.(*SQLiteDB)
+	if !ok {
+		return fmt.Errorf("expected SQLite database, got %T", db)
+	}
+
+	ctx := context.Background()
+	conn, err := sqliteDB.writeConn.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("acquire SQLite write connection: %w", err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	var foreignKeysEnabled bool
+	if err := conn.QueryRowContext(ctx, "PRAGMA foreign_keys").Scan(&foreignKeysEnabled); err != nil {
+		return fmt.Errorf("read foreign_keys pragma: %w", err)
+	}
+	if foreignKeysEnabled {
+		if _, err := conn.ExecContext(ctx, "PRAGMA foreign_keys=OFF"); err != nil {
+			return fmt.Errorf("disable foreign keys: %w", err)
+		}
+		defer func() {
+			if _, err := conn.ExecContext(ctx, "PRAGMA foreign_keys=ON"); retErr == nil && err != nil {
+				retErr = fmt.Errorf("restore foreign keys: %w", err)
+			}
+		}()
+	}
+
+	tx, err := conn.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin request_types rebuild: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	statements := []string{
+		`CREATE TABLE request_types_migration (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			channel_id INTEGER NOT NULL,
+			name TEXT NOT NULL,
+			description TEXT DEFAULT '',
+			item_type_id INTEGER NOT NULL,
+			icon TEXT DEFAULT 'FileText',
+			color TEXT DEFAULT '#6b7280',
+			display_order INTEGER DEFAULT 0,
+			is_active BOOLEAN DEFAULT TRUE,
+			config TEXT DEFAULT NULL,
+			visibility_group_ids TEXT DEFAULT NULL,
+			visibility_org_ids TEXT DEFAULT NULL,
+			workspace_id INTEGER NOT NULL,
+			title_template TEXT NOT NULL DEFAULT '',
+			kind TEXT NOT NULL DEFAULT '',
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE CASCADE,
+			FOREIGN KEY (item_type_id) REFERENCES item_types(id) ON DELETE RESTRICT,
+			FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
+		)`,
+		`INSERT INTO request_types_migration (id, channel_id, name, description, item_type_id, icon, color, display_order, is_active, config, visibility_group_ids, visibility_org_ids, workspace_id, title_template, kind, created_at, updated_at)
+			SELECT id, channel_id, name, description, item_type_id, icon, color, display_order, is_active, config, visibility_group_ids, visibility_org_ids, workspace_id, title_template, kind, created_at, updated_at FROM request_types`,
+		`DROP TABLE request_types`,
+		`ALTER TABLE request_types_migration RENAME TO request_types`,
+		`CREATE INDEX IF NOT EXISTS idx_request_types_name ON request_types(name)`,
+		`CREATE INDEX IF NOT EXISTS idx_request_types_display_order ON request_types(display_order)`,
+	}
+	for _, statement := range statements {
+		if _, err := tx.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("rebuild request_types: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit request_types rebuild: %w", err)
+	}
+	return nil
 }
 
 // checkEmailTrackingCompletedBackfill reports whether the completed_at backfill

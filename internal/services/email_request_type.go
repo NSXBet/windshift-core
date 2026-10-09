@@ -25,7 +25,7 @@ const (
 // fields, so required form fields can never block an email. Its item type stays
 // editable by admins. The workspace is pinned to a workspace the portal serves:
 // preferredWorkspaceID (0 for none) when it is served, otherwise the portal's
-// first served workspace. preferredItemTypeID seeds the item type when it is
+// only served workspace. preferredItemTypeID seeds the item type when it is
 // allowed in that workspace, otherwise the workspace default is used.
 func EnsureEmailRequestType(db database.Database, portalChannelID, preferredWorkspaceID int, preferredItemTypeID *int) (int, error) {
 	repo := repository.NewRequestTypeRepository(db)
@@ -73,7 +73,9 @@ func EnsureEmailRequestType(db database.Database, portalChannelID, preferredWork
 }
 
 // resolveEmailIntakeWorkspace picks the workspace the Email request type pins.
-// A preferred workspace is honored only when the portal actually serves it.
+// A preferred workspace is honored only when the portal actually serves it; a
+// portal with several workspaces and no usable preference is ambiguous and
+// rejected rather than resolved by configuration order.
 func resolveEmailIntakeWorkspace(db database.Database, portalChannelID, preferred int) (int, error) {
 	var configJSON string
 	if err := db.QueryRow(
@@ -89,10 +91,14 @@ func resolveEmailIntakeWorkspace(db database.Database, portalChannelID, preferre
 	if preferred > 0 && containsInt(cfg.PortalWorkspaceIDs, preferred) {
 		return preferred, nil
 	}
-	if len(cfg.PortalWorkspaceIDs) == 0 {
+	switch len(cfg.PortalWorkspaceIDs) {
+	case 0:
 		return 0, fmt.Errorf("portal %d serves no workspaces", portalChannelID)
+	case 1:
+		return cfg.PortalWorkspaceIDs[0], nil
+	default:
+		return 0, fmt.Errorf("portal %d serves multiple workspaces; an email intake workspace must be specified", portalChannelID)
 	}
-	return cfg.PortalWorkspaceIDs[0], nil
 }
 
 // allowedEmailIntakeItemType returns preferred when it is an allowed item type

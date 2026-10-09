@@ -330,6 +330,7 @@ export default {
     portalTitle: 'Titre du portail',
     selectWorkspace: 'Sélectionner un espace de travail',
     workspaceFieldResolution: 'Résolution des champs de l’espace de travail',
+    bindingLocked: 'Fixe après la création. Supprimez et recréez le type de demande pour le modifier.',
 
     // Magic link authentication
     signInTitle: 'Connectez-vous à votre compte',

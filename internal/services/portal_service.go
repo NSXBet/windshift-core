@@ -933,15 +933,12 @@ func (s *PortalService) collectVisibleChannelCustomFieldIDs(ctx context.Context,
 			if !isAdmin && !portalRowVisible(groups, orgs, userGroupIDs, customerOrgID) {
 				continue
 			}
-			resolvedWorkspaceID := 0
-			if workspaceID != nil {
-				resolvedWorkspaceID = *workspaceID
-			} else if len(servedWorkspaceIDs) > 0 {
-				resolvedWorkspaceID = servedWorkspaceIDs[0]
+			// Request types pin their workspace at creation; an unpinned row is
+			// not routable and contributes no fields.
+			if workspaceID == nil || !containsInt(servedWorkspaceIDs, *workspaceID) {
+				continue
 			}
-			if resolvedWorkspaceID > 0 && containsInt(servedWorkspaceIDs, resolvedWorkspaceID) {
-				visibleRTRoutes = append(visibleRTRoutes, visibleRoute{id: id, itemTypeID: itemTypeID, workspaceID: resolvedWorkspaceID})
-			}
+			visibleRTRoutes = append(visibleRTRoutes, visibleRoute{id: id, itemTypeID: itemTypeID, workspaceID: *workspaceID})
 		}
 	}()
 	if err := rtRows.Err(); err != nil {

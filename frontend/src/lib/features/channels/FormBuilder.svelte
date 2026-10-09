@@ -498,6 +498,7 @@
                 getValue={(item) => item.id}
                 getLabel={(item) => item.name}
                 optionTestid={(opt) => `form-routing-ws-${opt.value}`}
+                disabled
               />
             </div>
 
@@ -510,12 +511,10 @@
                 placeholder={t('forms.selectItemType')}
                 getValue={(item) => item.id}
                 getLabel={(item) => item.name}
-                disabled={!formBuilderStore.routingMeta.workspace_id}
+                disabled
                 optionTestid={(opt) => `form-routing-it-${opt.value}`}
               />
-              {#if !formBuilderStore.routingMeta.workspace_id}
-                <DescriptionText>{t('channel.selectWorkspaceFirst')}</DescriptionText>
-              {/if}
+              <DescriptionText>{t('portal.bindingLocked', 'Fixed after creation. Delete and recreate the request type to change it.')}</DescriptionText>
             </div>
 
             <Button
