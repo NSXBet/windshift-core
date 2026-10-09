@@ -336,6 +336,7 @@ func (r *AssetRepository) ListSetsForUser(userID int, isAdmin bool) ([]models.As
 			EXISTS (SELECT 1 FROM user_asset_set_roles WHERE set_id = ams.id AND user_id = ?)
 			OR EXISTS (
 				SELECT 1 FROM group_asset_set_roles gasr
+				JOIN groups g ON g.id = gasr.group_id AND g.is_active = TRUE
 				JOIN group_members gm ON gasr.group_id = gm.group_id
 				WHERE gasr.set_id = ams.id AND gm.user_id = ?
 			)
@@ -728,6 +729,7 @@ func (r *AssetRepository) GetUserSetRole(userID, setID int) (*models.AssetRole, 
 	err = r.db.QueryRow(`
 		SELECT ar.id, ar.name, ar.description, ar.is_system, ar.display_order
 		FROM group_asset_set_roles gasr
+		JOIN groups g ON g.id = gasr.group_id AND g.is_active = TRUE
 		JOIN group_members gm ON gasr.group_id = gm.group_id
 		JOIN asset_roles ar ON gasr.role_id = ar.id
 		WHERE gasr.set_id = ? AND gm.user_id = ?
