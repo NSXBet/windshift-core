@@ -367,10 +367,26 @@ func (h *RequestTypeHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}{rt, warnings})
 }
 
-// Update changes a request type within its URL-scoped channel. The workspace
-// and item type are fixed at creation; omitted values preserve the existing
-// binding and any change is rejected. System Email intake rows may still change
-// their item type.
+// requestTypeUpdateRequest is the partial body accepted by Update. Pointer
+// fields distinguish "omitted" from "set to zero", so a rename from the form
+// builder cannot clear the title template, reset display_order, or deactivate
+// the form.
+type requestTypeUpdateRequest struct {
+	Name          *string `json:"name"`
+	Description   *string `json:"description"`
+	ItemTypeID    *int    `json:"item_type_id"`
+	Icon          *string `json:"icon"`
+	Color         *string `json:"color"`
+	DisplayOrder  *int    `json:"display_order"`
+	IsActive      *bool   `json:"is_active"`
+	TitleTemplate *string `json:"title_template"`
+	WorkspaceID   *int    `json:"workspace_id"`
+}
+
+// Update changes a request type within its URL-scoped channel. Omitted fields
+// keep their stored values. The workspace and item type are fixed at creation;
+// any change is rejected. System Email intake rows may still change their item
+// type.
 func (h *RequestTypeHandler) Update(w http.ResponseWriter, r *http.Request) {
 	channelID, ok := requireIDParam(w, r, "channel_id")
 	if !ok {
@@ -381,7 +397,7 @@ func (h *RequestTypeHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	old, err := h.repo.GetBasicForChannel(id, channelID)
+	existing, err := h.repo.GetByID(id)
 	if errors.Is(err, repository.ErrNotFound) {
 		respondNotFound(w, r, "request_type")
 		return
@@ -390,34 +406,57 @@ func (h *RequestTypeHandler) Update(w http.ResponseWriter, r *http.Request) {
 		respondInternalError(w, r, err)
 		return
 	}
+	if existing.ChannelID != channelID {
+		respondNotFound(w, r, "request_type")
+		return
+	}
 
-	rt, ok := decodeChannelJSON[models.RequestType](w, r)
+	payload, ok := decodeChannelJSON[requestTypeUpdateRequest](w, r)
 	if !ok {
 		return
 	}
-	warnings := sanitizeRequestType(&rt)
 
-	_, existingWorkspaceID, err := h.repo.GetItemTypeAndWorkspace(id)
-	if err != nil {
-		respondInternalError(w, r, err)
-		return
+	// Overlay only the supplied fields onto the stored row. This is what keeps a
+	// routine metadata edit from silently clearing unrelated persisted values.
+	rt := *existing
+	if payload.Name != nil {
+		rt.Name = *payload.Name
+	}
+	if payload.Description != nil {
+		rt.Description = *payload.Description
+	}
+	if payload.Icon != nil {
+		rt.Icon = *payload.Icon
+	}
+	if payload.Color != nil {
+		rt.Color = *payload.Color
+	}
+	if payload.DisplayOrder != nil {
+		rt.DisplayOrder = *payload.DisplayOrder
+	}
+	if payload.IsActive != nil {
+		rt.IsActive = *payload.IsActive
+	}
+	if payload.TitleTemplate != nil {
+		rt.TitleTemplate = *payload.TitleTemplate
 	}
 
 	// workspace_id and item_type_id are fixed at creation: changing either
-	// invalidates the fields configured against them. Omitted values preserve
-	// the existing binding.
-	if rt.WorkspaceID == nil {
-		rt.WorkspaceID = existingWorkspaceID
-	} else if existingWorkspaceID == nil || *rt.WorkspaceID != *existingWorkspaceID {
-		respondValidationError(w, r, "Request type workspace cannot be changed after creation")
-		return
+	// invalidates the fields configured against them.
+	if payload.WorkspaceID != nil {
+		if existing.WorkspaceID == nil || *payload.WorkspaceID != *existing.WorkspaceID {
+			respondValidationError(w, r, "Request type workspace cannot be changed after creation")
+			return
+		}
 	}
-	if rt.ItemTypeID == 0 {
-		rt.ItemTypeID = old.ItemTypeID
-	} else if rt.ItemTypeID != old.ItemTypeID && old.Kind != models.RequestTypeKindEmail {
-		respondValidationError(w, r, "Request type item type cannot be changed after creation")
-		return
+	if payload.ItemTypeID != nil {
+		if *payload.ItemTypeID != existing.ItemTypeID && existing.Kind != models.RequestTypeKindEmail {
+			respondValidationError(w, r, "Request type item type cannot be changed after creation")
+			return
+		}
 	}
+
+	warnings := sanitizeRequestType(&rt)
 
 	if !h.validateRequestTypeBasics(w, r, &rt) {
 		return
@@ -460,20 +499,20 @@ func (h *RequestTypeHandler) Update(w http.ResponseWriter, r *http.Request) {
 	currentUser := utils.GetCurrentUser(r)
 	if currentUser != nil {
 		details := make(map[string]any)
-		if old.Name != rt.Name {
-			details["name_changed"] = map[string]any{"old": old.Name, "new": rt.Name}
+		if existing.Name != rt.Name {
+			details["name_changed"] = map[string]any{"old": existing.Name, "new": rt.Name}
 		}
-		if old.ItemTypeID != rt.ItemTypeID {
-			details["item_type_changed"] = map[string]any{"old": old.ItemTypeID, "new": rt.ItemTypeID}
+		if existing.ItemTypeID != rt.ItemTypeID {
+			details["item_type_changed"] = map[string]any{"old": existing.ItemTypeID, "new": rt.ItemTypeID}
 		}
-		if old.Icon != rt.Icon {
-			details["icon_changed"] = map[string]any{"old": old.Icon, "new": rt.Icon}
+		if existing.Icon != rt.Icon {
+			details["icon_changed"] = map[string]any{"old": existing.Icon, "new": rt.Icon}
 		}
-		if old.Color != rt.Color {
-			details["color_changed"] = map[string]any{"old": old.Color, "new": rt.Color}
+		if existing.Color != rt.Color {
+			details["color_changed"] = map[string]any{"old": existing.Color, "new": rt.Color}
 		}
-		if old.TitleTemplate != rt.TitleTemplate {
-			details["title_template_changed"] = map[string]any{"old": old.TitleTemplate, "new": rt.TitleTemplate}
+		if existing.TitleTemplate != rt.TitleTemplate {
+			details["title_template_changed"] = map[string]any{"old": existing.TitleTemplate, "new": rt.TitleTemplate}
 		}
 
 		h.auditor.LogWithDetails(r, currentUser,

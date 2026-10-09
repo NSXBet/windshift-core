@@ -186,6 +186,8 @@
           is_active: true
         });
       } else {
+        // is_active is omitted on edit so saving the form does not reactivate
+        // a request type that was deliberately disabled.
         await api.requestTypes.update(channelId, requestType.id, {
           name: formData.name.trim(),
           description: formData.description.trim(),
@@ -193,8 +195,7 @@
           color: formData.color,
           item_type_id: formData.item_type_id,
           workspace_id: formData.workspace_id || null,
-          title_template: formData.title_template.trim(),
-          is_active: true
+          title_template: formData.title_template.trim()
         });
       }
 

@@ -211,7 +211,8 @@
     try {
       titleTemplateSaving = true;
       titleTemplateError = null;
-      // PUT /channels/.../request-types/:id requires the full editable body.
+      // Omitted fields keep their stored values; only the title template
+      // changes here.
       await api.requestTypes.update(channelId, requestTypeId, {
         name: requestTypeRow.name,
         description: requestTypeRow.description || '',

@@ -213,8 +213,8 @@ class FormBuilderStore extends DragStateStore {
 
   async saveRoutingMetadata() {
     try {
-      // is_active must be sent: the Update handler decodes the whole request
-      // type, so omitting it would reset the form to inactive.
+      // The Update endpoint preserves omitted fields; send the editable
+      // identity and routing fields the builder exposes.
       const updated = await api.requestTypes.update(this.channelId, this.editingForm.id, {
         name: this.routingMeta.name.trim(),
         description: (this.routingMeta.description || '').trim(),
