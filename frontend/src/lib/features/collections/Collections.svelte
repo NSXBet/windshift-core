@@ -403,16 +403,18 @@
 
   let trimmedCollectionName = $derived((currentCollection?.name || '').trim());
   let trimmedQlQuery = $derived(qlQuery.trim());
-  let canSubmitCollection = $derived(Boolean(currentCollection && trimmedCollectionName && trimmedQlQuery));
-  // Public-board sharing is gated on the global public_board.manage permission
-  // AND ownership of this collection (system admins may manage any). Mirrors the
-  // backend: publishing requires the permission, and editing a collection's
-  // public state requires being its creator (requireCollectionOwner).
+  let canSubmitCollection = $derived(
+    Boolean(currentCollection && canManageCollection && trimmedCollectionName && trimmedQlQuery)
+  );
+  // Public-board sharing requires owning the collection (the backend enforces
+  // requireOwner without a system-admin exception) plus the global
+  // public_board.manage permission or system administration.
   let canManagePublicBoard = $derived(
-    Boolean(currentCollection) &&
-      ($isSystemAdmin ||
-        (($permissionStore.userPermissionKeys?.has('public_board.manage') ?? false) &&
-          currentCollection.created_by === authStore.currentUser?.id))
+    Boolean(
+      canManageCollection &&
+        ($isSystemAdmin ||
+          ($permissionStore.userPermissionKeys?.has('public_board.manage') ?? false)),
+    )
   );
   let associatedWorkspace = $derived(
     currentCollection?.workspace_id ? workspaces.find((w) => w.id === currentCollection.workspace_id) : null
@@ -453,6 +455,7 @@
       collection={currentCollection}
       workspace={associatedWorkspace}
       isEditing={!!currentCollection}
+      canEdit={canManageCollection}
       canSave={canSubmitCollection}
       categories={$collectionCategoriesStore}
       {returnPath}

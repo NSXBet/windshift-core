@@ -12,6 +12,7 @@
     collection = null,
     workspace = null,
     isEditing = false,
+    canEdit = true,
     canSave = false,
     categories = [],
     returnPath = null,
@@ -115,7 +116,7 @@
         <span>/</span>
       {/if}
 
-      {#if isEditing && collection}
+      {#if isEditing && collection && canEdit}
         <!-- Editable collection name -->
         <Input
           dataTestid="collection-name"
@@ -135,7 +136,7 @@
 
     <!-- Action buttons -->
     <div class="flex items-center gap-2">
-      {#if isEditing && collection}
+      {#if isEditing && collection && canEdit}
         {#if showPrivacyToggle}
           <Button
             dataTestid="collection-privacy-toggle"
@@ -180,25 +181,27 @@
           {t('common.cancel')}
         </Button>
       {/if}
-      <Button
-        dataTestid="collection-save"
-        onclick={handleSave}
-        variant="primary"
-        size="sm"
-        disabled={!canSave}
-      >
-        <Save class="w-4 h-4 mr-2" />
-        {#if isEditing && collection}
-          {t('collections.updateCollection')}
-        {:else}
-          {t('collections.saveCollection')}
-        {/if}
-      </Button>
+      {#if !collection || canEdit}
+        <Button
+          dataTestid="collection-save"
+          onclick={handleSave}
+          variant="primary"
+          size="sm"
+          disabled={!canSave}
+        >
+          <Save class="w-4 h-4 mr-2" />
+          {#if isEditing && collection}
+            {t('collections.updateCollection')}
+          {:else}
+            {t('collections.saveCollection')}
+          {/if}
+        </Button>
+      {/if}
     </div>
   </div>
 
   <!-- Editable description (only when editing) -->
-  {#if isEditing && collection}
+  {#if isEditing && collection && canEdit}
     <div class="mt-2 flex items-center gap-4">
       <Input
         type="text"
