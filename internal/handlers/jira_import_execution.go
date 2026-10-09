@@ -235,7 +235,8 @@ func recordJiraBulkFetchFailure(projectKey, key string, xrayPlan *xrayImportPlan
 }
 
 func jiraImportTerminalOutcome(progress *ImportProgress) (status, phase, errorMessage string) {
-	failures := progress.FailedProjects + progress.FailedIssues + progress.FailedTests + progress.FailedLinks
+	failures := progress.FailedProjects + progress.FailedIssues + progress.FailedTests +
+		progress.FailedLinks + progress.FailedComments + progress.FailedWorklogs
 	if failures == 0 {
 		return "completed", "completed", ""
 	}
@@ -243,11 +244,13 @@ func jiraImportTerminalOutcome(progress *ImportProgress) (status, phase, errorMe
 		return "completed_with_errors", "completed_with_errors", ""
 	}
 	return "failed", "failed", fmt.Sprintf(
-		"No Jira issues or Xray tests were imported (%d project, %d issue, %d test, and %d issue-link failures).",
+		"No Jira issues or Xray tests were imported (%d project, %d issue, %d test, %d issue-link, %d comment, and %d worklog failures).",
 		progress.FailedProjects,
 		progress.FailedIssues,
 		progress.FailedTests,
 		progress.FailedLinks,
+		progress.FailedComments,
+		progress.FailedWorklogs,
 	)
 }
 
@@ -653,7 +656,7 @@ func (h *JiraImportHandler) completeJiraBatchSubresources(ctx context.Context, i
 		if xrayPlan.isTest(projectKey, issues[idx].Key) {
 			continue
 		}
-		if err := h.completePagedIssueContainers(ctx, &issues[idx], im.client); err != nil {
+		if err := h.completePagedIssueContainers(ctx, &issues[idx], im.client, im.progress); err != nil {
 			slog.Warn("Failed to complete paged Jira issue containers",
 				slog.String("component", "jira"),
 				slog.String("issue", issues[idx].Key),
@@ -1375,15 +1378,21 @@ func (h *JiraImportHandler) bindJiraImportFieldsToWorkspace(
 	return h.imports.BindFieldsToWorkspace(workspaceID, projectKey, fieldIDs)
 }
 
-func (h *JiraImportHandler) completePagedIssueContainers(ctx context.Context, issue *jira.JiraIssue, client jira.Client) error {
+func (h *JiraImportHandler) completePagedIssueContainers(ctx context.Context, issue *jira.JiraIssue, client jira.Client, progress *ImportProgress) error {
 	if issue == nil || issue.Key == "" {
 		return nil
 	}
 	var errs []error
 	if err := h.completeIssueComments(ctx, issue, client); err != nil {
+		if progress != nil {
+			progress.FailedComments++
+		}
 		errs = append(errs, err)
 	}
 	if err := h.completeIssueWorklogs(ctx, issue, client); err != nil {
+		if progress != nil {
+			progress.FailedWorklogs++
+		}
 		errs = append(errs, err)
 	}
 	return errors.Join(errs...)
@@ -1442,10 +1451,13 @@ func (h *JiraImportHandler) completeIssueComments(ctx context.Context, issue *ji
 	for startAt := len(comments); startAt < container.Total; startAt = len(comments) {
 		page, err := client.GetIssueComments(ctx, issue.Key, startAt, maxResults)
 		if err != nil {
+			// Keep the pages already fetched and report the incomplete fetch.
+			container.Comments = comments
 			return fmt.Errorf("fetch comments page startAt=%d: %w", startAt, err)
 		}
 		if page == nil || len(page.Comments) == 0 {
-			break
+			container.Comments = comments
+			return fmt.Errorf("comments page startAt=%d returned no rows before total %d", startAt, container.Total)
 		}
 		comments = append(comments, page.Comments...)
 		if page.Total > 0 {
@@ -1496,10 +1508,13 @@ func (h *JiraImportHandler) completeIssueWorklogs(ctx context.Context, issue *ji
 	for startAt := len(worklogs); startAt < container.Total; startAt = len(worklogs) {
 		page, err := client.GetIssueWorklogs(ctx, issue.Key, startAt, maxResults)
 		if err != nil {
+			// Keep the pages already fetched and report the incomplete fetch.
+			container.Worklogs = worklogs
 			return fmt.Errorf("fetch worklogs page startAt=%d: %w", startAt, err)
 		}
 		if page == nil || len(page.Worklogs) == 0 {
-			break
+			container.Worklogs = worklogs
+			return fmt.Errorf("worklogs page startAt=%d returned no rows before total %d", startAt, container.Total)
 		}
 		worklogs = append(worklogs, page.Worklogs...)
 		if page.Total > 0 {

@@ -1697,6 +1697,9 @@ func (h *JiraImportHandler) importComments(jobID string, itemID int, issue *jira
 				slog.String("issue", issue.Key),
 				slog.String("commentID", comment.ID),
 				slog.Any("error", importErr))
+			if progress != nil {
+				progress.FailedComments++
+			}
 			continue
 		}
 
@@ -2005,6 +2008,9 @@ func (h *JiraImportHandler) importWorklogs(jobID string, itemID int, issue *jira
 				slog.String("issue", issue.Key),
 				slog.String("worklogID", worklog.ID),
 				slog.Any("error", err))
+			if progress != nil {
+				progress.FailedWorklogs++
+			}
 			continue
 		}
 
