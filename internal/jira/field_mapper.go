@@ -711,6 +711,17 @@ func convertADFMedia(nodeMap map[string]any, mediaResolver MediaResolver) string
 	return "[media: " + alt + "]"
 }
 
+// IsADFDocument reports whether a decoded Jira field value is an Atlassian
+// Document Format document rather than a plain string or option object.
+func IsADFDocument(value any) bool {
+	doc, ok := value.(map[string]any)
+	if !ok {
+		return false
+	}
+	nodeType, _ := doc["type"].(string)
+	return nodeType == "doc"
+}
+
 // CollectADFMediaIDs returns every Jira attachment id referenced by `media`
 // nodes in an ADF document. Callers use it to decide which imported
 // attachments are linked from a body a portal customer can see.

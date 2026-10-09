@@ -566,6 +566,15 @@ func extractCustomFieldValueWithOptions(
 			return strings.Join(values, "\n"), true
 		}
 	case "text", "textarea":
+		// Rich-text custom fields carry ADF documents. Render them as Markdown
+		// instead of JSON-marshaling the document so the field reads naturally;
+		// an explicit PreserveRaw mapping keeps the JSON above.
+		if jira.IsADFDocument(value) {
+			if s := strings.TrimSpace(jira.ConvertADFToMarkdown(value, nil, nil)); s != "" {
+				return s, true
+			}
+			return nil, false
+		}
 		if s := customFieldDisplayValue(value); s != "" {
 			return s, true
 		}
