@@ -14,7 +14,7 @@
     IconSparkles as Sparkles,
     IconPencil as Pencil,
   } from '@tabler/icons-svelte-runes';
-  import { workspaceViewItems, workspaceOnlyViews, testNavigationItems, visibleWorkspaceSettingsItems, workspaceSettingsViews, workspaceSettingsRoute } from '../navigation/workspaceNavigation.js';
+  import { workspaceViewItems, workspaceOnlyViews, testNavigationItems, visibleWorkspaceSettingsItems, workspaceSettingsViews, workspaceSettingsRoute, collectionSwitchUrl } from '../navigation/workspaceNavigation.js';
   import { viewSettingsStore } from '../stores/viewSettings.svelte.js';
   import { navigate, currentRoute } from '../router.js';
   import { authStore, currentWorkspace, workspacePermissions } from '../stores';
@@ -69,19 +69,6 @@
   const workspaceOnlyViewIds = new Set(
     workspaceOnlyViews.map(view => view.id)
   );
-  const workspaceTestViewIds = new Set([
-    'test-cases',
-    'test-case-detail',
-    'test-steps',
-    'test-sets',
-    'test-set-detail',
-    'test-templates',
-    'test-template-detail',
-    'test-runs',
-    'test-run-detail',
-    'test-execution',
-    'test-reports'
-  ]);
   const activeTestNavId = $derived.by(() => getActiveTestNavId($currentRoute));
   const isSettingsView = $derived(SETTINGS_VIEWS.includes($currentRoute.view));
   // Collection-scoped views filtered by the scope's enabled-views setting.
@@ -327,43 +314,11 @@
     }
     buildCollectionDropdownItems();
 
-    // Navigate to the new URL with the selected collection
-    // Determine current view from the route
-    let currentView = $currentRoute.view;
-    if (currentView === 'workspace-detail') {
-      // If on overview, navigate to overview with/without collection
-      const url = currentCollectionId
-        ? `/workspaces/${workspaceId}/collections/${currentCollectionId}`
-        : `/workspaces/${workspaceId}`;
-      navigate(url);
-    } else if (currentView && currentView.startsWith('workspace-')) {
-      // For other workspace views (board, list, etc.), extract the view name
-      let viewName = currentView.replace('workspace-', '');
-
-      // Workspace-only views cannot be scoped by collection, fallback to default collection view
-      if (currentCollectionId !== null && workspaceOnlyViewIds.has(viewName)) {
-        viewName = defaultCollectionView;
-      }
-
-      const url = getNavigationUrl(viewName);
-      navigate(url);
-    } else if (currentView === 'item-detail') {
-      const currentItemId = $currentRoute.params.itemId;
-      if (currentItemId) {
-        const url = currentCollectionId
-          ? `/workspaces/${workspaceId}/collections/${currentCollectionId}/items/${currentItemId}`
-          : `/workspaces/${workspaceId}/items/${currentItemId}`;
-        navigate(url);
-      }
-    } else if (currentView && workspaceTestViewIds.has(currentView)) {
-      // Test views are not collection-sensitive, redirect to default collection view
-      if (currentCollectionId !== null) {
-        navigate(getNavigationUrl(defaultCollectionView));
-      } else {
-        const url = getTestNavigationUrl(getTestNavIdFromView(currentView));
-        navigate(url);
-      }
-    }
+    // Re-scope the current view from the route path so compound paths
+    // (board/configure, settings/general, …) and detail params survive the
+    // switch. Views without a collection-scoped route fall back to the
+    // collection's default view; "All items" drops the collection segment.
+    navigate(collectionSwitchUrl($currentRoute, workspaceId, currentCollectionId, defaultCollectionView));
   }
 
   function getNavigationUrl(view) {
@@ -388,15 +343,6 @@
       default:
         return `/workspaces/${workspaceId}/tests`;
     }
-  }
-
-  function getTestNavIdFromView(view) {
-    if (view === 'test-case-detail' || view === 'test-steps') return 'test-cases';
-    if (view === 'test-set-detail') return 'test-sets';
-    if (view === 'test-template-detail') return 'test-templates';
-    if (view === 'test-run-detail' || view === 'test-execution') return 'test-runs';
-    if (view === 'test-reports') return 'test-reports';
-    return 'test-cases';
   }
 
   function getActiveTestNavId(route) {

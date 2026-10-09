@@ -299,3 +299,55 @@ export function visibleWorkspaceSettingsItems(workspaceId, hasPermission) {
 export function workspaceSettingsRoute(workspaceId, id) {
   return `/workspaces/${workspaceId}/settings/${id}`;
 }
+
+/**
+ * View names that have a collection-scoped route. Any other `workspace-*`
+ * view (settings, agents, pages, calendar, reviews, …) is workspace-only, so
+ * switching to a collection falls back to that collection's default view
+ * instead of inventing a collection URL that would 404.
+ * @type {Set<string>}
+ */
+export const COLLECTION_SCOPED_VIEWS = new Set([
+  'workspace-overview',
+  'workspace-detail',
+  'workspace-queue',
+  'workspace-board',
+  'workspace-backlog',
+  'workspace-list',
+  'workspace-tree',
+  'workspace-map',
+  'workspace-roadmap',
+  'workspace-board-config',
+  'workspace-nav-config',
+  'item-detail',
+]);
+
+/**
+ * Builds the URL for re-scoping the current view to another collection (or to
+ * "All items" when collectionId is null). It works from the current route path
+ * rather than the view name so compound paths such as `board/configure`,
+ * `settings/general`, and detail params survive the switch. Views without a
+ * collection-scoped route fall back to the collection's default view.
+ *
+ * @param {{path?: string, view?: string|null}} route
+ * @param {number|string} workspaceId
+ * @param {number|string|null} collectionId
+ * @param {string} defaultView
+ * @returns {string}
+ */
+export function collectionSwitchUrl(route, workspaceId, collectionId, defaultView = 'backlog') {
+  const workspaceBase = `/workspaces/${workspaceId}`;
+  const routePath = route?.path || workspaceBase;
+  // Strip an existing collection segment so the same view path can be rebuilt.
+  const withoutCollection = routePath.replace(
+    new RegExp(`^/workspaces/${workspaceId}/collections/[^/]+`),
+    workspaceBase
+  );
+  if (collectionId === null || collectionId === undefined) {
+    return withoutCollection;
+  }
+  if (COLLECTION_SCOPED_VIEWS.has(route?.view)) {
+    return `${workspaceBase}/collections/${collectionId}${withoutCollection.slice(workspaceBase.length)}`;
+  }
+  return `${workspaceBase}/collections/${collectionId}/${defaultView}`;
+}
