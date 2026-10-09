@@ -7,6 +7,19 @@ import { t } from './i18n.svelte.js';
 import { warningToast } from './toasts.svelte.js';
 import { workspacesStore } from './workspaces.svelte.js';
 
+// A dynamic filter carries a condition when it has a field plus a value, an
+// IN list, or a value-free null predicate. Null predicates are meaningful even
+// though their value and values are empty.
+function isMeaningfulDynamicFilter(filter) {
+  return Boolean(
+    filter?.field &&
+      (filter.operator === 'IS NULL' ||
+        filter.operator === 'IS NOT NULL' ||
+        filter.value !== '' ||
+        (filter.values && filter.values.length > 0))
+  );
+}
+
 /**
  * Factory that creates a fresh work-item search/filter store.
  *
@@ -78,9 +91,7 @@ export function createWorkItemSearchStore({ allowEmptyQuery = false } = {}) {
     ],
     ([$ws, $st, $pr, $q, $df, $raw, $rawQl]) => {
       if ($raw) return $rawQl.trim().length > 0;
-      const hasDyn = $df.some(
-        (f) => f.field && (f.value !== '' || (f.values && f.values.length > 0))
-      );
+      const hasDyn = $df.some(isMeaningfulDynamicFilter);
       return $ws.length > 0 || $st.length > 0 || $pr.length > 0 || $q.trim().length > 0 || hasDyn;
     }
   );
@@ -328,9 +339,7 @@ export function createWorkItemSearchStore({ allowEmptyQuery = false } = {}) {
       if (sp.length > 0) url.searchParams.set('priorities', sp.join(','));
       if (sq.trim()) url.searchParams.set('search', sq);
 
-      const dfSerializable = df.filter(
-        (f) => f.field && (f.value !== '' || (f.values && f.values.length > 0))
-      );
+      const dfSerializable = df.filter(isMeaningfulDynamicFilter);
       if (dfSerializable.length > 0) {
         url.searchParams.set('dynamicFilters', JSON.stringify(dfSerializable));
       }
