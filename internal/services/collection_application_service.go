@@ -804,6 +804,15 @@ func (s *CollectionApplicationService) authorizeBoardWrite(userID int, scope Boa
 	if err != nil {
 		return boardRepositoryError(err)
 	}
+	if collection.WorkspaceID != nil {
+		allowed, err := s.permissions.HasWorkspacePermission(userID, *collection.WorkspaceID, models.PermissionItemView)
+		if err != nil {
+			return err
+		}
+		if !allowed {
+			return ErrCollectionNotFound
+		}
+	}
 	if collection.CreatedBy == nil || *collection.CreatedBy != userID {
 		return ErrCollectionNotFound
 	}
