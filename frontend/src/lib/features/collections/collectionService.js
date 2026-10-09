@@ -24,6 +24,28 @@ export function buildCollectionAssociationUpdate({
   };
 }
 
+/**
+ * Collection-specific list-column configuration is owned by the collection
+ * creator; workspace-default configuration is owned by workspace admins. The
+ * API enforces the same split, so a collection owner without workspace.admin
+ * must still be able to configure their collection's columns.
+ */
+export function canConfigureListColumns({
+  collectionId,
+  collectionOwnerId,
+  currentUserId,
+  canAdminWorkspace,
+}) {
+  if (collectionId) {
+    return (
+      collectionOwnerId != null &&
+      currentUserId != null &&
+      String(collectionOwnerId) === String(currentUserId)
+    );
+  }
+  return Boolean(canAdminWorkspace);
+}
+
 function collectionPagination(pagination) {
   if (!pagination) return null;
   // Store continuations use limit; v2 responses name the effective size page_size.

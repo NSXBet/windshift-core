@@ -17,7 +17,7 @@
   } from '../../utils/workItemListColumns.js';
   import { useGradientStyles } from '../../stores/workspaceGradient.svelte.js';
   import { workspacePermissions } from '../../stores/workspacePermissions.svelte.js';
-  import { collectionEditorOptions, collectionFieldLinks, workspaceDataStore } from '../../stores/index.js';
+  import { collectionEditorOptions, collectionFieldLinks, workspaceDataStore, authStore } from '../../stores/index.js';
   import { MoreHorizontal, ArrowUp, ArrowDown, ArrowUpDown } from '@lucide/svelte';
   import { draggable } from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
   import SearchInput from '../../components/SearchInput.svelte';
@@ -31,7 +31,7 @@
   import ColumnSelector from './ColumnSelector.svelte';
   import SubFilterBar from './SubFilterBar.svelte';
   import LazyRender from '../../components/LazyRender.svelte';
-  import { checkItemVisibility } from './collectionService.js';
+  import { canConfigureListColumns, checkItemVisibility } from './collectionService.js';
 
   let { workspaceId, collectionId = null } = $props();
 
@@ -81,8 +81,16 @@
   // Centralized gradient styling
   const styles = useGradientStyles();
 
-  // Computed: Check if user can configure columns (workspace admin)
-  let canConfigureColumns = $derived(workspacePermissions.canAdminWorkspace(workspaceId));
+  // Collection columns follow collection ownership; workspace defaults follow
+  // workspace administration. Mirrors the backend board-write authorization.
+  let canConfigureColumns = $derived(
+    canConfigureListColumns({
+      collectionId,
+      collectionOwnerId: collectionStore.boardCollection?.created_by ?? null,
+      currentUserId: authStore.currentUser?.id ?? null,
+      canAdminWorkspace: workspacePermissions.canAdminWorkspace(workspaceId),
+    }),
+  );
 
   // A workspace-scoped list already has these option sets in the shared
   // workspace store. Prime the row-editor cache so opening a cell does not
