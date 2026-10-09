@@ -272,7 +272,11 @@ function _toastFor(n) {
 }
 
 function _dispatchNew(items) {
-  for (const n of items) {
+  // Add oldest first: addToast prepends, so the newest notification must be
+  // added last to land on top of the stack. Iterating newest-first would bury
+  // the newest toast under the older ones (and past the visible stack).
+  for (let i = items.length - 1; i >= 0; i -= 1) {
+    const n = items[i];
     if (n.read || _seenIds.has(n.id)) continue;
     _seenIds.add(n.id);
     _emitNew(n);
@@ -293,12 +297,24 @@ function _scheduleStreamReconcile() {
   _streamReconcileTimer = setTimeout(() => {
     _streamReconcileTimer = null;
     const generation = pollerGeneration;
-    loadNotifications()
-      .then(() => {
-        if (!_pollerStarted || generation !== pollerGeneration) return;
-        _dispatchNew(get(notifications));
-      })
-      .catch((err) => console.warn('notification stream: reconcile failed', err));
+    const reconcile = () => {
+      loadNotifications()
+        .then(() => {
+          if (!_pollerStarted || generation !== pollerGeneration) return;
+          _dispatchNew(get(notifications));
+        })
+        .catch((err) => console.warn('notification stream: reconcile failed', err));
+    };
+    // A change that arrives while the initial snapshot is in flight would
+    // otherwise share that stale snapshot and be dropped. Wait for it to seed
+    // the seen set, then fetch again so the new notification is surfaced.
+    if (!_seeded && loadPromise) {
+      loadPromise.finally(() => {
+        if (generation === pollerGeneration) reconcile();
+      });
+      return;
+    }
+    reconcile();
   }, 250);
 }
 

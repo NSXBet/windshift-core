@@ -100,7 +100,19 @@
       if (!listboxElement) return;
       const items = listboxElement.querySelectorAll('[role="option"]');
       const item = items[highlightedIndex];
-      if (item) item.scrollIntoView({ block: 'nearest' });
+      if (!item) return;
+      // Scroll only the dropdown's own list. scrollIntoView() walks every
+      // scrollable ancestor, so opening the menu could scroll the surrounding
+      // modal and leave the trigger (and the fixed popover) off-screen.
+      const scroller = item.closest('[data-select-scroller]');
+      if (!scroller) return;
+      const scrollerRect = scroller.getBoundingClientRect();
+      const itemRect = item.getBoundingClientRect();
+      if (itemRect.top < scrollerRect.top) {
+        scroller.scrollTop += itemRect.top - scrollerRect.top;
+      } else if (itemRect.bottom > scrollerRect.bottom) {
+        scroller.scrollTop += itemRect.bottom - scrollerRect.bottom;
+      }
     });
   }
 
@@ -211,7 +223,7 @@
     style="background-color: var(--ds-surface-raised); border-color: var(--ds-border); width: {menuWidth || undefined};
            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.25), 0 10px 10px -5px rgba(0, 0, 0, 0.15);"
   >
-    <div class="min-h-0 max-h-60 overflow-y-auto overscroll-contain">
+    <div data-select-scroller class="min-h-0 max-h-60 overflow-y-auto overscroll-contain">
     {#each options as opt, index (opt.value ?? `opt-${index}`)}
       {@const isSelected = String(opt.value) === String(value)}
       {@const isHighlighted = highlightedIndex === index}

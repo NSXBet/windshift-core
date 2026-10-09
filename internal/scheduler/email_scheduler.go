@@ -450,7 +450,13 @@ func (es *EmailScheduler) pollIntake(
 	var offenderUID uint32
 	deferredClaim := false
 	disposition := email.ResolveEmailDisposition(&effective)
-	intakeID := intake.ID
+	// A synthetic legacy intake (ID 0) is channel-scoped: leave the tracking
+	// row's intake_id NULL so channel-level rate-limit requeue still finds it.
+	var intakeID *int
+	if intake.ID > 0 {
+		id := intake.ID
+		intakeID = &id
+	}
 
 	for _, msg := range messages {
 		if msg.FetchError != nil {
@@ -462,7 +468,7 @@ func (es *EmailScheduler) pollIntake(
 			break
 		}
 		parsed := es.parser.Parse(msg)
-		result, processErr := es.processor.ProcessEmailWithIntake(ctx, parsed, ch.ID, currentValidity, &effective, &intakeID)
+		result, processErr := es.processor.ProcessEmailWithIntake(ctx, parsed, ch.ID, currentValidity, &effective, intakeID)
 		if processErr != nil {
 			slog.Error("failed to process email, stopping batch to avoid skipping the UID",
 				"channel_id", ch.ID, "intake_id", intake.ID, "uid", msg.UID,

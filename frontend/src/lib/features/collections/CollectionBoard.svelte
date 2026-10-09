@@ -110,8 +110,15 @@
   // Quick-add state per column
   let quickAddState = $state({});
   let workspaces = $derived($workspacesStore.regularWorkspaces || []);
+  // The workspace directory caches only its first page, so the personal
+  // workspace is not guaranteed to be in allWorkspaces. Merge the on-demand
+  // personal workspace too, otherwise a personal task opens the generic item
+  // detail instead of the personal task surface.
   let personalWorkspaceIds = $derived(new Set(
-    ($workspacesStore.allWorkspaces || [])
+    [
+      ...($workspacesStore.allWorkspaces || []),
+      ...($workspacesStore.personalWorkspace ? [$workspacesStore.personalWorkspace] : []),
+    ]
       .filter((candidate) => candidate.is_personal)
       .map((candidate) => Number(candidate.id))
   ));
@@ -438,6 +445,7 @@
         ? workspaceDataStore.initialize(workspaceId)
         : workspaceDataStore.initializeGlobal(),
       workspacesStore.load(),
+      workspacesStore.loadPersonalWorkspace(),
     ]);
     loading = false;
   });
