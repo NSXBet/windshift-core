@@ -11,30 +11,18 @@
   import PageHeader from '../layout/PageHeader.svelte';
   import Lozenge from '../components/Lozenge.svelte';
   import Input from '../components/Input.svelte';
-  import Select from '../components/Select.svelte';
 
   let packs = $state([]);
   let loading = $state(true);
   let loadError = $state(null);
 
   let activePack = $state(null);
-  let targetMode = $state('existing');
-  let targetWorkspaceId = $state('');
   let newWorkspaceName = $state('');
   let busy = $state(null);
   let report = $state(null);
   let reportAction = $state(null);
 
-  let workspaceOptions = $derived(
-    ($workspacesStore.regularWorkspaces || []).map((ws) => ({
-      value: String(ws.id),
-      label: `${ws.name} (${ws.key})`,
-    }))
-  );
-
-  onMount(async () => {
-    await Promise.all([loadPacks(), workspacesStore.load()]);
-  });
+  onMount(loadPacks);
 
   async function loadPacks() {
     try {
@@ -51,8 +39,6 @@
 
   function startPack(name) {
     activePack = name;
-    targetMode = 'existing';
-    targetWorkspaceId = '';
     newWorkspaceName = '';
     report = null;
     reportAction = null;
@@ -65,11 +51,6 @@
   }
 
   function resolveTarget() {
-    if (targetMode === 'existing') {
-      const id = Number.parseInt(targetWorkspaceId, 10);
-      if (!Number.isInteger(id) || id <= 0) return null;
-      return { workspace_id: id };
-    }
     const name = newWorkspaceName.trim();
     if (!name) return null;
     return { workspace_name: name };
@@ -96,7 +77,7 @@
         successToast(t('settings.featurePacks.verified'));
       } else {
         successToast(t('settings.featurePacks.applied'));
-        // A pack can create or re-provision a workspace; refresh the directory.
+        // A pack provisions a new workspace; refresh the directory.
         await workspacesStore.reload();
       }
     } catch (error) {
@@ -190,49 +171,17 @@
               class="mt-4 pt-4 space-y-3"
               style="border-top: 1px solid var(--ds-border);"
             >
-              <div class="flex items-center gap-4 text-sm">
-                <label class="inline-flex items-center gap-2">
-                  <input
-                    type="radio"
-                    name={`pack-target-mode-${pack.name}`}
-                    value="existing"
-                    checked={targetMode === 'existing'}
-                    data-testid="pack-target-mode-existing"
-                    onchange={() => (targetMode = 'existing')}
-                  />
-                  {t('settings.featurePacks.targetExisting')}
-                </label>
-                <label class="inline-flex items-center gap-2">
-                  <input
-                    type="radio"
-                    name={`pack-target-mode-${pack.name}`}
-                    value="new"
-                    checked={targetMode === 'new'}
-                    data-testid="pack-target-mode-new"
-                    onchange={() => (targetMode = 'new')}
-                  />
-                  {t('settings.featurePacks.targetNew')}
-                </label>
-              </div>
-
-              {#if targetMode === 'existing'}
-                <Select
-                  bind:value={targetWorkspaceId}
-                  options={workspaceOptions}
-                  placeholder={t('settings.featurePacks.selectWorkspace')}
-                  ariaLabel={t('settings.featurePacks.selectWorkspace')}
-                  id={`pack-workspace-${pack.name}`}
-                />
-              {:else}
-                <Input
-                  bind:value={newWorkspaceName}
-                  type="text"
-                  placeholder={t('settings.featurePacks.newWorkspaceName')}
-                  ariaLabel={t('settings.featurePacks.newWorkspaceName')}
-                  id={`pack-new-name-${pack.name}`}
-                  dataTestid="pack-new-name"
-                />
-              {/if}
+              <p class="text-sm" style="color: var(--ds-text-subtle);">
+                {t('settings.featurePacks.targetNew')}
+              </p>
+              <Input
+                bind:value={newWorkspaceName}
+                type="text"
+                placeholder={t('settings.featurePacks.newWorkspaceName')}
+                ariaLabel={t('settings.featurePacks.newWorkspaceName')}
+                id={`pack-new-name-${pack.name}`}
+                dataTestid="pack-new-name"
+              />
 
               <div class="flex items-center gap-2">
                 <Button
