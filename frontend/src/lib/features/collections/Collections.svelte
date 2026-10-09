@@ -9,6 +9,7 @@
   import Pagination from '../../components/Pagination.svelte';
   import CollectionsSidebar from './CollectionsSidebar.svelte';
   import CollectionsBreadcrumbs from './CollectionsBreadcrumbs.svelte';
+  import { buildCollectionAssociationUpdate } from './collectionService.js';
   import QlQueryBar from '../shared/QlQueryBar.svelte';
   import { createWorkItemSearchStore } from '../../stores/searchStore.svelte.js';
   import { createWorkItemSearchHandlers } from '../../composables/useWorkItemSearch.svelte.js';
@@ -371,15 +372,22 @@
       workspaceAssociationSelection.length === 1 ? workspaceAssociationSelection[0] : null;
 
     try {
-      await api.collections.update(currentCollection.id, {
-        name: currentCollection.name,
-        description: currentCollection.description || null,
-        ql_query: qlQuery,
-        filter_state: rawMode ? null : serializeFilterState(),
-        is_public: currentCollection.is_public,
+      // Association is not a publishing operation: omit public-sharing fields so
+      // an ordinary owner without public_board.manage can move the collection.
+      await api.collections.update(
+        currentCollection.id,
+        buildCollectionAssociationUpdate({
+          collection: currentCollection,
+          qlQuery,
+          filterState: rawMode ? null : serializeFilterState(),
+          workspaceId,
+        })
+      );
+      currentCollection = {
+        ...currentCollection,
         workspace_id: workspaceId,
-      });
-      currentCollection = { ...currentCollection, workspace_id: workspaceId };
+        category_id: workspaceId ? null : currentCollection.category_id,
+      };
       showWorkspaceAssociationModal = false;
     } catch (error) {
       console.error('Failed to associate workspace:', error);

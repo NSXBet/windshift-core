@@ -1,5 +1,29 @@
 import { api } from '../../api.js';
 
+/**
+ * Builds the PATCH payload for associating a collection with a workspace.
+ * Association is not publishing, so public-sharing fields are intentionally
+ * omitted: an owner without public_board.manage must still be able to move the
+ * collection. A workspace association also clears any category, which is only
+ * valid for global collections.
+ */
+export function buildCollectionAssociationUpdate({
+  collection,
+  qlQuery,
+  filterState,
+  workspaceId,
+}) {
+  return {
+    name: collection.name,
+    description: collection.description || null,
+    ql_query: qlQuery,
+    filter_state: filterState,
+    workspace_id: workspaceId ?? null,
+    category_id: workspaceId ? null : (collection.category_id ?? null),
+    is_private: collection.is_private ?? false,
+  };
+}
+
 function collectionPagination(pagination) {
   if (!pagination) return null;
   // Store continuations use limit; v2 responses name the effective size page_size.
