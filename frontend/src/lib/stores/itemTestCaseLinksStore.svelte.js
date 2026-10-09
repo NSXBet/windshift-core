@@ -96,8 +96,18 @@ class ItemTestCaseLinksStore extends BaseCacheStore {
       .map((link) => {
         const isSource = link.source_type === 'item' && link.source_id === itemId;
         const testCaseData = isSource
-          ? { id: link.target_id, title: link.target_title, type: link.target_type }
-          : { id: link.source_id, title: link.source_title, type: link.source_type };
+          ? {
+              id: link.target_id,
+              title: link.target_title,
+              type: link.target_type,
+              workspaceId: link.target_workspace_id,
+            }
+          : {
+              id: link.source_id,
+              title: link.source_title,
+              type: link.source_type,
+              workspaceId: link.source_workspace_id,
+            };
         return testCaseData.type === 'test_case' ? testCaseData : null;
       })
       .filter((tc) => tc !== null);

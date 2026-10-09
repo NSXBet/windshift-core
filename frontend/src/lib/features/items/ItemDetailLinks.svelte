@@ -66,7 +66,7 @@
   function handleLinkClick(event, linkedItemType, linkedItemId, linkedItemWorkspaceId, linkedItemHref) {
     if (linkedItemType === 'test_case') {
       event.preventDefault();
-      onviewtestcase?.({ testCaseId: linkedItemId });
+      onviewtestcase?.({ testCaseId: linkedItemId, workspaceId: linkedItemWorkspaceId });
       return;
     }
 
@@ -327,6 +327,7 @@
               <!-- Item title -->
               <LinkComponent
                 href={linkedItemHref}
+                data-testid="linked-item-title"
                 class="text-sm hover:text-ds-text-link cursor-pointer truncate"
                 onClick={(event) => handleLinkClick(event, linkedItemType, linkedItemId, linkedItemWorkspaceId, linkedItemHref)}
                 style="color: var(--ds-text);"

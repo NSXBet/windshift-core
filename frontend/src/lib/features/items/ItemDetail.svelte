@@ -453,14 +453,20 @@ import NativeSelect from '../../components/NativeSelect.svelte';
   }
 
   function handleViewTestCase(detail) {
-    const { testCaseId } = detail || {};
+    const { testCaseId, workspaceId: testCaseWorkspaceId } = detail || {};
     if (!testCaseId) return;
     const normalizedId = Number(testCaseId);
     if (!Number.isFinite(normalizedId)) {
       console.warn('Received invalid test case ID from link:', testCaseId);
       return;
     }
-    itemDetailStore.openTestCaseModal(normalizedId);
+    const normalizedWorkspaceId = Number(testCaseWorkspaceId);
+    itemDetailStore.openTestCaseModal(
+      normalizedId,
+      Number.isFinite(normalizedWorkspaceId) && normalizedWorkspaceId > 0
+        ? normalizedWorkspaceId
+        : null
+    );
   }
 
   function handleCloseTestCaseModal() {
@@ -1452,6 +1458,7 @@ import NativeSelect from '../../components/NativeSelect.svelte';
           embedded={true}
           isOpen={itemDetailStore.showTestCaseModal}
           testCaseId={itemDetailStore.selectedTestCaseId}
+          workspaceId={itemDetailStore.selectedTestCaseWorkspaceId ?? itemDetailStore.workspaceId}
           onclose={handleCloseTestCaseModal}
         />
       {:else}
@@ -1530,6 +1537,7 @@ import NativeSelect from '../../components/NativeSelect.svelte';
   <TestCaseViewModal
     isOpen={itemDetailStore.showTestCaseModal}
     testCaseId={itemDetailStore.selectedTestCaseId}
+    workspaceId={itemDetailStore.selectedTestCaseWorkspaceId ?? itemDetailStore.workspaceId}
     onclose={handleCloseTestCaseModal}
   />
 {/if}

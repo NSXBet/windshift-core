@@ -64,6 +64,7 @@
   // Test case modal state
   let showTestCaseModal = $state(false);
   let selectedTestCaseId = $state(null);
+  let selectedTestCaseWorkspaceId = $state(null);
 
   // Centralized gradient styling
   const styles = useGradientStyles();
@@ -262,9 +263,10 @@
   }
 
   // Handle test case click to open modal
-  function handleTestCaseClick(event, testCaseId) {
+  function handleTestCaseClick(event, testCaseId, testCaseWorkspaceId = null) {
     event.preventDefault();
     selectedTestCaseId = testCaseId;
+    selectedTestCaseWorkspaceId = testCaseWorkspaceId ?? null;
     showTestCaseModal = true;
   }
 
@@ -512,7 +514,7 @@
                 <div class="min-w-24">
                   <LinkComponent
                     href="#view-test-case"
-                    onClick={(e) => handleTestCaseClick(e, item.id)}
+                    onClick={(e) => handleTestCaseClick(e, item.id, item.testCaseData?.workspaceId)}
                     class="text-xs font-mono px-1.5 py-0.5 rounded cursor-pointer transition-colors text-ds-text-accent-green bg-ds-accent-green-subtle hover:opacity-80"
                   >
                     TC-{item.id}
@@ -523,7 +525,7 @@
                 <div class="flex-1 min-w-0">
                   <LinkComponent
                     href="#view-test-case"
-                    onClick={(e) => handleTestCaseClick(e, item.id)}
+                    onClick={(e) => handleTestCaseClick(e, item.id, item.testCaseData?.workspaceId)}
                     class="text-left w-full text-sm transition-colors truncate cursor-pointer text-ds-text-accent-green hover:opacity-80"
                   >
                     {item.title}
@@ -660,7 +662,8 @@
 <TestCaseViewModal
   isOpen={showTestCaseModal}
   testCaseId={selectedTestCaseId}
-  onclose={() => { showTestCaseModal = false; selectedTestCaseId = null; }}
+  workspaceId={selectedTestCaseWorkspaceId ?? workspaceId}
+  onclose={() => { showTestCaseModal = false; selectedTestCaseId = null; selectedTestCaseWorkspaceId = null; }}
 />
 
 <style>

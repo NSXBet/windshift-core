@@ -200,6 +200,9 @@ class ItemDetailStore {
   linkModalPreselectTypeId = $state(null);
   showTestCaseModal = $state(false);
   selectedTestCaseId = $state(null);
+  // Numeric workspace id for the selected test case. Links can cross
+  // workspaces, so this may differ from the item's workspace.
+  selectedTestCaseWorkspaceId = $state(null);
   showTimeLogModal = $state(false);
   editingWorklog = $state(null);
 
@@ -1298,14 +1301,16 @@ class ItemDetailStore {
     this.linkModalPreselectTypeId = null;
   }
 
-  openTestCaseModal(testCaseId) {
+  openTestCaseModal(testCaseId, workspaceId = null) {
     this.selectedTestCaseId = testCaseId;
+    this.selectedTestCaseWorkspaceId = workspaceId;
     this.showTestCaseModal = true;
   }
 
   closeTestCaseModal() {
     this.showTestCaseModal = false;
     this.selectedTestCaseId = null;
+    this.selectedTestCaseWorkspaceId = null;
   }
 
   openTimeLogModal(worklog = null) {
@@ -1411,6 +1416,7 @@ class ItemDetailStore {
     this.linkModalPreselectTypeId = null;
     this.showTestCaseModal = false;
     this.selectedTestCaseId = null;
+    this.selectedTestCaseWorkspaceId = null;
     this.showTimeLogModal = false;
     this.editingWorklog = null;
     this.transitioning = false;

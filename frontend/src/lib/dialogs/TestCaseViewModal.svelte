@@ -199,7 +199,7 @@
 {/if}
 
 {#snippet previewContent()}
-  <div class="p-6 space-y-6">
+  <div class="p-6 space-y-6" data-testid="test-case-preview">
     <PageHeader
       title={testCase ? testCase.title : t('common.loading')}
       subtitle={testCase?.folder_name ? `${t('testCase.folder')}: ${testCase.folder_name}` : t('testCase.preview')}
@@ -226,7 +226,7 @@
     {#if loading}
       <StateDisplay type="loading" message={t('common.loading')} />
     {:else if error}
-      <StateDisplay type="error" title={t('common.error')} message={error} />
+      <StateDisplay type="error" title={t('common.error')} message={error} dataTestid="test-case-preview-error" />
     {:else if testCase}
       <div class="space-y-6">
         <!-- Action Buttons -->
