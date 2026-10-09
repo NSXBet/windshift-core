@@ -8,24 +8,44 @@
 
   let { itemId = null } = $props();
 
+  // Server-computed remaining/breach state has to be re-read while a timer is
+  // visible; elapsed time and business-hours transitions never reach the client
+  // otherwise.
+  const SLA_REFRESH_MS = 30000;
+
   let states = $state([]);
   let loading = $state(false);
+  let requestToken = 0;
 
   async function load() {
     if (!itemId) return;
+    const token = ++requestToken;
+    const requestedItemId = itemId;
     loading = true;
     try {
-      states = (await api.sla.getItemSLA(itemId)) ?? [];
+      const result = (await api.sla.getItemSLA(requestedItemId)) ?? [];
+      // A newer request or an item switch supersedes this response.
+      if (token !== requestToken) return;
+      states = result;
     } catch {
       // SLA state is supplementary; never break the item detail on a read error.
-      states = [];
+      if (token === requestToken) states = [];
     } finally {
-      loading = false;
+      if (token === requestToken) loading = false;
     }
   }
 
   $effect(() => {
     if (itemId) void load();
+  });
+
+  let hasOngoing = $derived(states.some((state) => state.ongoing));
+
+  $effect(() => {
+    // Only poll while a timer is actually running; completed history is static.
+    if (!itemId || !hasOngoing) return;
+    const timer = setInterval(() => void load(), SLA_REFRESH_MS);
+    return () => clearInterval(timer);
   });
 
   // Item mutations (status, assignee, comments, etc.) are broadcast globally;
