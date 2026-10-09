@@ -583,13 +583,11 @@ func (c *cloudClient) TestConnection(ctx context.Context) (*JiraInstanceInfo, er
 // Project Methods
 // ================================================================
 
-// ListProjects lists all projects accessible to the user
+// ListProjects lists all projects accessible to the user. Jira Cloud removed
+// the legacy unpaginated GET /project endpoint, so walk the supported paginated
+// GET /project/search instead. Data Center keeps its deployment-specific call.
 func (c *cloudClient) ListProjects(ctx context.Context) ([]JiraProject, error) {
-	var projects []JiraProject
-	if err := jiraGetJSON(ctx, c, c.baseURL+"/project?expand=description", &projects); err != nil {
-		return nil, err
-	}
-	return projects, nil
+	return cloudPageValues[JiraProject](ctx, c, c.baseURL+"/project/search?expand=description")
 }
 
 // GetProject gets details about a specific project
