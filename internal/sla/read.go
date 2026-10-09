@@ -115,8 +115,7 @@ func (e *Engine) itemsSLA(ctx context.Context, workspaceID int, itemIDs []int, i
 }
 
 // isRecalculatingItems reports, per item, whether a repair or metric
-// recalculation affecting the item is still pending. One query covers the
-// batch.
+// recalculation affecting the item is still pending.
 func (e *Engine) isRecalculatingItems(ctx context.Context, itemIDs []int, workspaceID int) (map[int]bool, error) {
 	out := make(map[int]bool, len(itemIDs))
 	if len(itemIDs) == 0 {
@@ -126,27 +125,43 @@ func (e *Engine) isRecalculatingItems(ctx context.Context, itemIDs []int, worksp
 	for _, id := range itemIDs {
 		itemParams = append(itemParams, id)
 	}
-	query := `SELECT DISTINCT item_id FROM sla_jobs
-		WHERE state = 'pending' AND item_id IS NOT NULL AND (
-			(kind = 'recalc_item' AND item_id IN (` + strings.TrimSuffix(strings.Repeat("?,", len(itemIDs)), ",") + `))
-			OR (kind = 'recalc_metric' AND metric_id IN (SELECT id FROM sla_metrics WHERE workspace_id = ?))
-		)`
-	args := make([]any, 0, len(itemIDs)+1)
-	args = append(args, itemParams...)
-	args = append(args, workspaceID)
-	rows, err := e.db.QueryContext(ctx, query, args...)
+	// Item repairs are scoped to the item. A metric recalculation has no
+	// item_id, so it is handled separately below.
+	rows, err := e.db.QueryContext(ctx, `SELECT DISTINCT item_id FROM sla_jobs
+		WHERE state = 'pending' AND kind = 'recalc_item' AND item_id IN (`+strings.TrimSuffix(strings.Repeat("?,", len(itemIDs)), ",")+`)`, itemParams...)
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var itemID int
 		if err := rows.Scan(&itemID); err != nil {
+			_ = rows.Close()
 			return nil, err
 		}
 		out[itemID] = true
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+
+	// A metric recalculation re-derives every open item in the workspace, so the
+	// whole requested batch is pending while its job is queued.
+	var metricJobs int
+	if err := e.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sla_jobs
+		WHERE state = 'pending' AND kind = 'recalc_metric'
+		  AND metric_id IN (SELECT id FROM sla_metrics WHERE workspace_id = ?)`, workspaceID).Scan(&metricJobs); err != nil {
+		return nil, err
+	}
+	if metricJobs > 0 {
+		for _, id := range itemIDs {
+			out[id] = true
+		}
+	}
+	return out, nil
 }
 
 // Report returns the completed-cycle compliance report for a workspace. The
