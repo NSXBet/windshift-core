@@ -425,6 +425,7 @@ export default {
     workspaceAssociationDesc: 'Seleccionar un espacio de trabajo limitará el alcance de esta colección a ese espacio. Déjelo sin asignar para mantenerla global.',
     saveAssociation: 'Guardar asociación',
     workspaceAssociationNote: 'Solo se puede asociar un espacio de trabajo a la vez. Eliminar la selección convierte la colección de nuevo en una vista global.',
+    categoryClearedOnAssociation: 'La categoría seleccionada se borrará, ya que las categorías solo están disponibles para colecciones globales.',
     searchWorkspace: 'Buscar un espacio de trabajo...',
     manageCategories: 'Administrar categorías',
     noCategory: 'Sin categoría',

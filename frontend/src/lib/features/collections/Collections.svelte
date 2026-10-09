@@ -370,6 +370,7 @@
     workspaceAssociationSaving = true;
     const workspaceId =
       workspaceAssociationSelection.length === 1 ? workspaceAssociationSelection[0] : null;
+    const clearedCategory = workspaceId != null && currentCollection.category_id != null;
 
     try {
       // Association is not a publishing operation: omit public-sharing fields so
@@ -389,6 +390,9 @@
         category_id: workspaceId ? null : currentCollection.category_id,
       };
       showWorkspaceAssociationModal = false;
+      if (clearedCategory) {
+        warningToast(t('collections.categoryClearedOnAssociation'));
+      }
     } catch (error) {
       console.error('Failed to associate workspace:', error);
       workspaceAssociationError = error.message || 'Failed to associate workspace. Please try again.';
@@ -570,6 +574,11 @@
       />
       {#if workspaceAssociationError}
         <div class="text-sm" style="color: var(--ds-text-danger);">{workspaceAssociationError}</div>
+      {/if}
+      {#if currentCollection?.category_id && workspaceAssociationSelection.length === 1}
+        <p class="text-xs" style="color: var(--ds-text-warning);" data-testid="category-cleared-note">
+          {t('collections.categoryClearedOnAssociation')}
+        </p>
       {/if}
       <p class="text-xs" style="color: var(--ds-text-subtle);">
         {t('collections.workspaceAssociationNote')}

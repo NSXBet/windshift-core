@@ -430,6 +430,7 @@ export default {
     workspaceAssociationDesc: '选择工作区将使此集合限定在该工作区范围内。保持未分配以保持全局。',
     saveAssociation: '保存关联',
     workspaceAssociationNote: '一次只能关联一个工作区。移除选择将使集合恢复为全局视图。',
+    categoryClearedOnAssociation: '所选分类将被清除，因为分类仅适用于全局集合。',
     searchWorkspace: '搜索工作区...',
     manageCategories: '管理分类',
     noCategory: '无分类',

@@ -655,6 +655,8 @@ export default {
     saveAssociation: 'Save Association',
     workspaceAssociationNote:
       'Only one workspace can be associated at a time. Removing the selection converts the collection back to a global view.',
+    categoryClearedOnAssociation:
+      'The selected category will be cleared because categories are only available for global collections.',
     searchWorkspace: 'Search for a workspace...',
 
     // Categories

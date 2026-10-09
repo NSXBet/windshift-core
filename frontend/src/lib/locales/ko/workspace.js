@@ -510,6 +510,7 @@ export default {
     "workspaceAssociationDesc": "워크스페이스를 선택하면 컬렉션 범위가 해당 워크스페이스로 제한됩니다. 전역으로 유지하려면 지정하지 마세요.",
     "saveAssociation": "연결 저장",
     "workspaceAssociationNote": "한 번에 하나의 워크스페이스만 연결할 수 있습니다. 선택을 해제하면 전역 보기로 돌아갑니다.",
+    "categoryClearedOnAssociation": "선택한 카테고리는 전역 컬렉션에서만 사용할 수 있으므로 지워집니다.",
     "searchWorkspace": "워크스페이스 검색...",
     "manageCategories": "카테고리 관리",
     "noCategory": "카테고리 없음",

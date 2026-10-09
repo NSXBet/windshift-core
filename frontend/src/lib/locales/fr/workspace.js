@@ -535,6 +535,8 @@ export default {
     saveAssociation: 'Enregistrer l’association',
     workspaceAssociationNote:
       'Un seul espace de travail peut être associé à la fois. Supprimer la sélection retransforme la collection en vue globale.',
+    categoryClearedOnAssociation:
+      'La catégorie sélectionnée sera effacée, car les catégories ne sont disponibles que pour les collections globales.',
     searchWorkspace: 'Rechercher un espace de travail...',
 
     // Categories

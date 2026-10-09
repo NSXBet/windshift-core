@@ -425,6 +425,7 @@ export default {
     workspaceAssociationDesc: 'اختيار مساحة عمل سيحدد نطاق هذه المجموعة لتلك المساحة. اتركها بدون تعيين لإبقائها عامة.',
     saveAssociation: 'حفظ الارتباط',
     workspaceAssociationNote: 'يمكن ربط مساحة عمل واحدة فقط في كل مرة. إزالة التحديد يحوّل المجموعة مرة أخرى إلى عرض عام.',
+    categoryClearedOnAssociation: 'سيتم مسح الفئة المحددة لأن الفئات متاحة فقط للمجموعات العامة.',
     searchWorkspace: 'البحث عن مساحة عمل...',
     manageCategories: 'إدارة الفئات',
     noCategory: 'بدون فئة',

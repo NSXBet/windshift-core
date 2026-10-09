@@ -429,6 +429,7 @@ export default {
     workspaceAssociationDesc: 'Die Auswahl eines Arbeitsbereichs beschränkt diese Sammlung auf diesen Arbeitsbereich. Lassen Sie die Auswahl leer, um sie global zu halten.',
     saveAssociation: 'Zuordnung speichern',
     workspaceAssociationNote: 'Es kann jeweils nur ein Arbeitsbereich zugeordnet werden. Das Entfernen der Auswahl wandelt die Sammlung zurück in eine globale Ansicht.',
+    categoryClearedOnAssociation: 'Die ausgewählte Kategorie wird entfernt, da Kategorien nur für globale Sammlungen verfügbar sind.',
     searchWorkspace: 'Arbeitsbereich suchen...',
     manageCategories: 'Kategorien verwalten',
     noCategory: 'Keine Kategorie',
