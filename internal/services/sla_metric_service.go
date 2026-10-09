@@ -243,6 +243,9 @@ func validateSLAConditions(conditions []models.SLACondition) error {
 		default:
 			return fmt.Errorf("unsupported condition_type: %s", condition.ConditionType)
 		}
+		if err := sla.ValidateConditionConfig(*condition); err != nil {
+			return err
+		}
 	}
 	return nil
 }
