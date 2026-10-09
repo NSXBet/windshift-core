@@ -2630,6 +2630,14 @@ var Catalog = []Migration{
 		SQLite:        `ALTER TABLE attachments ADD COLUMN is_internal BOOLEAN NOT NULL DEFAULT false;`,
 		Postgres:      `ALTER TABLE attachments ADD COLUMN IF NOT EXISTS is_internal BOOLEAN NOT NULL DEFAULT false;`,
 	},
+	{
+		Version:       "20261025_jira_import_job_leases",
+		Name:          "Lease Jira import jobs so restarts recover interrupted runs (WI-1703)",
+		CheckSQLite:   sqliteColumnCheck("jira_import_jobs", "lease_expires_at"),
+		CheckPostgres: pgColumnCheck("jira_import_jobs", "lease_expires_at"),
+		SQLite:        `ALTER TABLE jira_import_jobs ADD COLUMN lease_expires_at BIGINT;`,
+		Postgres:      `ALTER TABLE jira_import_jobs ADD COLUMN IF NOT EXISTS lease_expires_at BIGINT;`,
+	},
 }
 
 // applyAssetReportsWorkspacePinned backfills form-mode asset reports that have

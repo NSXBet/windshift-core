@@ -154,6 +154,29 @@ func sortJiraIssuesByRequestedKeyOrder(issues []jira.JiraIssue, orderedKeys []st
 	})
 }
 
+// jiraImportLeaseRenewInterval is how often a running import refreshes its
+// job lease. It is well under jiraimport.JiraImportLeaseDuration so a brief
+// stall does not look like a dead worker.
+const jiraImportLeaseRenewInterval = 30 * time.Second
+
+func (h *JiraImportHandler) renewJiraImportLease(ctx context.Context, jobID string) {
+	ticker := time.NewTicker(jiraImportLeaseRenewInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := h.imports.RenewLease(jobID); err != nil {
+				slog.Warn("Failed to renew Jira import lease",
+					slog.String("component", "jira"),
+					slog.String("job_id", jobID),
+					slog.Any("error", err))
+			}
+		}
+	}
+}
+
 // recordJiraBulkFetchResults accounts for every requested key exactly once.
 // Jira returns HTTP 200 with partial success: resolved issues land in Issues,
 // per-issue failures in IssueErrors, and a requested key can be absent from
@@ -231,6 +254,12 @@ func jiraImportTerminalOutcome(progress *ImportProgress) (status, phase, errorMe
 func (h *JiraImportHandler) executeImportWithClientContext(ctx context.Context, jobID string, req StartImportRequest, client jira.Client, createdByUserID int) {
 	h.clearMappingFailure(jobID)
 	defer h.clearMappingFailure(jobID)
+
+	// Renew the job lease on a heartbeat so a peer replica's startup
+	// reconciliation does not treat this live import as interrupted.
+	leaseCtx, stopLease := context.WithCancel(ctx)
+	defer stopLease()
+	go h.renewJiraImportLease(leaseCtx, jobID)
 
 	progress := &ImportProgress{
 		Phase:         "initializing",
