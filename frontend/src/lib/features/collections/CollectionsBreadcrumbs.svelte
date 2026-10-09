@@ -78,8 +78,7 @@
     ondescriptionchange?.(event.currentTarget.value);
   }
 
-  function handleCategoryChange(event) {
-    const value = event.currentTarget.value;
+  function handleCategoryChange(value) {
     oncategorychange?.(value === '' || value === 'null' ? null : parseInt(value, 10));
   }
 
@@ -217,7 +216,7 @@
           <Select
             options={[{ value: '', label: t('collections.noCategory') }, ...categories.map(c => ({ value: c.id, label: c.name }))]}
             value={collection.category_id || ''}
-            onchange={(v) => handleCategoryChange({ target: { value: v } })}
+            onchange={handleCategoryChange}
             size="small"
           />
         </div>
