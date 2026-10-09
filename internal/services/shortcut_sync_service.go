@@ -19,11 +19,21 @@ import (
 // Items are reconciled through the canonical external item reconciliation
 // path so validation, history, and side-effect suppression stay consistent.
 type ShortcutSyncService struct {
-	db database.Database
+	db          database.Database
+	permChecker WorkspacePermissionChecker
 }
 
 func NewShortcutSyncService(db database.Database) *ShortcutSyncService {
 	return &ShortcutSyncService{db: db}
+}
+
+// WithPermissionChecker enables cross-workspace parent assignments: the sync
+// acts as a system admin (resolved per update) and the checker authorizes
+// the attach. Without one, cross-workspace parents fail closed with a
+// validation error.
+func (s *ShortcutSyncService) WithPermissionChecker(c WorkspacePermissionChecker) *ShortcutSyncService {
+	s.permChecker = c
+	return s
 }
 
 // ShortcutItemUpsertRequest is the decoded item_upsert payload.
@@ -351,10 +361,23 @@ func (s *ShortcutSyncService) updateItem(ctx context.Context, itemID int, req Sh
 	}
 
 	now := time.Now().UTC()
+
+	// Cross-workspace parents (team mode: story in the team workspace, epic
+	// in the fallback workspace) need a permission-checked actor. Resolve a
+	// system admin to act; with no admin configured the update still
+	// succeeds for same-workspace parents, but cross-workspace ones fail
+	// closed exactly as before.
+	policy := ShortcutReconciliationPolicy()
+	if s.permChecker != nil {
+		if adminIDs, err := ActiveSystemAdminIDs(s.db); err == nil && len(adminIDs) > 0 {
+			policy.ActorUserID = adminIDs[0]
+		}
+	}
 	_, err := NewExternalItemReconciliationService(s.db).Update(ctx, ExternalItemUpdateRequest{
-		Policy:     ShortcutReconciliationPolicy(),
-		ItemID:     itemID,
-		UpdateData: updateData,
+		Policy:      policy,
+		ItemID:      itemID,
+		UpdateData:  updateData,
+		PermChecker: s.permChecker,
 		AfterUpdate: func(ctx context.Context, tx database.Tx, _, updated *models.Item) error {
 			if err := s.applyLabelsTx(ctx, tx, itemID, req.Labels, req.LabelMode); err != nil {
 				return err

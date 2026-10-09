@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"windshift/internal/database"
+	"windshift/internal/repository"
 )
 
 func newShortcutSyncTestService(t *testing.T) (*ShortcutSyncService, database.Database) {
@@ -609,5 +610,87 @@ func TestShortcutSyncMemberAndIterationUpserts(t *testing.T) {
 	}
 	if fmt.Sprint(iterationID) != strconv.Itoa(it2.IterationID) {
 		t.Fatalf("iteration_id after update = %v, want %d", iterationID, it2.IterationID)
+	}
+}
+
+// stubSyncPermChecker is a minimal WorkspacePermissionChecker so the
+// cross-workspace tests can authorize or deny without a permission cache.
+type stubSyncPermChecker struct{ allow bool }
+
+func (c stubSyncPermChecker) HasWorkspacePermission(int, int, string) (bool, error) {
+	return c.allow, nil
+}
+
+func (c stubSyncPermChecker) AccessibleWorkspaceIDs(int) ([]int, error) { return nil, nil }
+
+func (c stubSyncPermChecker) AccessibleWorkspaceIDKeys(int) ([]repository.IDKey, error) { return nil, nil }
+
+// TestShortcutSyncCrossWorkspaceParentAuthorizes pins the team-mode parent
+// rule: a story update that attaches an epic living in another workspace
+// fails closed without a checker and succeeds through an authorized one.
+func TestShortcutSyncCrossWorkspaceParentAuthorizes(t *testing.T) {
+	ctx := context.Background()
+	_, db := newShortcutSyncTestService(t)
+	defer func() { _ = db.Close() }()
+	workspaceID, _, _ := seedShortcutSyncFixture(t, db)
+
+	var epicWsID int
+	if err := db.QueryRow(`INSERT INTO workspaces (name, key) VALUES ('Sync Epics', 'SE') RETURNING id`).Scan(&epicWsID); err != nil {
+		t.Fatal(err)
+	}
+
+	epicSvc := NewShortcutSyncService(db).WithPermissionChecker(stubSyncPermChecker{allow: true})
+	epicRes, err := epicSvc.Upsert(ctx, ShortcutItemUpsertRequest{
+		WorkspaceID: strconv.Itoa(epicWsID), ExternalKind: "epic", ExternalID: 99101, Title: "Cross epic",
+		ItemTypeName: "Epic",
+	})
+	if err != nil {
+		t.Fatalf("epic create: %v", err)
+	}
+
+	storySvc := NewShortcutSyncService(db).WithPermissionChecker(nil)
+	storyRes, err := storySvc.Upsert(ctx, ShortcutItemUpsertRequest{
+		WorkspaceID: strconv.Itoa(workspaceID), ExternalKind: "story", ExternalID: 99102, Title: "Cross story",
+		ItemTypeName: "Story",
+	})
+	if err != nil {
+		t.Fatalf("story create: %v", err)
+	}
+
+	// Denied checker: fail closed even with a checker wired.
+	denied := NewShortcutSyncService(db).WithPermissionChecker(stubSyncPermChecker{allow: false})
+	if _, err := denied.Upsert(ctx, ShortcutItemUpsertRequest{
+		WorkspaceID: strconv.Itoa(workspaceID), ExternalKind: "story", ExternalID: 99102, Title: "Cross story",
+		ItemTypeName:  "Story",
+		ParentExternalKind: "epic", ParentExternalID: 99101,
+	}); err == nil {
+		t.Fatal("cross-workspace parent update with a denying checker: want error, got nil")
+	}
+
+	// No checker: the update still fails closed (permChecker == nil).
+	noChecker := NewShortcutSyncService(db).WithPermissionChecker(nil)
+	if _, err := noChecker.Upsert(ctx, ShortcutItemUpsertRequest{
+		WorkspaceID: strconv.Itoa(workspaceID), ExternalKind: "story", ExternalID: 99102, Title: "Cross story",
+		ItemTypeName:  "Story",
+		ParentExternalKind: "epic", ParentExternalID: 99101,
+	}); err == nil {
+		t.Fatal("cross-workspace parent update without a checker: want error, got nil")
+	}
+
+	// Allowing checker: the parent binds.
+	allowed := NewShortcutSyncService(db).WithPermissionChecker(stubSyncPermChecker{allow: true})
+	if _, err := allowed.Upsert(ctx, ShortcutItemUpsertRequest{
+		WorkspaceID: strconv.Itoa(workspaceID), ExternalKind: "story", ExternalID: 99102, Title: "Cross story",
+		ItemTypeName:  "Story",
+		ParentExternalKind: "epic", ParentExternalID: 99101,
+	}); err != nil {
+		t.Fatalf("cross-workspace parent update with an allowing checker: %v", err)
+	}
+	var parentID *int
+	if err := db.QueryRow(`SELECT parent_id FROM items WHERE id = ?`, storyRes.ItemID).Scan(&parentID); err != nil {
+		t.Fatal(err)
+	}
+	if parentID == nil || *parentID != epicRes.ItemID {
+		t.Fatalf("parent_id = %v, want %d", parentID, epicRes.ItemID)
 	}
 }

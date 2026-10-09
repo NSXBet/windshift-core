@@ -33,6 +33,14 @@ func NewItemUpdateService(db database.Database) *ItemUpdateService {
 	}
 }
 
+// WithPermissionChecker wires an arbitrary WorkspacePermissionChecker into
+// the validator — the interface-scoped sibling of WithPermissionService for
+// callers that hold the interface (external reconciliation, tests).
+func (s *ItemUpdateService) WithPermissionChecker(checker WorkspacePermissionChecker) *ItemUpdateService {
+	s.validator = s.validator.WithPermissionChecker(checker)
+	return s
+}
+
 // WithPermissionService wires a PermissionService into the validator so it
 // can enforce the caller's workspace view-permission on cross-workspace
 // parent assignments. User-facing callers must set this; internal callers

@@ -32,6 +32,7 @@ type ManagerOptions struct {
 	SMTPSender           SMTPSender
 	SCMService           SCMService
 	CommentService       *services.CommentService
+	PermissionChecker    services.WorkspacePermissionChecker
 	Logger               *slog.Logger
 	Database             database.Database
 	AdditionalPluginDirs []string
@@ -79,6 +80,13 @@ func WithSCMService(s SCMService) Option {
 // WithCommentService sets the comment service for plugin host functions (create_comment).
 func WithCommentService(cs *services.CommentService) Option {
 	return func(o *ManagerOptions) { o.CommentService = cs }
+}
+
+// WithPermissionChecker wires the permission checker the shortcut sync host
+// functions use to authorize cross-workspace parent assignments as a system
+// admin actor.
+func WithPermissionChecker(c services.WorkspacePermissionChecker) Option {
+	return func(o *ManagerOptions) { o.PermissionChecker = c }
 }
 
 // WithAdditionalPluginDirs adds additional directories to search for plugins.

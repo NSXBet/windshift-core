@@ -60,6 +60,12 @@ type ExternalItemUpdateRequest struct {
 	ItemID      int
 	UpdateData  map[string]any
 	AfterUpdate ItemUpdateTransactionHook
+
+	// PermChecker enables cross-workspace parent/project permission checks
+	// for the actor. External sources without one fail closed on those
+	// checks (the field validator rejects them), so only wire it when the
+	// policy's actor is a real user the checker can authorize.
+	PermChecker WorkspacePermissionChecker
 }
 
 // ExternalItemReconciliationService applies inbound changes through the
@@ -181,7 +187,12 @@ func (s *ExternalItemReconciliationService) Update(ctx context.Context, req Exte
 		}
 	}
 
-	return NewItemUpdateService(s.db).updateItem(ctx, UpdateItemRequest{
+	updater := NewItemUpdateService(s.db)
+	if req.PermChecker != nil {
+		updater = updater.WithPermissionChecker(req.PermChecker)
+	}
+
+	return updater.updateItem(ctx, UpdateItemRequest{
 		ItemID:        req.ItemID,
 		UpdateData:    req.UpdateData,
 		UserID:        req.Policy.ActorUserID,

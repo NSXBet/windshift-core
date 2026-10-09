@@ -1236,7 +1236,7 @@ func (s *Server) initialize() error {
 	var pluginRouter *plugins.Router
 	if !cfg.Plugins.Disabled {
 		var pluginOpts []plugins.Option
-		pluginOpts = append(pluginOpts, plugins.WithDatabase(s.db), plugins.WithSCMService(scmSyncService), plugins.WithCommentService(commentService))
+		pluginOpts = append(pluginOpts, plugins.WithDatabase(s.db), plugins.WithSCMService(scmSyncService), plugins.WithCommentService(commentService), plugins.WithPermissionChecker(permService))
 
 		pluginDir := cfg.Plugins.Dir
 		if pluginDir == "" {

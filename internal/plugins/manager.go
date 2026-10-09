@@ -50,11 +50,16 @@ type Manager struct {
 	smtpSender     SMTPSender
 	scmService     SCMService
 	commentService *services.CommentService
+	permChecker    services.WorkspacePermissionChecker
 	logger         *slog.Logger
 	pluginTimeout  time.Duration
 	memoryLimit    uint64
 	hostFuncs      []extism.HostFunction
 	db             database.Database
+
+	// callLocks serializes plugin invocations per plugin name (see
+	// invokeEnabledPlugin). LoadOrStore-fast, no mu contention.
+	callLocks sync.Map
 
 	// Plugin-declared periodic invocations, keyed by plugin name. Guarded by
 	// its own mutex so DueSchedules from the scheduler tick doesn't contend
@@ -112,6 +117,7 @@ func NewManager(pluginDir string, opts ...Option) *Manager {
 		smtpSender:     options.SMTPSender,
 		scmService:     options.SCMService,
 		commentService: options.CommentService,
+		permChecker:    options.PermissionChecker,
 		logger:         options.Logger,
 		pluginTimeout:  options.PluginTimeout,
 		memoryLimit:    options.MemoryLimit,
@@ -140,6 +146,12 @@ func (m *Manager) SetDatabase(db database.Database) {
 // This allows setting the service after manager creation (for circular dependency resolution).
 func (m *Manager) SetSCMService(s SCMService) {
 	m.scmService = s
+}
+
+// SetPermissionChecker sets the permission checker for the shortcut sync host
+// functions (circular dependency resolution, same as SetSCMService).
+func (m *Manager) SetPermissionChecker(c services.WorkspacePermissionChecker) {
+	m.permChecker = c
 }
 
 // LoadPlugins loads all plugins from configured plugin directories.
@@ -416,10 +428,26 @@ func (m *Manager) ReloadPlugin(name string) error {
 	return m.LoadPlugin(pluginPath)
 }
 
+// acquirePluginLock takes the per-plugin invocation mutex, serializing guest
+// executions of one plugin across schedules, HTTP routes, and webhooks.
+func (m *Manager) acquirePluginLock(pluginName string) (unlock func()) {
+	v, _ := m.callLocks.LoadOrStore(pluginName, &sync.Mutex{})
+	mu := v.(*sync.Mutex)
+	mu.Lock()
+	return mu.Unlock
+}
+
 // invokeEnabledPlugin looks up an enabled plugin, instantiates it under a
 // timeout-bound context, and hands the resulting instance to fn. It wraps the
 // "lookup + enabled check + instance" scaffold shared by HandleRequest,
 // CallPluginFunction, and any other exported dispatcher.
+//
+// Invocations are serialized per plugin: a scheduled tick, a manual trigger,
+// and an HTTP route can otherwise run concurrent guest instances whose host
+// side effects (KV cursor writes, item_upserts) assume a single writer —
+// concurrent double-ticks made the shortcut sync race its own
+// find-then-insert mapping check (UNIQUE constraint failures). Waiters start
+// their timeout only after acquiring the lock.
 func (m *Manager) invokeEnabledPlugin(
 	pluginName string,
 	fn func(ctx context.Context, instance *extism.Plugin) ([]byte, error),
@@ -434,6 +462,9 @@ func (m *Manager) invokeEnabledPlugin(
 	if !p.Enabled {
 		return nil, fmt.Errorf("plugin is disabled: %s", pluginName)
 	}
+
+	unlock := m.acquirePluginLock(pluginName)
+	defer unlock()
 
 	ctx, cancel := context.WithTimeout(context.Background(), m.pluginTimeout)
 	defer cancel()

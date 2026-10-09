@@ -528,7 +528,7 @@ func (m *Manager) itemUpsertHostFunction(ctx context.Context, plugin *extism.Cur
 		return
 	}
 
-	result, err := services.NewShortcutSyncService(m.db).Upsert(ctx, services.ShortcutItemUpsertRequest{
+	result, err := services.NewShortcutSyncService(m.db).WithPermissionChecker(m.permChecker).Upsert(ctx, services.ShortcutItemUpsertRequest{
 		ExternalKind:        req.ExternalKind,
 		ExternalID:          req.ExternalID,
 		ExternalURL:         req.ExternalURL,
