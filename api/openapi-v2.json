@@ -35076,6 +35076,191 @@
                   "type": "object"
                 },
                 "type": "array"
+              },
+              "slas": {
+                "additionalProperties": false,
+                "description": "The slas value.",
+                "nullable": true,
+                "properties": {
+                  "calendars": {
+                    "description": "The calendars value.",
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "description": {
+                          "description": "The description value.",
+                          "type": "string"
+                        },
+                        "holidays": {
+                          "description": "The holidays value.",
+                          "format": "byte",
+                          "type": "string"
+                        },
+                        "is_default": {
+                          "description": "The is default value.",
+                          "type": "boolean"
+                        },
+                        "name": {
+                          "description": "The name value.",
+                          "type": "string"
+                        },
+                        "ref": {
+                          "description": "The ref value.",
+                          "type": "string"
+                        },
+                        "timezone": {
+                          "description": "The timezone value.",
+                          "type": "string"
+                        },
+                        "weekly_intervals": {
+                          "description": "The weekly intervals value.",
+                          "format": "byte",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "ref"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "metrics": {
+                    "description": "The metrics value.",
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "conditions": {
+                          "description": "The conditions value.",
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "category_names": {
+                                "description": "The category names value.",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "type": "array"
+                              },
+                              "condition_type": {
+                                "description": "The condition type value.",
+                                "type": "string"
+                              },
+                              "phase": {
+                                "description": "The phase value.",
+                                "type": "string"
+                              },
+                              "status_names": {
+                                "description": "The status names value.",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "type": "array"
+                              }
+                            },
+                            "required": [
+                              "condition_type",
+                              "phase"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "display_format": {
+                          "description": "The display format value.",
+                          "type": "string"
+                        },
+                        "goals": {
+                          "description": "The goals value.",
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "position": {
+                                "description": "The position value.",
+                                "type": "integer"
+                              },
+                              "ql_query": {
+                                "description": "The ql query value.",
+                                "type": "string"
+                              },
+                              "targets": {
+                                "description": "The targets value.",
+                                "items": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "calendar_ref": {
+                                      "description": "The calendar ref value.",
+                                      "type": "string"
+                                    },
+                                    "is_fallback": {
+                                      "description": "The is fallback value.",
+                                      "type": "boolean"
+                                    },
+                                    "priority_name": {
+                                      "description": "The priority name value.",
+                                      "type": "string"
+                                    },
+                                    "target_ms": {
+                                      "description": "The target ms value.",
+                                      "type": "integer"
+                                    }
+                                  },
+                                  "required": [
+                                    "calendar_ref",
+                                    "target_ms"
+                                  ],
+                                  "type": "object"
+                                },
+                                "type": "array"
+                              }
+                            },
+                            "required": [
+                              "position",
+                              "ql_query",
+                              "targets"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "is_active": {
+                          "description": "The is active value.",
+                          "nullable": true,
+                          "type": "boolean"
+                        },
+                        "name": {
+                          "description": "The name value.",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "type": "object"
+              },
+              "view_settings": {
+                "additionalProperties": false,
+                "description": "The view settings value.",
+                "nullable": true,
+                "properties": {
+                  "enabled_views": {
+                    "description": "The enabled views value.",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "enabled_views"
+                ],
+                "type": "object"
               }
             },
             "type": "object"
@@ -88152,6 +88337,191 @@
                   "type": "object"
                 },
                 "type": "array"
+              },
+              "slas": {
+                "additionalProperties": false,
+                "description": "The slas value.",
+                "nullable": true,
+                "properties": {
+                  "calendars": {
+                    "description": "The calendars value.",
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "description": {
+                          "description": "The description value.",
+                          "type": "string"
+                        },
+                        "holidays": {
+                          "description": "The holidays value.",
+                          "format": "byte",
+                          "type": "string"
+                        },
+                        "is_default": {
+                          "description": "The is default value.",
+                          "type": "boolean"
+                        },
+                        "name": {
+                          "description": "The name value.",
+                          "type": "string"
+                        },
+                        "ref": {
+                          "description": "The ref value.",
+                          "type": "string"
+                        },
+                        "timezone": {
+                          "description": "The timezone value.",
+                          "type": "string"
+                        },
+                        "weekly_intervals": {
+                          "description": "The weekly intervals value.",
+                          "format": "byte",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "ref"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "metrics": {
+                    "description": "The metrics value.",
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "conditions": {
+                          "description": "The conditions value.",
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "category_names": {
+                                "description": "The category names value.",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "type": "array"
+                              },
+                              "condition_type": {
+                                "description": "The condition type value.",
+                                "type": "string"
+                              },
+                              "phase": {
+                                "description": "The phase value.",
+                                "type": "string"
+                              },
+                              "status_names": {
+                                "description": "The status names value.",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "type": "array"
+                              }
+                            },
+                            "required": [
+                              "condition_type",
+                              "phase"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "display_format": {
+                          "description": "The display format value.",
+                          "type": "string"
+                        },
+                        "goals": {
+                          "description": "The goals value.",
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "position": {
+                                "description": "The position value.",
+                                "type": "integer"
+                              },
+                              "ql_query": {
+                                "description": "The ql query value.",
+                                "type": "string"
+                              },
+                              "targets": {
+                                "description": "The targets value.",
+                                "items": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "calendar_ref": {
+                                      "description": "The calendar ref value.",
+                                      "type": "string"
+                                    },
+                                    "is_fallback": {
+                                      "description": "The is fallback value.",
+                                      "type": "boolean"
+                                    },
+                                    "priority_name": {
+                                      "description": "The priority name value.",
+                                      "type": "string"
+                                    },
+                                    "target_ms": {
+                                      "description": "The target ms value.",
+                                      "type": "integer"
+                                    }
+                                  },
+                                  "required": [
+                                    "calendar_ref",
+                                    "target_ms"
+                                  ],
+                                  "type": "object"
+                                },
+                                "type": "array"
+                              }
+                            },
+                            "required": [
+                              "position",
+                              "ql_query",
+                              "targets"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "is_active": {
+                          "description": "The is active value.",
+                          "nullable": true,
+                          "type": "boolean"
+                        },
+                        "name": {
+                          "description": "The name value.",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "type": "object"
+              },
+              "view_settings": {
+                "additionalProperties": false,
+                "description": "The view settings value.",
+                "nullable": true,
+                "properties": {
+                  "enabled_views": {
+                    "description": "The enabled views value.",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "enabled_views"
+                ],
+                "type": "object"
               }
             },
             "type": "object"
@@ -88195,6 +88565,10 @@
             "additionalProperties": false,
             "nullable": true,
             "properties": {
+              "calendars_imported": {
+                "description": "The calendars imported value.",
+                "type": "integer"
+              },
               "item_links_imported": {
                 "description": "The item links imported value.",
                 "type": "integer"
@@ -88205,6 +88579,10 @@
               },
               "labels_created": {
                 "description": "The labels created value.",
+                "type": "integer"
+              },
+              "metrics_imported": {
+                "description": "The metrics imported value.",
                 "type": "integer"
               },
               "outcomes": {
@@ -88245,17 +88623,24 @@
                 "description": "The pages imported value.",
                 "type": "integer"
               },
+              "views_applied": {
+                "description": "The views applied value.",
+                "type": "boolean"
+              },
               "workspace_id": {
                 "description": "The workspace id value.",
                 "type": "integer"
               }
             },
             "required": [
+              "calendars_imported",
               "item_links_imported",
               "items_imported",
               "labels_created",
+              "metrics_imported",
               "outcomes",
               "pages_imported",
+              "views_applied",
               "workspace_id"
             ],
             "type": "object"
