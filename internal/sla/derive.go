@@ -52,9 +52,11 @@ func Derive(cycle *models.ItemSLACycle, now time.Time) (models.DerivedSLACycle, 
 	}
 	derived.ElapsedMs = elapsed.Milliseconds()
 
-	// A cycle without a matched goal has no target: no remaining time and no
-	// breach, matching Jira's "no target" state.
-	if cycle.GoalID == nil || cycle.GoalDurationMs <= 0 {
+	// A cycle without a target has no remaining time and no breach, matching
+	// Jira's "no target" state. Gate on the stored duration, not the goal
+	// reference: deleting a goal nulls goal_id via ON DELETE SET NULL but keeps
+	// goal_duration_ms, so historical breach and remaining-time display survive.
+	if cycle.GoalDurationMs <= 0 {
 		derived.Breached = false
 		return derived, nil
 	}
