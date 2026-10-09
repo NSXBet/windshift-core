@@ -1073,17 +1073,19 @@ type PurgeSyncResult struct {
 	Statuses          int   `json:"statuses"`
 	Workflows         int   `json:"workflows"`
 	ConfigurationSets int   `json:"configuration_sets"`
+	Users             int   `json:"users"`
 }
 
 // PurgeSync deletes every artifact the sync plugin ever created: item mappings
 // (their items cascade), the plugin's KV state (sync cursors, comment dedup,
 // tombstones), plugin-created workspaces, the team workflows/configuration
-// sets the plugin bound, and the non-builtin statuses it minted. The
-// operator's fallback workspace is preserved even though it carries a mapping
-// — it predates the sync and holds non-plugin items. Items go through the
-// item repository's deletion path so relations outside the FK cascade
-// (watches, history, links, worklogs) are cleaned the same way the UI delete
-// uses.
+// sets the plugin bound, the non-builtin statuses it minted, and the
+// sync-minted member accounts (synthetic sync emails — a re-import derives
+// them fresh). The operator's fallback workspace is preserved even though it
+// carries a mapping — it predates the sync and holds non-plugin items. Items
+// go through the item repository's deletion path so relations outside the FK
+// cascade (watches, history, links, worklogs) are cleaned the same way the UI
+// delete uses.
 func (s *ShortcutSyncService) PurgeSync(ctx context.Context, pluginName string) (PurgeSyncResult, error) {
 	var result PurgeSyncResult
 
@@ -1147,9 +1149,15 @@ func (s *ShortcutSyncService) PurgeSync(ctx context.Context, pluginName string) 
 		// Imported users carry the synthetic sync email and own nothing but
 		// their assignee slots, so a hard delete is safe and makes a
 		// re-import derive them fresh.
-		if _, err := tx.Exec(`DELETE FROM users WHERE email LIKE 'sync-member-%@shortcut.import'`); err != nil {
-			return fmt.Errorf("shortcut sync: delete imported users: %w", err)
+		ures, uerr := tx.Exec(`DELETE FROM users WHERE email LIKE 'sync-member-%@shortcut.import'`)
+		if uerr != nil {
+			return fmt.Errorf("shortcut sync: delete imported users: %w", uerr)
 		}
+		udeleted, uerr := ures.RowsAffected()
+		if uerr != nil {
+			return fmt.Errorf("shortcut sync: count deleted users: %w", uerr)
+		}
+		result.Users = int(udeleted)
 		// The plugin's KV: sync cursors, tombstones, comment dedup map. The
 		// config survives (operator settings; the replay reuses it).
 		res, err := tx.Exec(`
