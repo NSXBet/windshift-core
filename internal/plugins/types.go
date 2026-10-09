@@ -3,6 +3,8 @@
 // implementation for running plugins in a sandboxed environment.
 package plugins
 
+import "windshift/internal/services"
+
 // PluginMetadata describes plugin-provided metadata returned from exports like get_metadata/get_routes.
 type PluginMetadata struct {
 	Name         string      `json:"name"`
@@ -235,23 +237,25 @@ type SCMCreateItemLinkResponse struct {
 // ItemUpsertRequest is the payload for the item_upsert host function
 // (Shortcut → Windshift sync v1 wire contract, shortcut-v1-contracts.md §1).
 type ItemUpsertRequest struct {
-	ExternalKind       string   `json:"external_kind"`                 // "story" | "epic"
-	ExternalID         int64    `json:"external_id"`                   // Shortcut numeric id
-	ExternalURL        string   `json:"external_url,omitempty"`        // Shortcut story URL
-	ExternalUpdatedAt  string   `json:"external_updated_at,omitempty"` // RFC3339 UTC
-	WorkspaceID        string   `json:"workspace_id"`                  // decimal string of the workspace id
-	Title              string   `json:"title"`
-	Description        string   `json:"description,omitempty"`
-	StatusName         string   `json:"status_name,omitempty"`
-	ItemTypeName       string   `json:"item_type_name,omitempty"`
-	PriorityName       string   `json:"priority_name,omitempty"`
-	ProjectName        string   `json:"project_name,omitempty"` // find-only
-	DueDate            string   `json:"due_date,omitempty"`     // YYYY-MM-DD
-	StoryPoints        *float64 `json:"story_points,omitempty"`
-	Labels             []string `json:"labels,omitempty"`     // find-or-create
-	LabelMode          string   `json:"label_mode,omitempty"` // "merge" or "replace" (default)
-	ParentExternalKind string   `json:"parent_external_kind,omitempty"`
-	ParentExternalID   int64    `json:"parent_external_id,omitempty"`
+	ExternalKind        string   `json:"external_kind"`                 // "story" | "epic"
+	ExternalID          int64    `json:"external_id"`                   // Shortcut numeric id
+	ExternalURL         string   `json:"external_url,omitempty"`        // Shortcut story URL
+	ExternalUpdatedAt   string   `json:"external_updated_at,omitempty"` // RFC3339 UTC
+	WorkspaceID         string   `json:"workspace_id"`                  // decimal string of the workspace id
+	Title               string   `json:"title"`
+	Description         string   `json:"description,omitempty"`
+	StatusName          string   `json:"status_name,omitempty"`
+	ItemTypeName        string   `json:"item_type_name,omitempty"`
+	PriorityName        string   `json:"priority_name,omitempty"`
+	ProjectName         string   `json:"project_name,omitempty"` // find-only
+	DueDate             string   `json:"due_date,omitempty"`     // YYYY-MM-DD
+	StoryPoints         *float64 `json:"story_points,omitempty"`
+	Labels              []string `json:"labels,omitempty"`     // find-or-create
+	LabelMode           string   `json:"label_mode,omitempty"` // "merge" or "replace" (default)
+	ParentExternalKind  string   `json:"parent_external_kind,omitempty"`
+	ParentExternalID    int64    `json:"parent_external_id,omitempty"`
+	AssigneeExternalID  string   `json:"assignee_external_id,omitempty"`  // items.assignee_id (first Shortcut owner; UUID string)
+	IterationExternalID int64    `json:"iteration_external_id,omitempty"` // items.iteration_id
 }
 
 // ItemUpsertResponse is returned from the item_upsert host function.
@@ -278,4 +282,66 @@ type ItemLookupResponse struct {
 	ExternalUpdatedAt string `json:"external_updated_at,omitempty"` // RFC3339 UTC
 	LastSyncedAt      string `json:"last_synced_at,omitempty"`      // RFC3339 UTC
 	Error             string `json:"error,omitempty"`
+}
+
+// WorkspaceUpsertRequest is the payload for the workspace_upsert host
+// function: find-or-create the target workspace for a Shortcut team or
+// project (shortcut-v1-contracts.md §1). ExternalKind is "team" (default,
+// for compatibility with earlier payloads) or "project".
+type WorkspaceUpsertRequest struct {
+	ExternalID   int64                            `json:"external_id"`             // Shortcut team or project id
+	ExternalKind string                           `json:"external_kind,omitempty"` // "team" (default) | "project"
+	Name         string                           `json:"name"`                    // name, becomes the workspace name
+	CreatorID    int                              `json:"creator_id,omitempty"`    // Windshift user granted workspace admin
+	States       []services.ShortcutWorkflowState `json:"states,omitempty"`        // team workflow states in board order; kind "team" binds them as the workspace's workflow
+}
+
+// WorkspaceUpsertResponse is returned from the workspace_upsert host function.
+type WorkspaceUpsertResponse struct {
+	Status      string `json:"status"`                 // "ok" or "error"
+	WorkspaceID string `json:"workspace_id,omitempty"` // decimal string of the workspace id
+	Created     bool   `json:"created,omitempty"`      // true when a new workspace was created
+	Error       string `json:"error,omitempty"`
+}
+
+// member_upsert imports a Shortcut member as a windshift user so stories can
+// carry their assignee. The email is the Shortcut account email when public,
+// else the core derives a synthetic one; no login is granted.
+type MemberUpsertRequest struct {
+	ExternalID string `json:"external_id"`        // Shortcut member id (UUID string)
+	Name       string `json:"name,omitempty"`     // display name
+	Email      string `json:"email,omitempty"`    // real email when public
+	Username   string `json:"username,omitempty"` // username hint
+}
+
+type MemberUpsertResponse struct {
+	Status  string `json:"status"` // "ok" or "error"
+	UserID  string `json:"user_id,omitempty"`
+	Created bool   `json:"created,omitempty"`
+	Error   string `json:"error,omitempty"`
+}
+
+// iteration_upsert imports a Shortcut iteration (sprint) scoped to the
+// workspace a story resolved to (windshift iterations are per-workspace).
+type IterationUpsertRequest struct {
+	ExternalID int64  `json:"external_id"` // Shortcut iteration id
+	Name       string `json:"name"`
+	StartDate  string `json:"start_date,omitempty"` // YYYY-MM-DD or RFC3339
+	EndDate    string `json:"end_date,omitempty"`
+	Status     string `json:"status,omitempty"` // Shortcut state
+	Workspace  string `json:"workspace"`        // decimal workspace id
+}
+
+type IterationUpsertResponse struct {
+	Status      string `json:"status"` // "ok" or "error"
+	IterationID string `json:"iteration_id,omitempty"`
+	Created     bool   `json:"created,omitempty"`
+	Error       string `json:"error,omitempty"`
+}
+
+// PurgeSyncResponse is returned from the purge_sync host function.
+type PurgeSyncResponse struct {
+	Status string                    `json:"status"` // "ok" or "error"
+	Result *services.PurgeSyncResult `json:"result,omitempty"`
+	Error  string                    `json:"error,omitempty"`
 }

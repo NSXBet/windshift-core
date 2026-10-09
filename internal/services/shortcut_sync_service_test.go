@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"strconv"
 	"testing"
@@ -247,5 +248,366 @@ func TestShortcutSyncMergeLabelModePreservesExistingLabels(t *testing.T) {
 	}
 	if count != 2 {
 		t.Fatalf("expected 2 labels after merge, got %d", count)
+	}
+}
+
+func TestShortcutSyncWorkspaceUpsertCreatesAndIsIdempotent(t *testing.T) {
+	service, db := newShortcutSyncTestService(t)
+	defer func() { _ = db.Close() }()
+
+	ctx := context.Background()
+	res, err := service.UpsertWorkspace(ctx, ShortcutWorkspaceUpsertRequest{ExternalID: 42, Name: "Platform Team"})
+	if err != nil {
+		t.Fatalf("workspace upsert: %v", err)
+	}
+	if !res.Created {
+		t.Fatalf("expected Created=true on first upsert")
+	}
+
+	var name, key, description string
+	if err := db.QueryRow(`SELECT name, key, description FROM workspaces WHERE id = ?`, res.WorkspaceID).Scan(&name, &key, &description); err != nil {
+		t.Fatal(err)
+	}
+	if name != "Platform Team" || key != "SC-42" {
+		t.Fatalf("unexpected workspace %q key %q", name, key)
+	}
+
+	// Idempotent: same mapping, no second workspace.
+	again, err := service.UpsertWorkspace(ctx, ShortcutWorkspaceUpsertRequest{ExternalID: 42, Name: "Renamed Team"})
+	if err != nil {
+		t.Fatalf("workspace re-upsert: %v", err)
+	}
+	if again.Created || again.WorkspaceID != res.WorkspaceID {
+		t.Fatalf("expected same workspace without creation, got %+v", again)
+	}
+	if err := db.QueryRow(`SELECT name FROM workspaces WHERE id = ?`, res.WorkspaceID).Scan(&name); err != nil {
+		t.Fatal(err)
+	}
+	if name != "Platform Team" {
+		t.Fatalf("mapping hit must not rename workspace, got %q", name)
+	}
+}
+
+// TestShortcutSyncWorkspaceUpsertBindsTeamWorkflow covers the team-mode
+// binding: states ride the upsert, the core mints the workflow/statuses/
+// configuration set and pins the workspace to it. The host-function
+// passthrough (req.States → service) once dropped the field silently, so
+// this asserts the full chain, not just the upsert response.
+func TestShortcutSyncWorkspaceUpsertBindsTeamWorkflow(t *testing.T) {
+	service, db := newShortcutSyncTestService(t)
+	defer func() { _ = db.Close() }()
+
+	ctx := context.Background()
+	states := []ShortcutWorkflowState{
+		{Name: "Backlog", Type: "backlog"},
+		{Name: "In Development", Type: "started"},
+		{Name: "Completed", Type: "done"},
+	}
+	res, err := service.UpsertWorkspace(ctx, ShortcutWorkspaceUpsertRequest{
+		ExternalID: 77, Name: "Tech Development", States: states,
+	})
+	if err != nil {
+		t.Fatalf("team workspace upsert: %v", err)
+	}
+
+	var configSetID int
+	if err := db.QueryRow(`SELECT configuration_set_id FROM workspace_configuration_sets WHERE workspace_id = ?`, res.WorkspaceID).Scan(&configSetID); err != nil {
+		t.Fatalf("workspace binding missing: %v", err)
+	}
+
+	var workflowID int
+	var configName string
+	if err := db.QueryRow(`SELECT workflow_id, name FROM configuration_sets WHERE id = ?`, configSetID).Scan(&workflowID, &configName); err != nil {
+		t.Fatalf("configuration set missing: %v", err)
+	}
+	if configName != "Shortcut: Tech Development" {
+		t.Fatalf("configuration set name = %q", configName)
+	}
+
+	// Board columns = the workflow's reachable statuses: the binder chains
+	// NULL→s0→…→sN and adds an all-statuses→last edge. Every input state must
+	// appear as a transition target exactly once.
+	var columnCount int
+	if err := db.QueryRow(`SELECT COUNT(DISTINCT to_status_id) FROM workflow_transitions WHERE workflow_id = ?`, workflowID).Scan(&columnCount); err != nil {
+		t.Fatal(err)
+	}
+	if columnCount != len(states) {
+		t.Fatalf("workflow columns = %d, want %d", columnCount, len(states))
+	}
+	var inDevCategory string
+	if err := db.QueryRow(`
+		SELECT c.builtin_key FROM statuses s
+		JOIN status_categories c ON c.id = s.category_id
+		WHERE s.name = 'In Development' LIMIT 1`).Scan(&inDevCategory); err != nil {
+		t.Fatalf("status 'In Development' missing: %v", err)
+	}
+	if inDevCategory != "in_progress" {
+		t.Fatalf("'In Development' category = %q, want in_progress", inDevCategory)
+	}
+
+	// Re-upsert with states must not duplicate the set: the binder
+	// short-circuits on an existing workspace binding (NULL rows stay at
+	// two: the chain head plus the all-statuses edge).
+	var before int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM workflow_transitions WHERE workflow_id = ? AND from_status_id IS NULL`, workflowID).Scan(&before); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.UpsertWorkspace(ctx, ShortcutWorkspaceUpsertRequest{
+		ExternalID: 77, Name: "Tech Development", States: states,
+	}); err != nil {
+		t.Fatalf("re-upsert: %v", err)
+	}
+	var after int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM workflow_transitions WHERE workflow_id = ? AND from_status_id IS NULL`, workflowID).Scan(&after); err != nil {
+		t.Fatal(err)
+	}
+	if after != before {
+		t.Fatalf("re-upsert duplicated transitions: %d → %d", before, after)
+	}
+}
+
+func TestShortcutSyncWorkspaceUpsertKindIsolation(t *testing.T) {
+	service, db := newShortcutSyncTestService(t)
+	defer func() { _ = db.Close() }()
+
+	ctx := context.Background()
+	team, err := service.UpsertWorkspace(ctx, ShortcutWorkspaceUpsertRequest{ExternalID: 42, Name: "Platform Team"})
+	if err != nil {
+		t.Fatalf("team upsert: %v", err)
+	}
+	// Same numeric id under "project" must NOT resolve to the team mapping.
+	project, err := service.UpsertWorkspace(ctx, ShortcutWorkspaceUpsertRequest{ExternalID: 42, ExternalKind: "project", Name: "Aviator"})
+	if err != nil {
+		t.Fatalf("project upsert: %v", err)
+	}
+	if project.WorkspaceID == team.WorkspaceID {
+		t.Fatalf("project id 42 collided with team mapping: both ws=%d", team.WorkspaceID)
+	}
+	if !project.Created {
+		t.Fatalf("project upsert should create its own workspace, got Created=false ws=%d", project.WorkspaceID)
+	}
+	replay, err := service.UpsertWorkspace(ctx, ShortcutWorkspaceUpsertRequest{ExternalID: 42, Name: "Platform Team"})
+	if err != nil {
+		t.Fatalf("team replay: %v", err)
+	}
+	if replay.Created || replay.WorkspaceID != team.WorkspaceID {
+		t.Fatalf("team replay drifted: created=%v ws=%d want ws=%d", replay.Created, replay.WorkspaceID, team.WorkspaceID)
+	}
+	var key string
+	if err := db.QueryRow(`SELECT key FROM workspaces WHERE id = ?`, project.WorkspaceID).Scan(&key); err != nil {
+		t.Fatal(err)
+	}
+	// WorkspaceService.Create normalizes keys to upper case.
+	if key != "SC-PROJECT-42" {
+		t.Fatalf("project workspace key %q, want SC-PROJECT-42", key)
+	}
+
+	if _, err := service.UpsertWorkspace(ctx, ShortcutWorkspaceUpsertRequest{ExternalID: 1, ExternalKind: "milestone", Name: "x"}); err == nil {
+		t.Fatalf("expected validation error for unknown external_kind")
+	}
+}
+
+func TestShortcutSyncWorkspaceUpsertAdoptsOrphanWorkspace(t *testing.T) {
+	service, db := newShortcutSyncTestService(t)
+	defer func() { _ = db.Close() }()
+
+	// Orphan from an interrupted prior attempt: workspace exists, no mapping.
+	var orphanID int
+	if err := db.QueryRow(`INSERT INTO workspaces (name, key) VALUES ('Interrupted', 'SC-77') RETURNING id`).Scan(&orphanID); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := service.UpsertWorkspace(context.Background(), ShortcutWorkspaceUpsertRequest{ExternalID: 77, Name: "Interrupted"})
+	if err != nil {
+		t.Fatalf("workspace upsert: %v", err)
+	}
+	if res.Created || res.WorkspaceID != orphanID {
+		t.Fatalf("expected adoption of orphan without creation, got %+v", res)
+	}
+
+	var mappingID int
+	if err := db.QueryRow(`SELECT workspace_id FROM shortcut_sync_workspaces WHERE external_kind = 'team' AND external_id = 77`).Scan(&mappingID); err != nil {
+		t.Fatal(err)
+	}
+	if mappingID != orphanID {
+		t.Fatalf("mapping points at %d, want orphan %d", mappingID, orphanID)
+	}
+}
+
+func TestShortcutSyncWorkspaceUpsertValidatesInput(t *testing.T) {
+	service, db := newShortcutSyncTestService(t)
+	defer func() { _ = db.Close() }()
+
+	ctx := context.Background()
+	if _, err := service.UpsertWorkspace(ctx, ShortcutWorkspaceUpsertRequest{ExternalID: 0, Name: "x"}); err == nil {
+		t.Fatalf("expected validation error for zero external id")
+	}
+	if _, err := service.UpsertWorkspace(ctx, ShortcutWorkspaceUpsertRequest{ExternalID: 5, Name: "  "}); err == nil {
+		t.Fatalf("expected validation error for blank name")
+	}
+}
+
+// TestShortcutSyncUpsertUpdateRebindsParent covers the update path: it builds
+// an any-typed payload map, and a leaked *int in it fails the update
+// validator's CoerceInt as "Invalid parent_id type" (seen live on story 78298
+// → item 4695 during the 2026-10-07 backfill). Re-binding the same parent on
+// an existing item must accept the dereferenced id.
+func TestShortcutSyncUpsertUpdateRebindsParent(t *testing.T) {
+	service, db := newShortcutSyncTestService(t)
+	defer func() { _ = db.Close() }()
+	workspaceID, _, _ := seedShortcutSyncFixture(t, db)
+	ctx := context.Background()
+
+	// Parentable type pair: child level must be exactly parent level + 1.
+	if _, err := db.Exec(`INSERT INTO item_types (name, is_default, hierarchy_level) VALUES ('SS-Epic', false, 1)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO item_types (name, is_default, hierarchy_level) VALUES ('SS-Story', true, 2)`); err != nil {
+		t.Fatal(err)
+	}
+
+	epicRes, err := service.Upsert(ctx, ShortcutItemUpsertRequest{
+		WorkspaceID:  strconv.Itoa(workspaceID),
+		ExternalKind: "epic",
+		ExternalID:   99001,
+		Title:        "Imported epic",
+		ItemTypeName: "SS-Epic",
+	})
+	if err != nil {
+		t.Fatalf("epic create: %v", err)
+	}
+
+	res, err := service.Upsert(ctx, ShortcutItemUpsertRequest{
+		WorkspaceID:        strconv.Itoa(workspaceID),
+		ExternalKind:       "story",
+		ExternalID:         99002,
+		Title:              "Imported story",
+		ItemTypeName:       "SS-Story",
+		ParentExternalKind: "epic",
+		ParentExternalID:   99001,
+	})
+	if err != nil {
+		t.Fatalf("story create with parent: %v", err)
+	}
+
+	res2, err := service.Upsert(ctx, ShortcutItemUpsertRequest{
+		WorkspaceID:        strconv.Itoa(workspaceID),
+		ExternalKind:       "story",
+		ExternalID:         99002,
+		Title:              "Renamed under epic",
+		ItemTypeName:       "SS-Story",
+		ParentExternalKind: "epic",
+		ParentExternalID:   99001,
+	})
+	if err != nil {
+		t.Fatalf("story update with parent: %v", err)
+	}
+	if res2.Created || res2.ItemID != res.ItemID {
+		t.Fatalf("unexpected update result: %+v (first %+v)", res2, res)
+	}
+
+	var parentID *int
+	if err := db.QueryRow(`SELECT parent_id FROM items WHERE id = ?`, res.ItemID).Scan(&parentID); err != nil {
+		t.Fatal(err)
+	}
+	if parentID == nil || *parentID != epicRes.ItemID {
+		t.Fatalf("parent_id = %v, want %d", parentID, epicRes.ItemID)
+	}
+}
+
+// TestShortcutSyncMemberAndIterationUpserts covers the on-demand assignee
+// and sprint imports: member → user mapping (synthetic email when Shortcut
+// omits the address), iteration → workspace-local sprint, and the story
+// wiring — item_upsert resolves both mappings onto items.assignee_id /
+// items.iteration_id on create and update.
+func TestShortcutSyncMemberAndIterationUpserts(t *testing.T) {
+	service, db := newShortcutSyncTestService(t)
+	defer func() { _ = db.Close() }()
+	workspaceID, _, _ := seedShortcutSyncFixture(t, db)
+	ctx := context.Background()
+
+	// Member → user. Re-upsert is idempotent.
+	mem, err := service.UpsertMember(ctx, ShortcutMemberUpsertRequest{
+		ExternalID: "687a7ce8-ae4b-4528-975d-bfe3fdc8bca8", Name: "Dev Yuri", Email: "yuri@nsx.dev", UsernameHint: "dev.yuri",
+	})
+	if err != nil {
+		t.Fatalf("member upsert: %v", err)
+	}
+	var firstName string
+	if err := db.QueryRow(`SELECT first_name FROM users WHERE id = ?`, mem.UserID).Scan(&firstName); err != nil {
+		t.Fatalf("imported user missing: %v", err)
+	}
+	if firstName != "Dev" {
+		t.Fatalf("first_name = %q, want Dev", firstName)
+	}
+	if again, err := service.UpsertMember(ctx, ShortcutMemberUpsertRequest{ExternalID: "687a7ce8-ae4b-4528-975d-bfe3fdc8bca8", Name: "Dev Yuri"}); err != nil || again.UserID != mem.UserID {
+		t.Fatalf("member re-upsert: %v (id %d vs %d)", err, again.UserID, mem.UserID)
+	}
+
+	// Iteration → workspace-local sprint.
+	it, err := service.UpsertIteration(ctx, ShortcutIterationUpsertRequest{
+		ExternalID: 4242, Name: "Sprint 42", StartDate: "2026-10-06", EndDate: "2026-10-20",
+		Status: "unstarted", Workspace: strconv.Itoa(workspaceID),
+	})
+	if err != nil {
+		t.Fatalf("iteration upsert: %v", err)
+	}
+	var itStatus string
+	var itWorkspace int
+	if err := db.QueryRow(`SELECT status, workspace_id FROM iterations WHERE id = ?`, it.IterationID).Scan(&itStatus, &itWorkspace); err != nil {
+		t.Fatalf("imported iteration missing: %v", err)
+	}
+	if itStatus != "planned" {
+		t.Fatalf("iteration status = %q, want planned (Shortcut unstarted)", itStatus)
+	}
+	if itWorkspace != workspaceID {
+		t.Fatalf("iteration workspace = %d, want %d", itWorkspace, workspaceID)
+	}
+	if again, err := service.UpsertIteration(ctx, ShortcutIterationUpsertRequest{
+		ExternalID: 4242, Name: "Sprint 42", Workspace: strconv.Itoa(workspaceID),
+	}); err != nil || again.IterationID != it.IterationID {
+		t.Fatalf("iteration re-upsert: %v (id %d vs %d)", err, again.IterationID, it.IterationID)
+	}
+
+	// Story wiring: assignee + iteration land on the item.
+	res, err := service.Upsert(ctx, ShortcutItemUpsertRequest{
+		WorkspaceID: strconv.Itoa(workspaceID), ExternalKind: "story", ExternalID: 42042,
+		Title: "Launch chain story", StatusName: "To Do", ItemTypeName: "Story",
+		AssigneeExternalID: "687a7ce8-ae4b-4528-975d-bfe3fdc8bca8", IterationExternalID: 4242,
+	})
+	if err != nil {
+		t.Fatalf("story upsert: %v", err)
+	}
+	var assigneeID, iterationID any
+	if err := db.QueryRow(`SELECT assignee_id, iteration_id FROM items WHERE id = ?`, res.ItemID).Scan(&assigneeID, &iterationID); err != nil {
+		t.Fatal(err)
+	}
+	if assigneeID != int64(mem.UserID) && fmt.Sprint(assigneeID) != strconv.Itoa(mem.UserID) {
+		t.Fatalf("assignee_id = %v, want %d", assigneeID, mem.UserID)
+	}
+	if fmt.Sprint(iterationID) != strconv.Itoa(it.IterationID) {
+		t.Fatalf("iteration_id = %v, want %d", iterationID, it.IterationID)
+	}
+
+	// Update path: changing the iteration moves the item.
+	it2, err := service.UpsertIteration(ctx, ShortcutIterationUpsertRequest{
+		ExternalID: 4243, Name: "Sprint 43", StartDate: "2026-10-21", EndDate: "2026-11-04",
+		Workspace: strconv.Itoa(workspaceID),
+	})
+	if err != nil {
+		t.Fatalf("iteration 43: %v", err)
+	}
+	if _, err := service.Upsert(ctx, ShortcutItemUpsertRequest{
+		WorkspaceID: strconv.Itoa(workspaceID), ExternalKind: "story", ExternalID: 42042,
+		Title: "Launch chain story", StatusName: "To Do", ItemTypeName: "Story",
+		AssigneeExternalID: "687a7ce8-ae4b-4528-975d-bfe3fdc8bca8", IterationExternalID: 4243,
+	}); err != nil {
+		t.Fatalf("story update: %v", err)
+	}
+	if err := db.QueryRow(`SELECT iteration_id FROM items WHERE id = ?`, res.ItemID).Scan(&iterationID); err != nil {
+		t.Fatal(err)
+	}
+	if fmt.Sprint(iterationID) != strconv.Itoa(it2.IterationID) {
+		t.Fatalf("iteration_id after update = %v, want %d", iterationID, it2.IterationID)
 	}
 }

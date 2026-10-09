@@ -437,3 +437,36 @@ CREATE TABLE IF NOT EXISTS shortcut_sync_items (
 );
 
 CREATE INDEX IF NOT EXISTS idx_shortcut_sync_items_item ON shortcut_sync_items(item_id);
+
+CREATE TABLE IF NOT EXISTS shortcut_sync_workspaces (
+	id SERIAL PRIMARY KEY,
+	external_kind TEXT NOT NULL,
+	external_id BIGINT NOT NULL,
+	workspace_id INTEGER NOT NULL UNIQUE,
+	created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+	updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+	FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+	UNIQUE(external_kind, external_id)
+);
+
+CREATE TABLE IF NOT EXISTS shortcut_sync_users (
+	id SERIAL PRIMARY KEY,
+	external_id BIGINT NOT NULL,
+	user_id INTEGER NOT NULL UNIQUE,
+	created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+	updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+	FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+	UNIQUE(external_id)
+);
+
+CREATE TABLE IF NOT EXISTS shortcut_sync_iterations (
+	id SERIAL PRIMARY KEY,
+	external_id BIGINT NOT NULL,
+	workspace_id INTEGER NOT NULL,
+	iteration_id INTEGER NOT NULL,
+	created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+	updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+	FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+	FOREIGN KEY (iteration_id) REFERENCES iterations(id) ON DELETE CASCADE,
+	UNIQUE(external_id, workspace_id)
+);

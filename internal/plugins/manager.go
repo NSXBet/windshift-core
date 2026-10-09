@@ -19,6 +19,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/tetratelabs/wazero"
+
 	"windshift/internal/database"
 	"windshift/internal/logger"
 	"windshift/internal/services"
@@ -116,6 +118,15 @@ func NewManager(pluginDir string, opts ...Option) *Manager {
 		db:             options.Database,
 	}
 	m.hostFuncs = m.buildHostFunctions()
+	// Extism gates guest-side log_info behind a global level that defaults to
+	// LogLevelOff — without this every plugin log call is silently dropped.
+	// Route guest logs through the manager logger so plugin diagnostics land
+	// in the same slog output as core logs.
+	extism.SetLogLevel(extism.LogLevelInfo)
+	m.logger = options.Logger
+	// Guest log_info output goes through extism's Plugin.Log, which the SDK
+	// gates behind both a per-plugin logger callback and a global level that
+	// defaults to LogLevelOff. Wire both: callback → slog, level → info.
 	return m
 }
 
@@ -246,12 +257,23 @@ func (m *Manager) LoadPlugin(pluginPath string) error {
 	return nil
 }
 
+// pluginInstanceConfig is used for every guest instance. The real host
+// walltime is mandatory: wazero defaults to a fake clock anchored at
+// midnight UTC 2022-01-01 (advancing 1ms per reading) unless
+// WithSysWalltime is set, and the extism go-sdk never sets it — without
+// this, guest time.Now() lives in 2022 and any wall-clock-based plugin
+// logic livelocks (observed with the shortcut sync watermark).
+var pluginInstanceConfig = extism.PluginInstanceConfig{
+	ModuleConfig: wazero.NewModuleConfig().WithSysWalltime().WithSysNanotime(),
+}
+
 // populateMetadata instantiates a temporary instance to gather routes and extensions.
 func (m *Manager) populateMetadata(ctx context.Context, plugin *LoadedPlugin) error {
-	instance, err := plugin.compiled.Instance(ctx, extism.PluginInstanceConfig{})
+	instance, err := plugin.compiled.Instance(ctx, pluginInstanceConfig)
 	if err != nil {
 		return err
 	}
+	instance.SetLogger(m.pluginLogger())
 	defer func() { _ = instance.Close(ctx) }()
 
 	metadata, err := m.callFunction(ctx, instance, "get_metadata", nil)
@@ -417,10 +439,11 @@ func (m *Manager) invokeEnabledPlugin(
 	defer cancel()
 	ctx = withPluginName(ctx, pluginName)
 
-	instance, err := p.compiled.Instance(ctx, extism.PluginInstanceConfig{})
+	instance, err := p.compiled.Instance(ctx, pluginInstanceConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to instantiate plugin: %w", err)
 	}
+	instance.SetLogger(m.pluginLogger())
 	defer func() { _ = instance.Close(ctx) }()
 
 	return fn(ctx, instance)
@@ -754,6 +777,24 @@ func (m *Manager) pluginConfig() extism.PluginConfig {
 		// access should go through explicit host functions (KV/HTTP/etc.) rather
 		// than ambient access to the Windshift process filesystem.
 		EnableWasi: true,
+	}
+}
+
+// pluginLogger routes guest-side log_info/log_warn/... into the core slog
+// stream. Extism gates these behind a global level (set to Info in
+// NewManager) and a per-plugin callback that otherwise defaults to logStd.
+func (m *Manager) pluginLogger() func(extism.LogLevel, string) {
+	logger := m.logger
+	return func(level extism.LogLevel, message string) {
+		//nolint:exhaustive // trace/debug collapse into debug
+		switch level {
+		case extism.LogLevelError:
+			logger.Error(message)
+		case extism.LogLevelWarn:
+			logger.Warn(message)
+		default:
+			logger.Info(message)
+		}
 	}
 }
 

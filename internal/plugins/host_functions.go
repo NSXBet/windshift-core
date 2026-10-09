@@ -37,6 +37,10 @@ func (m *Manager) buildHostFunctions() []extism.HostFunction {
 		extism.NewHostFunctionWithStack("scm_create_item_link", m.scmCreateItemLinkHostFunction, []extism.ValueType{extism.ValueTypeI64}, []extism.ValueType{extism.ValueTypeI64}),
 		extism.NewHostFunctionWithStack("item_upsert", m.itemUpsertHostFunction, []extism.ValueType{extism.ValueTypeI64}, []extism.ValueType{extism.ValueTypeI64}),
 		extism.NewHostFunctionWithStack("item_lookup", m.itemLookupHostFunction, []extism.ValueType{extism.ValueTypeI64}, []extism.ValueType{extism.ValueTypeI64}),
+		extism.NewHostFunctionWithStack("workspace_upsert", m.workspaceUpsertHostFunction, []extism.ValueType{extism.ValueTypeI64}, []extism.ValueType{extism.ValueTypeI64}),
+		extism.NewHostFunctionWithStack("member_upsert", m.memberUpsertHostFunction, []extism.ValueType{extism.ValueTypeI64}, []extism.ValueType{extism.ValueTypeI64}),
+		extism.NewHostFunctionWithStack("iteration_upsert", m.iterationUpsertHostFunction, []extism.ValueType{extism.ValueTypeI64}, []extism.ValueType{extism.ValueTypeI64}),
+		extism.NewHostFunctionWithStack("purge_sync", m.purgeSyncHostFunction, []extism.ValueType{extism.ValueTypeI64}, []extism.ValueType{extism.ValueTypeI64}),
 	}
 }
 
@@ -142,6 +146,7 @@ func (m *Manager) httpFetchHostFunction(ctx context.Context, plugin *extism.Curr
 		req.Header.Set(k, v)
 	}
 
+	fetchStart := time.Now()
 	resp, err := client.Do(req)
 	if err != nil {
 		m.writeHostResponse(plugin, stack, HTTPFetchResponse{Status: http.StatusBadGateway, Body: []byte(err.Error())})
@@ -161,6 +166,7 @@ func (m *Manager) httpFetchHostFunction(ctx context.Context, plugin *extism.Curr
 		}
 	}
 
+	m.logger.Info("http_fetch done", "url", fetchReq.URL, "elapsed", time.Since(fetchStart).String(), "err", err != nil, "bytes", len(body))
 	m.writeHostResponse(plugin, stack, HTTPFetchResponse{
 		Status:  resp.StatusCode,
 		Headers: headers,
@@ -169,6 +175,7 @@ func (m *Manager) httpFetchHostFunction(ctx context.Context, plugin *extism.Curr
 }
 
 func (m *Manager) writeHostResponse(plugin *extism.CurrentPlugin, stack []uint64, payload any) {
+	t0 := time.Now()
 	data, err := json.Marshal(payload)
 	if err != nil {
 		m.logger.Warn("host response marshal failed", "error", err)
@@ -177,6 +184,7 @@ func (m *Manager) writeHostResponse(plugin *extism.CurrentPlugin, stack []uint64
 	}
 
 	ptr, err := plugin.WriteBytes(data)
+	m.logger.Info("writeHostResponse", "bytes", len(data), "elapsed", time.Since(t0).String(), "err", err != nil)
 	if err != nil {
 		m.logger.Warn("host response write failed", "error", err)
 		stack[0] = 0
@@ -217,6 +225,7 @@ func (m *Manager) kvGetHostFunction(ctx context.Context, plugin *extism.CurrentP
 		return
 	}
 
+	kvStart := time.Now()
 	var value string
 	err = m.db.QueryRowContext(ctx,
 		"SELECT value FROM plugin_kv_store WHERE plugin_name = ? AND key = ?",
@@ -234,6 +243,9 @@ func (m *Manager) kvGetHostFunction(ctx context.Context, plugin *extism.CurrentP
 	}
 
 	m.writeHostResponse(plugin, stack, KVGetResponse{Status: "ok", Value: value})
+	if d := time.Since(kvStart); d > 100*time.Millisecond {
+		m.logger.Warn("kv_get slow", "key", kvReq.Key, "elapsed", d.String())
+	}
 }
 
 func (m *Manager) kvSetHostFunction(ctx context.Context, plugin *extism.CurrentPlugin, stack []uint64) {
@@ -517,23 +529,25 @@ func (m *Manager) itemUpsertHostFunction(ctx context.Context, plugin *extism.Cur
 	}
 
 	result, err := services.NewShortcutSyncService(m.db).Upsert(ctx, services.ShortcutItemUpsertRequest{
-		ExternalKind:       req.ExternalKind,
-		ExternalID:         req.ExternalID,
-		ExternalURL:        req.ExternalURL,
-		ExternalUpdatedAt:  req.ExternalUpdatedAt,
-		WorkspaceID:        req.WorkspaceID,
-		Title:              req.Title,
-		Description:        req.Description,
-		StatusName:         req.StatusName,
-		ItemTypeName:       req.ItemTypeName,
-		PriorityName:       req.PriorityName,
-		ProjectName:        req.ProjectName,
-		DueDate:            req.DueDate,
-		StoryPoints:        req.StoryPoints,
-		Labels:             req.Labels,
-		LabelMode:          req.LabelMode,
-		ParentExternalKind: req.ParentExternalKind,
-		ParentExternalID:   req.ParentExternalID,
+		ExternalKind:        req.ExternalKind,
+		ExternalID:          req.ExternalID,
+		ExternalURL:         req.ExternalURL,
+		ExternalUpdatedAt:   req.ExternalUpdatedAt,
+		WorkspaceID:         req.WorkspaceID,
+		Title:               req.Title,
+		Description:         req.Description,
+		StatusName:          req.StatusName,
+		ItemTypeName:        req.ItemTypeName,
+		PriorityName:        req.PriorityName,
+		ProjectName:         req.ProjectName,
+		DueDate:             req.DueDate,
+		StoryPoints:         req.StoryPoints,
+		Labels:              req.Labels,
+		LabelMode:           req.LabelMode,
+		ParentExternalKind:  req.ParentExternalKind,
+		ParentExternalID:    req.ParentExternalID,
+		AssigneeExternalID:  req.AssigneeExternalID,
+		IterationExternalID: req.IterationExternalID,
 	})
 	if err != nil {
 		m.logger.Warn("item_upsert failed", "error", err, "plugin", pluginName, "external_kind", req.ExternalKind, "external_id", req.ExternalID)
@@ -593,4 +607,148 @@ func (m *Manager) itemLookupHostFunction(ctx context.Context, plugin *extism.Cur
 		resp.LastSyncedAt = result.LastSyncedAt.UTC().Format(time.RFC3339)
 	}
 	m.writeHostResponse(plugin, stack, resp)
+}
+
+// purgeSyncHostFunction wipes everything the calling plugin ever synced:
+// item mappings (items cascade), plugin KV state, plugin-created workspaces,
+// team workflows/configuration sets and the statuses the sync minted. The
+// request payload is unused; the empty object keeps the pointer ABI uniform.
+func (m *Manager) purgeSyncHostFunction(ctx context.Context, plugin *extism.CurrentPlugin, stack []uint64) {
+	if _, err := plugin.ReadBytes(stack[0]); err != nil {
+		m.logger.Warn("purge_sync host function failed to read payload", "error", err)
+		stack[0] = 0
+		return
+	}
+
+	if m.db == nil {
+		m.writeHostResponse(plugin, stack, PurgeSyncResponse{Status: "error", Error: "database not configured"})
+		return
+	}
+
+	result, err := services.NewShortcutSyncService(m.db).PurgeSync(ctx, pluginNameFromContext(ctx))
+	if err != nil {
+		m.logger.Warn("purge_sync failed", "error", err, "plugin", pluginNameFromContext(ctx))
+		m.writeHostResponse(plugin, stack, PurgeSyncResponse{Status: "error", Error: err.Error()})
+		return
+	}
+	m.writeHostResponse(plugin, stack, PurgeSyncResponse{Status: "ok", Result: &result})
+}
+
+func (m *Manager) workspaceUpsertHostFunction(ctx context.Context, plugin *extism.CurrentPlugin, stack []uint64) {
+	payload, err := plugin.ReadBytes(stack[0])
+	if err != nil {
+		m.logger.Warn("workspace_upsert host function failed to read payload", "error", err)
+		m.writeHostResponse(plugin, stack, WorkspaceUpsertResponse{Status: "error", Error: "failed to read payload"})
+		return
+	}
+
+	var req WorkspaceUpsertRequest
+	if err = json.Unmarshal(payload, &req); err != nil {
+		m.logger.Warn("workspace_upsert host function failed to parse payload", "error", err)
+		m.writeHostResponse(plugin, stack, WorkspaceUpsertResponse{Status: "error", Error: "invalid request payload"})
+		return
+	}
+
+	if m.db == nil {
+		m.writeHostResponse(plugin, stack, WorkspaceUpsertResponse{Status: "error", Error: "database not configured"})
+		return
+	}
+
+	result, err := services.NewShortcutSyncService(m.db).UpsertWorkspace(ctx, services.ShortcutWorkspaceUpsertRequest{
+		ExternalID:   req.ExternalID,
+		ExternalKind: req.ExternalKind,
+		Name:         req.Name,
+		CreatorID:    req.CreatorID,
+		States:       req.States,
+	})
+	if err != nil {
+		m.logger.Warn("workspace_upsert failed", "error", err, "plugin", pluginNameFromContext(ctx), "external_id", req.ExternalID)
+		m.writeHostResponse(plugin, stack, WorkspaceUpsertResponse{Status: "error", Error: err.Error()})
+		return
+	}
+	m.writeHostResponse(plugin, stack, WorkspaceUpsertResponse{
+		Status:      "ok",
+		WorkspaceID: strconv.Itoa(result.WorkspaceID),
+		Created:     result.Created,
+	})
+}
+
+// memberUpsertHostFunction imports one Shortcut member as a windshift user so
+// a story's assignee slot can point at a real account.
+func (m *Manager) memberUpsertHostFunction(ctx context.Context, plugin *extism.CurrentPlugin, stack []uint64) {
+	payload, err := plugin.ReadBytes(stack[0])
+	if err != nil {
+		m.logger.Warn("member_upsert host function failed to read payload", "error", err)
+		m.writeHostResponse(plugin, stack, MemberUpsertResponse{Status: "error", Error: "failed to read payload"})
+		return
+	}
+
+	var req MemberUpsertRequest
+	if err = json.Unmarshal(payload, &req); err != nil {
+		m.logger.Warn("member_upsert host function failed to parse payload", "error", err)
+		m.writeHostResponse(plugin, stack, MemberUpsertResponse{Status: "error", Error: err.Error()})
+		return
+	}
+	if m.db == nil {
+		m.writeHostResponse(plugin, stack, MemberUpsertResponse{Status: "error", Error: "database not configured"})
+		return
+	}
+
+	result, err := services.NewShortcutSyncService(m.db).UpsertMember(ctx, services.ShortcutMemberUpsertRequest{
+		ExternalID:   req.ExternalID,
+		Name:         req.Name,
+		Email:        req.Email,
+		UsernameHint: req.Username,
+	})
+	if err != nil {
+		m.logger.Warn("member_upsert failed", "error", err, "plugin", pluginNameFromContext(ctx), "external_id", req.ExternalID)
+		m.writeHostResponse(plugin, stack, MemberUpsertResponse{Status: "error", Error: err.Error()})
+		return
+	}
+	m.writeHostResponse(plugin, stack, MemberUpsertResponse{
+		Status:  "ok",
+		UserID:  strconv.Itoa(result.UserID),
+		Created: result.Created,
+	})
+}
+
+// iterationUpsertHostFunction imports one Shortcut iteration into a workspace
+// so stories can carry their sprint.
+func (m *Manager) iterationUpsertHostFunction(ctx context.Context, plugin *extism.CurrentPlugin, stack []uint64) {
+	payload, err := plugin.ReadBytes(stack[0])
+	if err != nil {
+		m.logger.Warn("iteration_upsert host function failed to read payload", "error", err)
+		m.writeHostResponse(plugin, stack, IterationUpsertResponse{Status: "error", Error: "failed to read payload"})
+		return
+	}
+
+	var req IterationUpsertRequest
+	if err = json.Unmarshal(payload, &req); err != nil {
+		m.logger.Warn("iteration_upsert host function failed to parse payload", "error", err)
+		m.writeHostResponse(plugin, stack, IterationUpsertResponse{Status: "error", Error: err.Error()})
+		return
+	}
+	if m.db == nil {
+		m.writeHostResponse(plugin, stack, IterationUpsertResponse{Status: "error", Error: "database not configured"})
+		return
+	}
+
+	result, err := services.NewShortcutSyncService(m.db).UpsertIteration(ctx, services.ShortcutIterationUpsertRequest{
+		ExternalID: req.ExternalID,
+		Name:       req.Name,
+		StartDate:  req.StartDate,
+		EndDate:    req.EndDate,
+		Status:     req.Status,
+		Workspace:  req.Workspace,
+	})
+	if err != nil {
+		m.logger.Warn("iteration_upsert failed", "error", err, "plugin", pluginNameFromContext(ctx), "external_id", req.ExternalID)
+		m.writeHostResponse(plugin, stack, IterationUpsertResponse{Status: "error", Error: err.Error()})
+		return
+	}
+	m.writeHostResponse(plugin, stack, IterationUpsertResponse{
+		Status:      "ok",
+		IterationID: strconv.Itoa(result.IterationID),
+		Created:     result.Created,
+	})
 }

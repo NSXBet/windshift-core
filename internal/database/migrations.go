@@ -1434,6 +1434,120 @@ var Catalog = []Migration{
 			CREATE INDEX idx_shortcut_sync_items_item ON shortcut_sync_items(item_id);
 		`,
 	},
+	{
+		Version:       "20261005_shortcut_sync_workspaces",
+		Name:          "Add Shortcut sync workspace mapping table",
+		CheckSQLite:   sqliteTableCheck("shortcut_sync_workspaces"),
+		CheckPostgres: pgTableCheck("shortcut_sync_workspaces"),
+		SQLite: `
+			CREATE TABLE shortcut_sync_workspaces (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				external_kind TEXT NOT NULL,           -- always 'team'
+				external_id INTEGER NOT NULL,          -- Shortcut team id
+				workspace_id INTEGER NOT NULL UNIQUE,  -- Windshift workspace
+				created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+				updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+				FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+				UNIQUE(external_kind, external_id)
+			);
+		`,
+		Postgres: `
+			CREATE TABLE shortcut_sync_workspaces (
+				id SERIAL PRIMARY KEY,
+				external_kind TEXT NOT NULL,
+				external_id BIGINT NOT NULL,
+				workspace_id INTEGER NOT NULL UNIQUE,
+				created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+				updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+				FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+				UNIQUE(external_kind, external_id)
+			);
+		`,
+	},
+	{
+		Version:       "20261008_shortcut_sync_users",
+		Name:          "Add Shortcut sync user mapping table",
+		CheckSQLite:   sqliteTableCheck("shortcut_sync_users"),
+		CheckPostgres: pgTableCheck("shortcut_sync_users"),
+		SQLite: `
+			CREATE TABLE shortcut_sync_users (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				external_id INTEGER NOT NULL,        -- Shortcut member id
+				user_id INTEGER NOT NULL UNIQUE,     -- Windshift user
+				created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+				updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+				FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+				UNIQUE(external_id)
+			);
+		`,
+		Postgres: `
+			CREATE TABLE shortcut_sync_users (
+				id SERIAL PRIMARY KEY,
+				external_id BIGINT NOT NULL,
+				user_id INTEGER NOT NULL UNIQUE,
+				created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+				updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+				FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+				UNIQUE(external_id)
+			);
+		`,
+	},
+	{
+		Version:       "20261008_shortcut_sync_iterations",
+		Name:          "Add Shortcut sync iteration mapping table",
+		CheckSQLite:   sqliteTableCheck("shortcut_sync_iterations"),
+		CheckPostgres: pgTableCheck("shortcut_sync_iterations"),
+		SQLite: `
+			CREATE TABLE shortcut_sync_iterations (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				external_id INTEGER NOT NULL,          -- Shortcut iteration id
+				workspace_id INTEGER NOT NULL,         -- owning workspace (iterations are local)
+				iteration_id INTEGER NOT NULL,         -- Windshift iteration
+				created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+				updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+				FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+				FOREIGN KEY (iteration_id) REFERENCES iterations(id) ON DELETE CASCADE,
+				UNIQUE(external_id, workspace_id)
+			);
+		`,
+		Postgres: `
+			CREATE TABLE shortcut_sync_iterations (
+				id SERIAL PRIMARY KEY,
+				external_id BIGINT NOT NULL,
+				workspace_id INTEGER NOT NULL,
+				iteration_id INTEGER NOT NULL,
+				created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+				updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+				FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+				FOREIGN KEY (iteration_id) REFERENCES iterations(id) ON DELETE CASCADE,
+				UNIQUE(external_id, workspace_id)
+			);
+		`,
+	},
+	{
+		Version:       "20261009_shortcut_sync_users_uuid",
+		Name:          "Widen Shortcut sync user mapping to UUID member ids",
+		CheckSQLite:   "SELECT COUNT(*) FROM pragma_table_info('shortcut_sync_users') WHERE name='external_id' AND type='TEXT'",
+		CheckPostgres: "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='shortcut_sync_users' AND column_name='external_id' AND data_type='text'",
+		SQLite: `
+			CREATE TABLE shortcut_sync_users_new (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				external_id TEXT NOT NULL,          -- Shortcut member id (UUID string)
+				user_id INTEGER NOT NULL UNIQUE,    -- Windshift user
+				created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+				updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+				FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+				UNIQUE(external_id)
+			);
+			INSERT INTO shortcut_sync_users_new (id, external_id, user_id, created_at, updated_at)
+				SELECT id, CAST(external_id AS TEXT), user_id, created_at, updated_at FROM shortcut_sync_users;
+			DROP TABLE shortcut_sync_users;
+			ALTER TABLE shortcut_sync_users_new RENAME TO shortcut_sync_users;
+		`,
+		Postgres: `
+			ALTER TABLE shortcut_sync_users ALTER COLUMN external_id TYPE TEXT USING external_id::text;
+		`,
+	},
 }
 
 func applySQLitePersonalLabelsPerUserUnique(db Database) (retErr error) {
