@@ -154,23 +154,61 @@ func sortJiraIssuesByRequestedKeyOrder(issues []jira.JiraIssue, orderedKeys []st
 	})
 }
 
-func recordJiraBulkFetchErrors(
+// recordJiraBulkFetchResults accounts for every requested key exactly once.
+// Jira returns HTTP 200 with partial success: resolved issues land in Issues,
+// per-issue failures in IssueErrors, and a requested key can be absent from
+// both. Any key missing from both lists is counted as a failure so a
+// hydration response can never silently drop an issue.
+func recordJiraBulkFetchResults(
 	projectKey string,
-	bulkErrors []jira.BulkFetchError,
+	requestedKeys []string,
+	result *jira.BulkFetchResponse,
 	xrayPlan *xrayImportPlan,
 	progress *ImportProgress,
 ) {
-	for _, fetchError := range bulkErrors {
-		slog.Error("Failed to fetch Jira issue",
-			slog.String("component", "jira"),
-			slog.String("issue", fetchError.IssueIDOrKey),
-			slog.String("error", fetchError.ErrorMessage))
-		if xrayPlan.isTest(projectKey, fetchError.IssueIDOrKey) {
-			progress.FailedTests++
-		} else {
-			progress.FailedIssues++
+	returned := make(map[string]bool)
+	if result != nil {
+		for _, issue := range result.Issues {
+			if issue.Key != "" {
+				returned[issue.Key] = true
+			}
 		}
 	}
+
+	failed := make(map[string]bool)
+	if result != nil {
+		for _, fetchError := range result.IssueErrors {
+			key := fetchError.IssueIDOrKey
+			if key == "" || returned[key] || failed[key] {
+				continue
+			}
+			failed[key] = true
+			slog.Error("Failed to fetch Jira issue",
+				slog.String("component", "jira"),
+				slog.String("issue", key),
+				slog.String("error", fetchError.Message()))
+			recordJiraBulkFetchFailure(projectKey, key, xrayPlan, progress)
+		}
+	}
+
+	for _, key := range requestedKeys {
+		if key == "" || returned[key] || failed[key] {
+			continue
+		}
+		failed[key] = true
+		slog.Error("Jira bulk fetch omitted requested issue",
+			slog.String("component", "jira"),
+			slog.String("issue", key))
+		recordJiraBulkFetchFailure(projectKey, key, xrayPlan, progress)
+	}
+}
+
+func recordJiraBulkFetchFailure(projectKey, key string, xrayPlan *xrayImportPlan, progress *ImportProgress) {
+	if xrayPlan.isTest(projectKey, key) {
+		progress.FailedTests++
+		return
+	}
+	progress.FailedIssues++
 }
 
 func jiraImportTerminalOutcome(progress *ImportProgress) (status, phase, errorMessage string) {
@@ -556,7 +594,7 @@ func (h *JiraImportHandler) importJiraIssueBatches(
 			}
 			continue
 		}
-		recordJiraBulkFetchErrors(projectKey, fetchResult.Errors, xrayPlan, im.progress)
+		recordJiraBulkFetchResults(projectKey, batch, fetchResult, xrayPlan, im.progress)
 		// Bulk fetch is a set-oriented API and does not guarantee request
 		// ordering. Restore the Rank-ordered key sequence so CreateItem's
 		// append-only fractional index generation preserves Jira order.
