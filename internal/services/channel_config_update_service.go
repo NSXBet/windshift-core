@@ -497,7 +497,7 @@ func (s *ChannelConfigUpdateService) validate(ctx context.Context, actorID int, 
 		if err := ValidatePortalConfig(config); err != nil {
 			return channelConfigInvalid(err.Error())
 		}
-		if err := s.validateKnowledgeBasePageSources(actorID, config); err != nil {
+		if err := s.validateKnowledgeBasePageSources(actorID, &stored, config); err != nil {
 			return err
 		}
 	} else if _, present := incoming["knowledge_base_page_sources"]; present {
@@ -533,10 +533,21 @@ func (s *ChannelConfigUpdateService) validate(ctx context.Context, actorID int, 
 	return nil
 }
 
+// knowledgeBaseSourceKey identifies a KB page source independent of ordering.
+func knowledgeBaseSourceKey(src models.KnowledgeBasePageSource) string {
+	root := 0
+	if src.RootPageID != nil {
+		root = *src.RootPageID
+	}
+	return fmt.Sprintf("%d:%d", src.WorkspaceID, root)
+}
+
 // validateKnowledgeBasePageSources checks a portal's workspace-pages
 // knowledge-base wiring: bounded count, target workspaces only, live root
-// pages, and workspace-administered disclosure for non-admin actors.
-func (s *ChannelConfigUpdateService) validateKnowledgeBasePageSources(actorID int, config *models.ChannelConfig) error {
+// pages, and workspace-administered disclosure for non-admin actors. Sources
+// that already exist unchanged are not re-authorized, so editing unrelated
+// portal settings cannot be blocked by a source the actor cannot administer.
+func (s *ChannelConfigUpdateService) validateKnowledgeBasePageSources(actorID int, stored, config *models.ChannelConfig) error {
 	sources := config.KnowledgeBasePageSources
 	if len(sources) == 0 {
 		return nil
@@ -547,6 +558,10 @@ func (s *ChannelConfigUpdateService) validateKnowledgeBasePageSources(actorID in
 	admin, err := s.permission.IsSystemAdmin(actorID)
 	if err != nil {
 		return err
+	}
+	unchanged := make(map[string]bool, len(stored.KnowledgeBasePageSources))
+	for _, src := range stored.KnowledgeBasePageSources {
+		unchanged[knowledgeBaseSourceKey(src)] = true
 	}
 	seen := make(map[int]map[int]bool, len(sources))
 	for _, src := range sources {
@@ -570,7 +585,7 @@ func (s *ChannelConfigUpdateService) validateKnowledgeBasePageSources(actorID in
 			return channelConfigInvalid(fmt.Sprintf("workspace %d is wired into the knowledge base more than once", src.WorkspaceID))
 		}
 		seen[src.WorkspaceID][rootKey] = true
-		if admin {
+		if admin || unchanged[knowledgeBaseSourceKey(src)] {
 			continue
 		}
 		allowed, err := s.permission.HasWorkspacePermission(actorID, src.WorkspaceID, models.PermissionWorkspaceAdmin)

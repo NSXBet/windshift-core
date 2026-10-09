@@ -62,6 +62,13 @@ export function channelBasicFormData(channel) {
 }
 
 export async function saveChannelSettings({ channel, channelFormData, configRef, enabled }) {
+  // Save config first: it is the step most likely to be rejected, and
+  // committing basic information before a config failure would leave a
+  // partial save behind.
+  if (configRef) {
+    await api.channels.updateConfig(channel.id, configRef.getConfig());
+  }
+
   await api.channels.update(channel.id, {
     id: channel.id,
     type: channel.type,
@@ -71,10 +78,6 @@ export async function saveChannelSettings({ channel, channelFormData, configRef,
     description: channelFormData.description,
     category_id: channelFormData.category_id,
   });
-
-  if (configRef) {
-    await api.channels.updateConfig(channel.id, configRef.getConfig());
-  }
 
   const currentlyEnabled = channel.status === 'enabled';
   if (typeof enabled === 'boolean' && enabled !== currentlyEnabled) {
